@@ -148,6 +148,58 @@ class SerpApiSearchProvider(SearchProvider):
         ][:limit]
 
 
+class GoogleCustomSearchProvider(SearchProvider):
+    endpoint = "https://www.googleapis.com/customsearch/v1"
+
+    def __init__(self, api_key: str | None = None, search_engine_id: str | None = None):
+        self.api_key = api_key or os.getenv("GOOGLE_SEARCH_API_KEY")
+        self.search_engine_id = search_engine_id or os.getenv("GOOGLE_SEARCH_ENGINE_ID")
+        if not self.api_key:
+            raise SearchProviderError("GOOGLE_SEARCH_API_KEY is required for Google search.")
+        if not self.search_engine_id:
+            raise SearchProviderError("GOOGLE_SEARCH_ENGINE_ID is required for Google search.")
+
+    def search(self, category: str, location: str, limit: int) -> list[SearchResult]:
+        query = build_query(category, location)
+        results: list[SearchResult] = []
+        start = 1
+
+        while len(results) < limit and start <= 91:
+            page_size = min(10, limit - len(results))
+            params = urllib.parse.urlencode(
+                {
+                    "key": self.api_key,
+                    "cx": self.search_engine_id,
+                    "q": query,
+                    "num": page_size,
+                    "start": start,
+                }
+            )
+            request = urllib.request.Request(
+                f"{self.endpoint}?{params}",
+                headers={"Accept": "application/json", "User-Agent": "capper-lead-research/0.1"},
+            )
+            page_results = google_items_to_results(_read_json(request))
+            if not page_results:
+                break
+            results.extend(page_results)
+            start += len(page_results)
+
+        return results[:limit]
+
+
+def google_items_to_results(data: dict) -> list[SearchResult]:
+    return [
+        SearchResult(
+            title=item.get("title", ""),
+            url=item.get("link", ""),
+            snippet=item.get("snippet", ""),
+        )
+        for item in data.get("items", [])
+        if item.get("link")
+    ]
+
+
 class CommonSourcesSearchProvider(SearchProvider):
     """Searches common business directory and marketplace domains through an API provider."""
 
@@ -191,6 +243,8 @@ def provider_from_name(name: str, seed_file: Path | None = None, source_profile:
     if normalized == "auto":
         provider = auto_provider()
         return with_source_profile(provider, source_profile)
+    if normalized == "google":
+        return with_source_profile(GoogleCustomSearchProvider(), source_profile)
     if normalized == "brave":
         return with_source_profile(BraveSearchProvider(), source_profile)
     if normalized == "bing":
@@ -201,6 +255,8 @@ def provider_from_name(name: str, seed_file: Path | None = None, source_profile:
 
 
 def auto_provider() -> SearchProvider:
+    if os.getenv("GOOGLE_SEARCH_API_KEY") and os.getenv("GOOGLE_SEARCH_ENGINE_ID"):
+        return GoogleCustomSearchProvider()
     if os.getenv("BRAVE_SEARCH_API_KEY"):
         return BraveSearchProvider()
     if os.getenv("BING_SEARCH_API_KEY"):
@@ -208,8 +264,8 @@ def auto_provider() -> SearchProvider:
     if os.getenv("SERPAPI_API_KEY"):
         return SerpApiSearchProvider()
     raise SearchProviderError(
-        "No search API key found. Set BRAVE_SEARCH_API_KEY, BING_SEARCH_API_KEY, "
-        "or SERPAPI_API_KEY before starting the GUI."
+        "No search API key found. Set GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_ENGINE_ID, "
+        "BRAVE_SEARCH_API_KEY, BING_SEARCH_API_KEY, or SERPAPI_API_KEY before starting the GUI."
     )
 
 

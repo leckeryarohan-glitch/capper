@@ -20,7 +20,7 @@ class GuiArgumentTests(unittest.TestCase):
         self.assertIn("--category", argv)
         self.assertIn("hotel", argv)
         self.assertIn("--provider", argv)
-        self.assertIn("auto", argv)
+        self.assertIn("google", argv)
         self.assertIn("--source-profile", argv)
         self.assertIn("common", argv)
         self.assertIn("--location", argv)

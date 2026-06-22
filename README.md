@@ -15,6 +15,8 @@ easy opt-out.
 
 - Category and optional location based search queries.
 - Official API search providers:
+  - Google Custom Search JSON API via `GOOGLE_SEARCH_API_KEY` and
+    `GOOGLE_SEARCH_ENGINE_ID`
   - Brave Search API via `BRAVE_SEARCH_API_KEY`
   - Bing Web Search API via `BING_SEARCH_API_KEY`
   - SerpAPI via `SERPAPI_API_KEY`
@@ -73,27 +75,33 @@ Then:
 3. Choose the CSV output file.
 4. Click **Leads suchen**.
 
-The GUI automatically uses the common-source search profile. It searches through
-official search APIs for results from common business and directory websites
-such as Gelbe Seiten, Das Oertliche, 11880, Meinestadt, WLW, Firmenwissen,
-Tripadvisor, Yelp, and Booking. Website crawling still respects `robots.txt` and
-personal-looking emails are excluded by default.
+The GUI automatically uses real Google results through the official Google
+Custom Search JSON API and the common-source search profile. It searches for
+results from common business and directory websites such as Gelbe Seiten, Das
+Oertliche, 11880, Meinestadt, WLW, Firmenwissen, Tripadvisor, Yelp, and Booking.
+Website crawling still respects `robots.txt` and personal-looking emails are
+excluded by default.
 
-For API providers, set the matching environment variable before starting the
-GUI. Brave is recommended for the easiest setup:
+Set the Google credentials before starting the GUI:
 
 ```bash
-export BRAVE_SEARCH_API_KEY="your-key"
+export GOOGLE_SEARCH_API_KEY="your-google-api-key"
+export GOOGLE_SEARCH_ENGINE_ID="your-search-engine-id"
 python3 -m lead_research gui
 ```
 
-If Brave is not configured, the GUI tries Bing and then SerpAPI:
+For CLI use you can also choose other official providers:
 
 ```bash
+export BRAVE_SEARCH_API_KEY="your-key"
 export BING_SEARCH_API_KEY="your-key"
 # or
 export SERPAPI_API_KEY="your-key"
 ```
+
+For school demonstrations this provides real Google-backed results without
+automating direct Google result-page scraping, CAPTCHA handling, or other
+anti-bot bypasses.
 
 ## High-volume batches
 

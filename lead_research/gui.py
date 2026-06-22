@@ -26,7 +26,7 @@ def build_simple_gui_argv(values: Mapping[str, str | bool]) -> list[str]:
         "--category",
         category,
         "--provider",
-        "auto",
+        "google",
         "--source-profile",
         "common",
         "--limit",
@@ -117,8 +117,8 @@ def run_gui() -> int:
 
             sources = ", ".join(COMMON_SOURCE_DOMAINS[:5]) + " ..."
             source_text = (
-                "Es wird automatisch in gaengigen Branchen- und Firmenquellen gesucht "
-                f"({sources}). Dafuer muss mindestens ein API-Key gesetzt sein."
+                "Es wird mit echten Google-Ergebnissen ueber die offizielle Google Custom Search API "
+                f"in gaengigen Branchen- und Firmenquellen gesucht ({sources})."
             )
             ttk.Label(outer, text=source_text, wraplength=620).grid(row=5, column=0, columnspan=3, sticky="ew", pady=(10, 8))
 
