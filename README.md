@@ -14,7 +14,11 @@ easy opt-out.
 ## Features
 
 - Category and optional location based search queries.
+- No-key automated provider:
+  - OpenStreetMap/Overpass via `--provider osm`
 - Official API search providers:
+  - Google Custom Search JSON API via `GOOGLE_SEARCH_API_KEY` and
+    `GOOGLE_SEARCH_ENGINE_ID`
   - Brave Search API via `BRAVE_SEARCH_API_KEY`
   - Bing Web Search API via `BING_SEARCH_API_KEY`
   - SerpAPI via `SERPAPI_API_KEY`
@@ -27,7 +31,7 @@ easy opt-out.
   an explicit review flag.
 - Suppression list support for opt-outs and blocked domains.
 - Batch mode for many category/location combinations with checkpoint/resume.
-- Desktop GUI for guided single-category and batch runs.
+- Simple desktop GUI: enter a category and start the lead search.
 - CSV and JSON export with source URLs and discovery timestamps.
 
 ## Quick start
@@ -59,28 +63,61 @@ python3 -m lead_research discover \
 
 ## Desktop GUI
 
-Start the guided desktop form:
+Start the simple desktop app:
 
 ```bash
 python3 -m lead_research gui
 ```
 
-The GUI asks for:
+Then:
 
-- Single category mode: category, optional location, provider, limits, seed file,
-  suppression file, and output file.
-- Batch mode: category file, optional location file, provider, max leads,
-  checkpoint file, suppression file, and output file.
-- Safety options: keep `robots.txt` enabled, include personal-looking emails
-  only for manual review, and resume an interrupted batch.
+1. Enter a category such as `hotel`, `restaurant`, `lager logistik`, or
+   `elektronik`.
+2. Optionally enter a location such as `Berlin`.
+3. Choose the CSV output file.
+4. Click **Leads suchen**.
 
-For API providers, set the matching environment variable before starting the
-GUI, for example:
+The GUI is fully automated without API keys. It uses OpenStreetMap/Overpass to
+find real businesses that match the category and optional location, takes their
+public website URLs, then crawls those websites for public B2B contact details.
+Website crawling still respects `robots.txt` and personal-looking emails are
+excluded by default.
+
+You can also run the no-key workflow from the CLI:
+
+```bash
+python3 -m lead_research discover \
+  --category "hotel" \
+  --location "Berlin" \
+  --provider osm \
+  --output leads.csv
+```
+
+Google-backed search remains available when you do have credentials:
+
+```bash
+export GOOGLE_SEARCH_API_KEY="your-google-api-key"
+export GOOGLE_SEARCH_ENGINE_ID="your-search-engine-id"
+python3 -m lead_research discover \
+  --category "hotel" \
+  --location "Berlin" \
+  --provider google \
+  --source-profile common \
+  --output leads.csv
+```
+
+For CLI use you can also choose other official providers:
 
 ```bash
 export BRAVE_SEARCH_API_KEY="your-key"
-python3 -m lead_research gui
+export BING_SEARCH_API_KEY="your-key"
+# or
+export SERPAPI_API_KEY="your-key"
 ```
+
+For school demonstrations, the default GUI mode is fully automated with no keys
+and no direct Google result-page scraping, CAPTCHA handling, or other anti-bot
+bypasses.
 
 ## High-volume batches
 
