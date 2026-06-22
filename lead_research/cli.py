@@ -159,6 +159,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path("leads.csv"),
         help="Output file path (.csv or .json).",
     )
+
+    subparsers.add_parser(
+        "gui",
+        help="Open a desktop form for guided lead discovery.",
+    )
     return parser
 
 
@@ -231,6 +236,12 @@ def run_batch(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_gui() -> int:
+    from .gui import run_gui as launch_gui
+
+    return launch_gui()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -239,6 +250,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_discover(args)
         if args.command == "batch":
             return run_batch(args)
+        if args.command == "gui":
+            return run_gui()
     except (OSError, SearchProviderError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 2

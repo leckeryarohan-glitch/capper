@@ -27,6 +27,7 @@ easy opt-out.
   an explicit review flag.
 - Suppression list support for opt-outs and blocked domains.
 - Batch mode for many category/location combinations with checkpoint/resume.
+- Desktop GUI for guided single-category and batch runs.
 - CSV and JSON export with source URLs and discovery timestamps.
 
 ## Quick start
@@ -54,6 +55,31 @@ python3 -m lead_research discover \
   --provider file \
   --seed-file examples/seeds.txt \
   --output leads.csv
+```
+
+## Desktop GUI
+
+Start the guided desktop form:
+
+```bash
+python3 -m lead_research gui
+```
+
+The GUI asks for:
+
+- Single category mode: category, optional location, provider, limits, seed file,
+  suppression file, and output file.
+- Batch mode: category file, optional location file, provider, max leads,
+  checkpoint file, suppression file, and output file.
+- Safety options: keep `robots.txt` enabled, include personal-looking emails
+  only for manual review, and resume an interrupted batch.
+
+For API providers, set the matching environment variable before starting the
+GUI, for example:
+
+```bash
+export BRAVE_SEARCH_API_KEY="your-key"
+python3 -m lead_research gui
 ```
 
 ## High-volume batches
