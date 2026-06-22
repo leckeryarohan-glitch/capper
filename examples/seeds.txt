@@ -1,0 +1,3 @@
+# One public business website URL per line.
+# Replace these examples with reviewed target websites before running a campaign.
+https://example.com

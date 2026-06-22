@@ -1,0 +1,5 @@
+# Add opt-outs or blocked domains here.
+# Entries can be full emails, bare domains, or @domain suffixes.
+unsubscribe@example.com
+blocked-domain.example
+@blocked-suffix.example
