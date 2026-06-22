@@ -83,6 +83,11 @@ public website URLs, then crawls those websites for public B2B contact details.
 Website crawling still respects `robots.txt` and personal-looking emails are
 excluded by default.
 
+If no location is entered, Capper searches a default set of large German cities
+in smaller Overpass requests instead of running one global query. Entering a
+specific city, for example `Berlin`, usually produces faster and more targeted
+results.
+
 You can also run the no-key workflow from the CLI:
 
 ```bash

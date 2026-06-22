@@ -9,6 +9,7 @@ from lead_research.search import (
     build_overpass_query,
     google_items_to_results,
     osm_elements_to_results,
+    osm_location_plan,
     osm_selectors_for_category,
 )
 
@@ -34,6 +35,16 @@ class SearchTests(unittest.TestCase):
         self.assertIn('area["name"="Berlin"]["boundary"="administrative"]', query)
         self.assertIn('nwr["tourism"="hotel"](area.searchArea);', query)
         self.assertIn("out tags center", query)
+
+    def test_osm_location_plan_uses_default_cities_without_location(self) -> None:
+        locations = osm_location_plan("")
+
+        self.assertIn("Berlin", locations)
+        self.assertIn("Hamburg", locations)
+        self.assertGreater(len(locations), 3)
+
+    def test_osm_location_plan_uses_given_location(self) -> None:
+        self.assertEqual(osm_location_plan("Bremen"), ("Bremen",))
 
     def test_osm_elements_to_results_extracts_websites(self) -> None:
         results = osm_elements_to_results(

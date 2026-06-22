@@ -36,6 +36,24 @@ OSM_CATEGORY_TAGS = {
     "auto": (("shop", "car_repair"), ("shop", "car"), ("amenity", "car_rental")),
 }
 
+DEFAULT_OSM_LOCATIONS = (
+    "Berlin",
+    "Hamburg",
+    "Muenchen",
+    "Koeln",
+    "Frankfurt am Main",
+    "Stuttgart",
+    "Duesseldorf",
+    "Dortmund",
+    "Essen",
+    "Leipzig",
+)
+
+OVERPASS_ENDPOINTS = (
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+)
+
 
 class SearchProviderError(RuntimeError):
     pass
@@ -213,24 +231,66 @@ def google_items_to_results(data: dict) -> list[SearchResult]:
 
 
 class OpenStreetMapSearchProvider(SearchProvider):
-    endpoint = "https://overpass-api.de/api/interpreter"
+    def __init__(self, endpoints: tuple[str, ...] = OVERPASS_ENDPOINTS):
+        self.endpoints = endpoints
 
     def search(self, category: str, location: str, limit: int) -> list[SearchResult]:
         if limit < 1:
             return []
+
+        results: list[SearchResult] = []
+        seen_urls: set[str] = set()
+        locations = osm_location_plan(location)
+        per_location_limit = limit if location.strip() else max(8, ceil(limit / len(locations)))
+        failures: list[str] = []
+
+        for current_location in locations:
+            try:
+                location_results = self._search_location(category, current_location, per_location_limit)
+            except SearchProviderError as exc:
+                failures.append(f"{current_location}: {exc}")
+                continue
+            for result in location_results:
+                dedupe_key = result.url.lower().rstrip("/")
+                if dedupe_key in seen_urls:
+                    continue
+                seen_urls.add(dedupe_key)
+                results.append(result)
+                if len(results) >= limit:
+                    return results
+
+        if not results and failures:
+            raise SearchProviderError("OpenStreetMap/Overpass search failed: " + " | ".join(failures[:3]))
+        return results
+
+    def _search_location(self, category: str, location: str, limit: int) -> list[SearchResult]:
         query = build_overpass_query(category, location, limit)
-        request = urllib.request.Request(
-            self.endpoint,
-            data=query.encode("utf-8"),
-            headers={
-                "Accept": "application/json",
-                "Content-Type": "text/plain; charset=utf-8",
-                "User-Agent": "capper-lead-research/0.1",
-            },
-            method="POST",
-        )
-        data = _read_json(request)
-        return osm_elements_to_results(data, limit)
+        failures: list[str] = []
+        for endpoint in self.endpoints:
+            request = urllib.request.Request(
+                endpoint,
+                data=query.encode("utf-8"),
+                headers={
+                    "Accept": "application/json",
+                    "Content-Type": "text/plain; charset=utf-8",
+                    "User-Agent": "capper-lead-research/0.1",
+                },
+                method="POST",
+            )
+            try:
+                data = _read_json(request, timeout=45)
+            except SearchProviderError as exc:
+                failures.append(f"{endpoint}: {exc}")
+                continue
+            return osm_elements_to_results(data, limit)
+        raise SearchProviderError("; ".join(failures) or "all Overpass endpoints failed")
+
+
+def osm_location_plan(location: str) -> tuple[str, ...]:
+    stripped = location.strip()
+    if stripped:
+        return (stripped,)
+    return DEFAULT_OSM_LOCATIONS
 
 
 def build_overpass_query(category: str, location: str, limit: int) -> str:
@@ -249,7 +309,7 @@ def build_overpass_query(category: str, location: str, limit: int) -> str:
 
     count = max(limit * 5, limit)
     return (
-        "[out:json][timeout:25];\n"
+        "[out:json][timeout:35];\n"
         f"{area_setup}"
         "(\n"
         + "\n".join(scoped_selectors)
@@ -420,9 +480,9 @@ def with_source_profile(provider: SearchProvider, source_profile: str) -> Search
     raise SearchProviderError(f"Unsupported source profile: {source_profile}")
 
 
-def _read_json(request: urllib.request.Request) -> dict:
+def _read_json(request: urllib.request.Request, timeout: int = 20) -> dict:
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             payload = response.read().decode("utf-8", errors="replace")
     except OSError as exc:
         raise SearchProviderError(f"Search provider request failed: {exc}") from exc
