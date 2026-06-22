@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Mapping
 
 from .cli import main as cli_main
-from .search import COMMON_SOURCE_DOMAINS
 
 
 DEFAULT_OUTPUT = "leads.csv"
@@ -26,9 +25,7 @@ def build_simple_gui_argv(values: Mapping[str, str | bool]) -> list[str]:
         "--category",
         category,
         "--provider",
-        "google",
-        "--source-profile",
-        "common",
+        "osm",
         "--limit",
         DEFAULT_LIMIT,
         "--max-pages-per-site",
@@ -115,10 +112,9 @@ def run_gui() -> int:
             ttk.Entry(outer, textvariable=self.suppression_file).grid(row=4, column=1, sticky="ew", pady=4)
             ttk.Button(outer, text="Auswaehlen", command=self._choose_suppression).grid(row=4, column=2, padx=(8, 0), pady=4)
 
-            sources = ", ".join(COMMON_SOURCE_DOMAINS[:5]) + " ..."
             source_text = (
-                "Es wird mit echten Google-Ergebnissen ueber die offizielle Google Custom Search API "
-                f"in gaengigen Branchen- und Firmenquellen gesucht ({sources})."
+                "Vollautomatisch ohne API-Key: Capper nutzt OpenStreetMap/Overpass, findet reale "
+                "Unternehmen mit Website und durchsucht diese Websites nach oeffentlichen B2B-Kontakten."
             )
             ttk.Label(outer, text=source_text, wraplength=620).grid(row=5, column=0, columnspan=3, sticky="ew", pady=(10, 8))
 
@@ -160,7 +156,7 @@ def run_gui() -> int:
                 messagebox.showerror("Eingabe pruefen", str(exc))
                 return
 
-            self._append_log("\nStarte Suche fuer Kategorie: " + self.category.get().strip() + "\n")
+            self._append_log("\nStarte vollautomatische Suche fuer Kategorie: " + self.category.get().strip() + "\n")
             self._append_log("Befehl: capper " + " ".join(argv) + "\n")
             self.start_button.configure(state="disabled")
             self.worker = threading.Thread(target=self._run_cli, args=(argv,), daemon=True)

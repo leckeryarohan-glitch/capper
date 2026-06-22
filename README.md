@@ -14,6 +14,8 @@ easy opt-out.
 ## Features
 
 - Category and optional location based search queries.
+- No-key automated provider:
+  - OpenStreetMap/Overpass via `--provider osm`
 - Official API search providers:
   - Google Custom Search JSON API via `GOOGLE_SEARCH_API_KEY` and
     `GOOGLE_SEARCH_ENGINE_ID`
@@ -75,19 +77,33 @@ Then:
 3. Choose the CSV output file.
 4. Click **Leads suchen**.
 
-The GUI automatically uses real Google results through the official Google
-Custom Search JSON API and the common-source search profile. It searches for
-results from common business and directory websites such as Gelbe Seiten, Das
-Oertliche, 11880, Meinestadt, WLW, Firmenwissen, Tripadvisor, Yelp, and Booking.
+The GUI is fully automated without API keys. It uses OpenStreetMap/Overpass to
+find real businesses that match the category and optional location, takes their
+public website URLs, then crawls those websites for public B2B contact details.
 Website crawling still respects `robots.txt` and personal-looking emails are
 excluded by default.
 
-Set the Google credentials before starting the GUI:
+You can also run the no-key workflow from the CLI:
+
+```bash
+python3 -m lead_research discover \
+  --category "hotel" \
+  --location "Berlin" \
+  --provider osm \
+  --output leads.csv
+```
+
+Google-backed search remains available when you do have credentials:
 
 ```bash
 export GOOGLE_SEARCH_API_KEY="your-google-api-key"
 export GOOGLE_SEARCH_ENGINE_ID="your-search-engine-id"
-python3 -m lead_research gui
+python3 -m lead_research discover \
+  --category "hotel" \
+  --location "Berlin" \
+  --provider google \
+  --source-profile common \
+  --output leads.csv
 ```
 
 For CLI use you can also choose other official providers:
@@ -99,9 +115,9 @@ export BING_SEARCH_API_KEY="your-key"
 export SERPAPI_API_KEY="your-key"
 ```
 
-For school demonstrations this provides real Google-backed results without
-automating direct Google result-page scraping, CAPTCHA handling, or other
-anti-bot bypasses.
+For school demonstrations, the default GUI mode is fully automated with no keys
+and no direct Google result-page scraping, CAPTCHA handling, or other anti-bot
+bypasses.
 
 ## High-volume batches
 

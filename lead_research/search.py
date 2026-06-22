@@ -24,6 +24,18 @@ COMMON_SOURCE_DOMAINS = (
     "booking.com",
 )
 
+OSM_CATEGORY_TAGS = {
+    "hotel": (("tourism", "hotel"), ("tourism", "guest_house"), ("tourism", "hostel")),
+    "restaurant": (("amenity", "restaurant"), ("amenity", "cafe"), ("amenity", "fast_food")),
+    "lager": (("building", "warehouse"), ("landuse", "industrial"), ("industrial", "warehouse")),
+    "logistik": (("office", "logistics"), ("industrial", "logistics"), ("landuse", "industrial")),
+    "elektronik": (("shop", "electronics"),),
+    "friseur": (("shop", "hairdresser"),),
+    "arzt": (("amenity", "doctors"),),
+    "zahnarzt": (("amenity", "dentist"),),
+    "auto": (("shop", "car_repair"), ("shop", "car"), ("amenity", "car_rental")),
+}
+
 
 class SearchProviderError(RuntimeError):
     pass
@@ -200,6 +212,128 @@ def google_items_to_results(data: dict) -> list[SearchResult]:
     ]
 
 
+class OpenStreetMapSearchProvider(SearchProvider):
+    endpoint = "https://overpass-api.de/api/interpreter"
+
+    def search(self, category: str, location: str, limit: int) -> list[SearchResult]:
+        if limit < 1:
+            return []
+        query = build_overpass_query(category, location, limit)
+        request = urllib.request.Request(
+            self.endpoint,
+            data=query.encode("utf-8"),
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "text/plain; charset=utf-8",
+                "User-Agent": "capper-lead-research/0.1",
+            },
+            method="POST",
+        )
+        data = _read_json(request)
+        return osm_elements_to_results(data, limit)
+
+
+def build_overpass_query(category: str, location: str, limit: int) -> str:
+    selectors = osm_selectors_for_category(category)
+    scoped_selectors = []
+    area_setup = ""
+    location_name = location.strip()
+    if location_name:
+        escaped_location = escape_overpass_string(location_name)
+        area_setup = (
+            f'area["name"="{escaped_location}"]["boundary"="administrative"]->.searchArea;\n'
+        )
+        scoped_selectors = [f'nwr{selector}(area.searchArea);' for selector in selectors]
+    else:
+        scoped_selectors = [f"nwr{selector};" for selector in selectors]
+
+    count = max(limit * 5, limit)
+    return (
+        "[out:json][timeout:25];\n"
+        f"{area_setup}"
+        "(\n"
+        + "\n".join(scoped_selectors)
+        + "\n);\n"
+        f"out tags center {count};"
+    )
+
+
+def osm_selectors_for_category(category: str) -> list[str]:
+    normalized = category.lower()
+    selectors: list[str] = []
+    for keyword, tag_pairs in OSM_CATEGORY_TAGS.items():
+        if keyword in normalized:
+            selectors.extend(f'["{key}"="{value}"]' for key, value in tag_pairs)
+    if selectors:
+        return selectors
+
+    escaped_category = escape_overpass_regex(category.strip())
+    return [f'["name"~"{escaped_category}",i]']
+
+
+def osm_elements_to_results(data: dict, limit: int) -> list[SearchResult]:
+    results: list[SearchResult] = []
+    seen_urls: set[str] = set()
+    for element in data.get("elements", []):
+        tags = element.get("tags", {})
+        url = first_present(tags, ("website", "contact:website", "url", "contact:url"))
+        if not url:
+            continue
+        normalized_url = normalize_result_url(url)
+        if not normalized_url:
+            continue
+        dedupe_key = normalized_url.lower().rstrip("/")
+        if dedupe_key in seen_urls:
+            continue
+        seen_urls.add(dedupe_key)
+        title = tags.get("name", normalized_url)
+        snippet = build_osm_snippet(tags)
+        results.append(SearchResult(title=title, url=normalized_url, snippet=snippet))
+        if len(results) >= limit:
+            break
+    return results
+
+
+def first_present(mapping: dict, keys: tuple[str, ...]) -> str:
+    for key in keys:
+        value = mapping.get(key, "")
+        if value:
+            return str(value)
+    return ""
+
+
+def normalize_result_url(url: str) -> str:
+    stripped = url.strip()
+    if not stripped:
+        return ""
+    parsed = urllib.parse.urlparse(stripped)
+    if not parsed.scheme:
+        stripped = "https://" + stripped
+        parsed = urllib.parse.urlparse(stripped)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+    return stripped
+
+
+def build_osm_snippet(tags: dict) -> str:
+    parts = []
+    for key in ("addr:street", "addr:housenumber", "addr:postcode", "addr:city"):
+        if tags.get(key):
+            parts.append(str(tags[key]))
+    return "OpenStreetMap: " + " ".join(parts).strip() if parts else "OpenStreetMap result"
+
+
+def escape_overpass_string(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def escape_overpass_regex(value: str) -> str:
+    escaped = escape_overpass_string(value)
+    for char in ".+*?^$()[]{}|":
+        escaped = escaped.replace(char, "\\" + char)
+    return escaped
+
+
 class CommonSourcesSearchProvider(SearchProvider):
     """Searches common business directory and marketplace domains through an API provider."""
 
@@ -242,9 +376,13 @@ def provider_from_name(name: str, seed_file: Path | None = None, source_profile:
         return FileSearchProvider(seed_file)
     if normalized == "auto":
         provider = auto_provider()
+        if isinstance(provider, OpenStreetMapSearchProvider):
+            return provider
         return with_source_profile(provider, source_profile)
     if normalized == "google":
         return with_source_profile(GoogleCustomSearchProvider(), source_profile)
+    if normalized == "osm":
+        return OpenStreetMapSearchProvider()
     if normalized == "brave":
         return with_source_profile(BraveSearchProvider(), source_profile)
     if normalized == "bing":
@@ -255,6 +393,10 @@ def provider_from_name(name: str, seed_file: Path | None = None, source_profile:
 
 
 def auto_provider() -> SearchProvider:
+    return OpenStreetMapSearchProvider()
+
+
+def api_provider() -> SearchProvider:
     if os.getenv("GOOGLE_SEARCH_API_KEY") and os.getenv("GOOGLE_SEARCH_ENGINE_ID"):
         return GoogleCustomSearchProvider()
     if os.getenv("BRAVE_SEARCH_API_KEY"):

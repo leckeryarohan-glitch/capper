@@ -27,7 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
     discover.add_argument("--location", default="", help="Optional location, e.g. Berlin.")
     discover.add_argument(
         "--provider",
-        choices=["auto", "google", "brave", "bing", "serpapi", "file"],
+        choices=["auto", "osm", "google", "brave", "bing", "serpapi", "file"],
         default="file",
         help="Search provider. API providers require their matching environment variable.",
     )
@@ -94,7 +94,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     batch.add_argument(
         "--provider",
-        choices=["auto", "google", "brave", "bing", "serpapi", "file"],
+        choices=["auto", "osm", "google", "brave", "bing", "serpapi", "file"],
         default="brave",
         help="Search provider. Use official APIs for high-volume runs.",
     )
