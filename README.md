@@ -26,6 +26,7 @@ easy opt-out.
 - Personal-looking emails are excluded by default and can only be exported with
   an explicit review flag.
 - Suppression list support for opt-outs and blocked domains.
+- Batch mode for many category/location combinations with checkpoint/resume.
 - CSV and JSON export with source URLs and discovery timestamps.
 
 ## Quick start
@@ -54,6 +55,49 @@ python3 -m lead_research discover \
   --seed-file examples/seeds.txt \
   --output leads.csv
 ```
+
+## High-volume batches
+
+For thousands of leads, use `batch` with category and location files. This
+creates many normal provider queries, respects your configured delays, writes a
+checkpoint after every query, and stops at `--max-leads`.
+
+```bash
+python3 -m lead_research batch \
+  --categories-file examples/categories.txt \
+  --locations-file examples/locations.txt \
+  --provider brave \
+  --limit-per-query 50 \
+  --max-leads 5000 \
+  --checkpoint capper-checkpoint.json \
+  --suppression-file examples/suppression.txt \
+  --output leads.csv
+```
+
+Resume an interrupted run:
+
+```bash
+python3 -m lead_research batch \
+  --categories-file examples/categories.txt \
+  --locations-file examples/locations.txt \
+  --provider brave \
+  --limit-per-query 50 \
+  --max-leads 5000 \
+  --checkpoint capper-checkpoint.json \
+  --resume \
+  --output leads.csv
+```
+
+Scaling guidance:
+
+- Use official search APIs and stay within their quota and terms.
+- Increase volume by adding relevant categories and locations, not by bypassing
+  rate limits or website rules.
+- Keep `robots.txt` checks enabled unless you have explicit permission.
+- Use `--query-delay` and `--delay` to match provider and website limits.
+- Keep `--suppression-file` current before every run.
+- Export personal-looking emails only for manual review with
+  `--include-personal-review`.
 
 ## Suppression / opt-out list
 

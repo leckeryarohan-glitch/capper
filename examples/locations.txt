@@ -1,0 +1,5 @@
+# One location per line.
+Berlin
+Hamburg
+Muenchen
+Koeln

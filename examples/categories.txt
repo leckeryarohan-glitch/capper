@@ -1,0 +1,5 @@
+# One B2B category per line.
+hotel
+restaurant
+lager logistik
+elektronik
