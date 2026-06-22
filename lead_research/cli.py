@@ -27,9 +27,15 @@ def build_parser() -> argparse.ArgumentParser:
     discover.add_argument("--location", default="", help="Optional location, e.g. Berlin.")
     discover.add_argument(
         "--provider",
-        choices=["brave", "bing", "serpapi", "file"],
+        choices=["auto", "brave", "bing", "serpapi", "file"],
         default="file",
         help="Search provider. API providers require their matching environment variable.",
+    )
+    discover.add_argument(
+        "--source-profile",
+        choices=["web", "common"],
+        default="web",
+        help="Use normal web search or common business/directory sources.",
     )
     discover.add_argument(
         "--seed-file",
@@ -88,7 +94,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     batch.add_argument(
         "--provider",
-        choices=["brave", "bing", "serpapi", "file"],
+        choices=["auto", "brave", "bing", "serpapi", "file"],
         default="brave",
         help="Search provider. Use official APIs for high-volume runs.",
     )
@@ -173,7 +179,7 @@ def run_discover(args: argparse.Namespace) -> int:
     if args.max_pages_per_site < 1:
         raise ValueError("--max-pages-per-site must be at least 1")
 
-    provider = provider_from_name(args.provider, args.seed_file)
+    provider = provider_from_name(args.provider, args.seed_file, args.source_profile)
     results = provider.search(args.category, args.location, args.limit)
 
     crawler = LeadCrawler(

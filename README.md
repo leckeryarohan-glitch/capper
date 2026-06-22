@@ -27,7 +27,7 @@ easy opt-out.
   an explicit review flag.
 - Suppression list support for opt-outs and blocked domains.
 - Batch mode for many category/location combinations with checkpoint/resume.
-- Desktop GUI for guided single-category and batch runs.
+- Simple desktop GUI: enter a category and start the lead search.
 - CSV and JSON export with source URLs and discovery timestamps.
 
 ## Quick start
@@ -59,27 +59,40 @@ python3 -m lead_research discover \
 
 ## Desktop GUI
 
-Start the guided desktop form:
+Start the simple desktop app:
 
 ```bash
 python3 -m lead_research gui
 ```
 
-The GUI asks for:
+Then:
 
-- Single category mode: category, optional location, provider, limits, seed file,
-  suppression file, and output file.
-- Batch mode: category file, optional location file, provider, max leads,
-  checkpoint file, suppression file, and output file.
-- Safety options: keep `robots.txt` enabled, include personal-looking emails
-  only for manual review, and resume an interrupted batch.
+1. Enter a category such as `hotel`, `restaurant`, `lager logistik`, or
+   `elektronik`.
+2. Optionally enter a location such as `Berlin`.
+3. Choose the CSV output file.
+4. Click **Leads suchen**.
+
+The GUI automatically uses the common-source search profile. It searches through
+official search APIs for results from common business and directory websites
+such as Gelbe Seiten, Das Oertliche, 11880, Meinestadt, WLW, Firmenwissen,
+Tripadvisor, Yelp, and Booking. Website crawling still respects `robots.txt` and
+personal-looking emails are excluded by default.
 
 For API providers, set the matching environment variable before starting the
-GUI, for example:
+GUI. Brave is recommended for the easiest setup:
 
 ```bash
 export BRAVE_SEARCH_API_KEY="your-key"
 python3 -m lead_research gui
+```
+
+If Brave is not configured, the GUI tries Bing and then SerpAPI:
+
+```bash
+export BING_SEARCH_API_KEY="your-key"
+# or
+export SERPAPI_API_KEY="your-key"
 ```
 
 ## High-volume batches
