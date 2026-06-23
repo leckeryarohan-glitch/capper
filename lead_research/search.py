@@ -39,11 +39,11 @@ OSM_CATEGORY_TAGS = {
 DEFAULT_OSM_LOCATIONS = (
     "Berlin",
     "Hamburg",
-    "Muenchen",
-    "Koeln",
+    "München",
+    "Köln",
     "Frankfurt am Main",
     "Stuttgart",
-    "Duesseldorf",
+    "Düsseldorf",
     "Dortmund",
     "Essen",
     "Leipzig",
@@ -53,6 +53,8 @@ OVERPASS_ENDPOINTS = (
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
 )
+
+NOMINATIM_ENDPOINT = "https://nominatim.openstreetmap.org/search"
 
 
 class SearchProviderError(RuntimeError):
@@ -243,12 +245,17 @@ class OpenStreetMapSearchProvider(SearchProvider):
         locations = osm_location_plan(location)
         per_location_limit = limit if location.strip() else max(8, ceil(limit / len(locations)))
         failures: list[str] = []
+        has_explicit_location = bool(location.strip())
 
         for current_location in locations:
+            location_results = self._search_nominatim(category, current_location, per_location_limit) if has_explicit_location else []
             try:
-                location_results = self._search_location(category, current_location, per_location_limit)
+                location_results.extend(self._search_location(category, current_location, per_location_limit))
             except SearchProviderError as exc:
                 failures.append(f"{current_location}: {exc}")
+            if not location_results:
+                location_results = self._search_nominatim(category, current_location, per_location_limit)
+            if not location_results:
                 continue
             for result in location_results:
                 dedupe_key = result.url.lower().rstrip("/")
@@ -285,6 +292,32 @@ class OpenStreetMapSearchProvider(SearchProvider):
             return osm_elements_to_results(data, limit)
         raise SearchProviderError("; ".join(failures) or "all Overpass endpoints failed")
 
+    def _search_nominatim(self, category: str, location: str, limit: int) -> list[SearchResult]:
+        query = " ".join(part for part in (category.strip(), location.strip()) if part)
+        if not query:
+            return []
+        params = urllib.parse.urlencode(
+            {
+                "q": query,
+                "format": "jsonv2",
+                "limit": min(max(limit * 2, limit), 50),
+                "extratags": 1,
+                "addressdetails": 1,
+            }
+        )
+        request = urllib.request.Request(
+            f"{NOMINATIM_ENDPOINT}?{params}",
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "capper-lead-research/0.1",
+            },
+        )
+        try:
+            data = _read_json(request, timeout=30)
+        except SearchProviderError:
+            return []
+        return nominatim_items_to_results(data, limit, location)
+
 
 def osm_location_plan(location: str) -> tuple[str, ...]:
     stripped = location.strip()
@@ -299,9 +332,9 @@ def build_overpass_query(category: str, location: str, limit: int) -> str:
     area_setup = ""
     location_name = location.strip()
     if location_name:
-        escaped_location = escape_overpass_string(location_name)
+        escaped_location = escape_overpass_regex(location_name)
         area_setup = (
-            f'area["name"="{escaped_location}"]["boundary"="administrative"]->.searchArea;\n'
+            f'area["name"~"^{escaped_location}$",i]["boundary"="administrative"]->.searchArea;\n'
         )
         scoped_selectors = [f'nwr{selector}(area.searchArea);' for selector in selectors]
     else:
@@ -352,6 +385,44 @@ def osm_elements_to_results(data: dict, limit: int) -> list[SearchResult]:
         if len(results) >= limit:
             break
     return results
+
+
+def nominatim_items_to_results(data: list[dict], limit: int, location: str = "") -> list[SearchResult]:
+    results: list[SearchResult] = []
+    seen_urls: set[str] = set()
+    for item in data:
+        if location and not nominatim_item_matches_location(item, location):
+            continue
+        tags = item.get("extratags") or {}
+        url = first_present(tags, ("website", "contact:website", "url", "contact:url"))
+        if not url:
+            continue
+        normalized_url = normalize_result_url(url)
+        if not normalized_url:
+            continue
+        dedupe_key = normalized_url.lower().rstrip("/")
+        if dedupe_key in seen_urls:
+            continue
+        seen_urls.add(dedupe_key)
+        title = item.get("name") or item.get("display_name") or normalized_url
+        snippet = item.get("display_name", "OpenStreetMap/Nominatim result")
+        results.append(SearchResult(title=title, url=normalized_url, snippet=f"Nominatim: {snippet}"))
+        if len(results) >= limit:
+            break
+    return results
+
+
+def nominatim_item_matches_location(item: dict, location: str) -> bool:
+    expected = location.strip().casefold()
+    if not expected:
+        return True
+    address = item.get("address") or {}
+    address_values = [
+        str(address.get(key, "")).casefold()
+        for key in ("city", "town", "village", "municipality", "county", "state")
+        if address.get(key)
+    ]
+    return any(expected == value or expected in value for value in address_values)
 
 
 def first_present(mapping: dict, keys: tuple[str, ...]) -> str:

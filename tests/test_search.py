@@ -8,6 +8,8 @@ from lead_research.search import (
     SearchProvider,
     build_overpass_query,
     google_items_to_results,
+    nominatim_item_matches_location,
+    nominatim_items_to_results,
     osm_elements_to_results,
     osm_location_plan,
     osm_selectors_for_category,
@@ -30,9 +32,9 @@ class SearchTests(unittest.TestCase):
         self.assertIn('["shop"="electronics"]', osm_selectors_for_category("elektronik"))
 
     def test_build_overpass_query_scopes_to_location(self) -> None:
-        query = build_overpass_query("hotel", "Berlin", 10)
+        query = build_overpass_query("hotel", "berlin", 10)
 
-        self.assertIn('area["name"="Berlin"]["boundary"="administrative"]', query)
+        self.assertIn('area["name"~"^berlin$",i]["boundary"="administrative"]', query)
         self.assertIn('nwr["tourism"="hotel"](area.searchArea);', query)
         self.assertIn("out tags center", query)
 
@@ -67,6 +69,43 @@ class SearchTests(unittest.TestCase):
         self.assertEqual(results[0].title, "Hotel Beispiel")
         self.assertEqual(results[0].url, "https://hotel-beispiel.test")
         self.assertIn("Berlin", results[0].snippet)
+
+    def test_nominatim_items_to_results_extracts_extra_tag_websites(self) -> None:
+        results = nominatim_items_to_results(
+            [
+                {
+                    "display_name": "Hotel Berlin, Berlin, Deutschland",
+                    "extratags": {"contact:website": "www.hotel-berlin.example"},
+                    "address": {"city": "Berlin"},
+                },
+                {"display_name": "No website", "extratags": None},
+            ],
+            10,
+            "berlin",
+        )
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].url, "https://www.hotel-berlin.example")
+        self.assertIn("Nominatim", results[0].snippet)
+
+    def test_nominatim_items_filter_out_other_cities(self) -> None:
+        results = nominatim_items_to_results(
+            [
+                {
+                    "display_name": "Hotel Berlin, Heide, Deutschland",
+                    "extratags": {"website": "https://outside.example"},
+                    "address": {"city": "Heide"},
+                }
+            ],
+            10,
+            "berlin",
+        )
+
+        self.assertEqual(results, [])
+
+    def test_nominatim_item_matches_location_case_insensitively(self) -> None:
+        self.assertTrue(nominatim_item_matches_location({"address": {"city": "Berlin"}}, "berlin"))
+        self.assertFalse(nominatim_item_matches_location({"address": {"city": "Heide"}}, "berlin"))
 
     def test_google_items_to_results_maps_custom_search_response(self) -> None:
         results = google_items_to_results(
