@@ -6,6 +6,7 @@ import urllib.parse
 import urllib.request
 import urllib.robotparser
 from dataclasses import dataclass
+from typing import Callable
 
 from .extract import extract_emails, extract_phone, normalized_host, parse_page, strip_fragment
 from .models import Lead, SearchResult, classify_email
@@ -23,8 +24,15 @@ class CrawlConfig:
 
 
 class LeadCrawler:
-    def __init__(self, config: CrawlConfig):
+    def __init__(
+        self,
+        config: CrawlConfig,
+        on_page: Callable[[str], None] | None = None,
+        on_lead: Callable[[Lead], None] | None = None,
+    ):
         self.config = config
+        self.on_page = on_page
+        self.on_lead = on_lead
         self._robots_cache: dict[str, urllib.robotparser.RobotFileParser] = {}
 
     def crawl_result(self, result: SearchResult, category: str) -> list[Lead]:
@@ -43,6 +51,8 @@ class LeadCrawler:
             if url in visited or not self._allowed(url):
                 continue
             visited.add(url)
+            if self.on_page:
+                self.on_page(url)
 
             response = fetch_url(url)
             if response is None:
@@ -57,19 +67,20 @@ class LeadCrawler:
                 status = classify_email(email)
                 if status.value == "personal_review_required" and not self.config.include_personal:
                     continue
-                leads.append(
-                    Lead(
-                        category=category,
-                        source_url=result.url,
-                        website=final_url,
-                        email=email,
-                        company_name=infer_company_name(page_title, final_url),
-                        phone=phone,
-                        page_title=page_title,
-                        consent_status=status,
-                        notes=[f"Search snippet: {result.snippet}"] if result.snippet else [],
-                    )
+                lead = Lead(
+                    category=category,
+                    source_url=result.url,
+                    website=final_url,
+                    email=email,
+                    company_name=infer_company_name(page_title, final_url),
+                    phone=phone,
+                    page_title=page_title,
+                    consent_status=status,
+                    notes=[f"Search snippet: {result.snippet}"] if result.snippet else [],
                 )
+                leads.append(lead)
+                if self.on_lead:
+                    self.on_lead(lead)
 
             for link in contact_links:
                 if link not in visited and link not in queue:
