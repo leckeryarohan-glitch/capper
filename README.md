@@ -77,6 +77,13 @@ Then:
 3. Choose the CSV output file.
 4. Click **Leads suchen**.
 
+During the run, the GUI shows:
+
+- a progress bar for crawled websites,
+- the currently inspected website/page,
+- the live number of found leads,
+- and a table with each lead as soon as it is discovered.
+
 The GUI is fully automated without API keys. It uses OpenStreetMap/Overpass to
 find real businesses that match the category and optional location, takes their
 public website URLs, then crawls those websites for public B2B contact details.
