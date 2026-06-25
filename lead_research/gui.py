@@ -11,11 +11,12 @@ from .suppression import SuppressionList
 
 
 DEFAULT_OUTPUT = "leads.csv"
-DEFAULT_LIMIT = "50"
+DEFAULT_LIMIT = "500"
 DEFAULT_MAX_PAGES = "3"
-DEFAULT_DELAY = "1.0"
-DEFAULT_MAX_LEADS = "1000"
+DEFAULT_DELAY = "0.3"
+DEFAULT_MAX_LEADS = "2000"
 DEFAULT_WORKERS_TEXT = str(DEFAULT_WORKERS)
+DEFAULT_PROVIDER = "all"
 
 
 def build_simple_gui_argv(values: Mapping[str, str | bool]) -> list[str]:
@@ -27,15 +28,15 @@ def build_simple_gui_argv(values: Mapping[str, str | bool]) -> list[str]:
         "--category",
         category,
         "--provider",
-        "osm",
+        DEFAULT_PROVIDER,
         "--limit",
-        DEFAULT_LIMIT,
+        str(values.get("limit", DEFAULT_LIMIT)).strip() or DEFAULT_LIMIT,
         "--max-pages-per-site",
         DEFAULT_MAX_PAGES,
         "--delay",
         DEFAULT_DELAY,
         "--workers",
-        DEFAULT_WORKERS_TEXT,
+        str(values.get("workers", DEFAULT_WORKERS_TEXT)).strip() or DEFAULT_WORKERS_TEXT,
         "--max-leads",
         str(values.get("max_leads", DEFAULT_MAX_LEADS)).strip() or DEFAULT_MAX_LEADS,
         "--output",
@@ -76,17 +77,19 @@ def run_gui_discovery(
     output = Path(str(values.get("output", DEFAULT_OUTPUT)).strip() or DEFAULT_OUTPUT)
     suppression_path = optional_existing_path(values.get("suppression_file"))
     max_leads = parse_positive_int(values.get("max_leads"), int(DEFAULT_MAX_LEADS))
+    limit = parse_positive_int(values.get("limit"), int(DEFAULT_LIMIT))
+    workers = parse_positive_int(values.get("workers"), DEFAULT_WORKERS)
 
-    provider = provider_from_name("osm")
+    provider = provider_from_name(DEFAULT_PROVIDER)
     config = DiscoveryConfig(
         category=category,
         location=location,
-        limit=int(DEFAULT_LIMIT),
+        limit=limit,
         max_pages_per_site=int(DEFAULT_MAX_PAGES),
         delay=float(DEFAULT_DELAY),
         include_personal=False,
         respect_robots=True,
-        workers=DEFAULT_WORKERS,
+        workers=workers,
         max_leads=max_leads,
         dedupe_by="email",
     )
@@ -127,6 +130,8 @@ def run_gui() -> int:
             self.output = tk.StringVar(value=DEFAULT_OUTPUT)
             self.suppression_file = tk.StringVar(value="examples/suppression.txt")
             self.max_leads = tk.StringVar(value=DEFAULT_MAX_LEADS)
+            self.limit = tk.StringVar(value=DEFAULT_LIMIT)
+            self.workers = tk.StringVar(value=DEFAULT_WORKERS_TEXT)
             self.status_text = tk.StringVar(value="Bereit.")
             self.lead_count_text = tk.StringVar(value="Gefundene Leads: 0")
             self.stats_text = tk.StringVar(value="Statistik: noch keine Suche gestartet.")
@@ -151,8 +156,14 @@ def run_gui() -> int:
             ttk.Label(outer, text="Ort optional").grid(row=2, column=0, sticky="w", pady=4)
             ttk.Entry(outer, textvariable=self.location).grid(row=2, column=1, columnspan=2, sticky="ew", pady=4)
 
-            ttk.Label(outer, text="Max. Leads").grid(row=3, column=0, sticky="w", pady=4)
-            ttk.Entry(outer, textvariable=self.max_leads).grid(row=3, column=1, columnspan=2, sticky="ew", pady=4)
+            limits_frame = ttk.Frame(outer)
+            limits_frame.grid(row=3, column=0, columnspan=3, sticky="ew", pady=4)
+            ttk.Label(limits_frame, text="Max. Leads").grid(row=0, column=0, sticky="w")
+            ttk.Entry(limits_frame, textvariable=self.max_leads, width=10).grid(row=0, column=1, padx=(4, 16))
+            ttk.Label(limits_frame, text="Websites (max)").grid(row=0, column=2, sticky="w")
+            ttk.Entry(limits_frame, textvariable=self.limit, width=10).grid(row=0, column=3, padx=(4, 16))
+            ttk.Label(limits_frame, text="Threads").grid(row=0, column=4, sticky="w")
+            ttk.Entry(limits_frame, textvariable=self.workers, width=6).grid(row=0, column=5, padx=(4, 0))
 
             ttk.Label(outer, text="CSV-Ausgabe").grid(row=4, column=0, sticky="w", pady=4)
             ttk.Entry(outer, textvariable=self.output).grid(row=4, column=1, sticky="ew", pady=4)
@@ -163,9 +174,9 @@ def run_gui() -> int:
             ttk.Button(outer, text="Auswaehlen", command=self._choose_suppression).grid(row=5, column=2, padx=(8, 0), pady=4)
 
             source_text = (
-                "Vollautomatisch ohne API-Key: Capper nutzt OpenStreetMap/Overpass und Nominatim, "
-                "findet reale Unternehmen mit Website und durchsucht diese Websites parallel nach "
-                "oeffentlichen B2B-Kontakten. Doppelte E-Mails werden automatisch entfernt."
+                "Vollautomatisch ohne API-Key: Capper kombiniert OpenStreetMap/Overpass, Nominatim "
+                "und DuckDuckGo, findet reale Unternehmen mit Website und durchsucht diese parallel "
+                "nach oeffentlichen B2B-Kontakten. Doppelte E-Mails werden automatisch entfernt."
             )
             ttk.Label(outer, text=source_text, wraplength=760).grid(row=6, column=0, columnspan=3, sticky="ew", pady=(10, 8))
 
@@ -219,6 +230,8 @@ def run_gui() -> int:
                 "output": self.output.get(),
                 "suppression_file": self.suppression_file.get(),
                 "max_leads": self.max_leads.get(),
+                "limit": self.limit.get(),
+                "workers": self.workers.get(),
             }
             try:
                 require_text(values, "category", "Kategorie")
