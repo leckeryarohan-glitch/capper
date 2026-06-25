@@ -4,7 +4,7 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from lead_research.crawl import CrawlConfig, LeadCrawler, guessed_contact_urls
+from lead_research.crawl import CrawlConfig, LeadCrawler, fetch_url, guessed_contact_urls
 from lead_research.models import SearchResult
 
 
@@ -38,6 +38,9 @@ class CrawlTests(unittest.TestCase):
 
     def test_guessed_contact_urls_handles_invalid_input(self) -> None:
         self.assertEqual(guessed_contact_urls("not-a-url"), [])
+
+    def test_fetch_url_returns_none_for_control_character_url(self) -> None:
+        self.assertIsNone(fetch_url("https://example.test/path with space"))
 
     def test_crawler_finds_unlinked_impressum_email(self) -> None:
         server = ThreadingHTTPServer(("127.0.0.1", 0), ImpressumOnlyHandler)

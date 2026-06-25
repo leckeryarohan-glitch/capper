@@ -261,49 +261,51 @@ class SerpApiSearchProvider(SearchProvider):
     def search(self, category: str, location: str, limit: int) -> list[SearchResult]:
         if limit < 1:
             return []
-        query = build_query(category, location)
         results: list[SearchResult] = []
         seen: set[str] = set()
-        start = 0
 
-        while len(results) < limit and start <= 90:
-            self._report(f"SerpAPI: Ergebnisse ab {start} ...")
-            params = urllib.parse.urlencode(
-                {
-                    "engine": "google",
-                    "q": query,
-                    "api_key": self.api_key,
-                    "num": 10,
-                    "start": start,
-                    "hl": "de",
-                    "gl": "de",
-                    "google_domain": "google.de",
-                }
-            )
-            request = urllib.request.Request(
-                f"{self.endpoint}?{params}",
-                headers={"Accept": "application/json", "User-Agent": "capper-lead-research/0.1"},
-            )
-            try:
-                page_results = serpapi_items_to_results(_read_json(request))
-            except SearchProviderError:
+        for query in expand_queries(category, location):
+            if len(results) >= limit:
                 break
-            if not page_results:
-                break
-            new_in_page = 0
-            for result in page_results:
-                key = result.url.lower().rstrip("/")
-                if key in seen:
-                    continue
-                seen.add(key)
-                new_in_page += 1
-                results.append(result)
-                if len(results) >= limit:
-                    self._report(f"SerpAPI: {len(results)} Websites gefunden")
-                    return results
-            start += 10
-            if new_in_page == 0:
-                break
+            start = 0
+            while len(results) < limit and start <= 90:
+                self._report(f"SerpAPI: '{query}' ab {start} ...")
+                params = urllib.parse.urlencode(
+                    {
+                        "engine": "google",
+                        "q": query,
+                        "api_key": self.api_key,
+                        "num": 10,
+                        "start": start,
+                        "hl": "de",
+                        "gl": "de",
+                        "google_domain": "google.de",
+                    }
+                )
+                request = urllib.request.Request(
+                    f"{self.endpoint}?{params}",
+                    headers={"Accept": "application/json", "User-Agent": "capper-lead-research/0.1"},
+                )
+                try:
+                    page_results = serpapi_items_to_results(_read_json(request))
+                except SearchProviderError:
+                    break
+                if not page_results:
+                    break
+                new_in_page = 0
+                for result in page_results:
+                    key = result.url.lower().rstrip("/")
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    new_in_page += 1
+                    results.append(result)
+                    if len(results) >= limit:
+                        self._report(f"SerpAPI: {len(results)} Websites gefunden")
+                        return results
+                start += 10
+                if new_in_page == 0:
+                    break
 
         self._report(f"SerpAPI: {len(results)} Websites gefunden")
         return results
@@ -317,7 +319,7 @@ def serpapi_items_to_results(data: dict) -> list[SearchResult]:
             snippet=item.get("snippet", ""),
         )
         for item in data.get("organic_results", [])
-        if item.get("link")
+        if is_valid_lead_url(item.get("link", ""))
     ]
 
 
@@ -369,7 +371,7 @@ def google_items_to_results(data: dict) -> list[SearchResult]:
             snippet=item.get("snippet", ""),
         )
         for item in data.get("items", [])
-        if item.get("link")
+        if is_valid_lead_url(item.get("link", ""))
     ]
 
 
@@ -623,47 +625,54 @@ class DuckDuckGoSearchProvider(SearchProvider):
     def search(self, category: str, location: str, limit: int) -> list[SearchResult]:
         if limit < 1:
             return []
-        query = build_query(category, location)
         results: list[SearchResult] = []
         seen: set[str] = set()
-        offset = 0
-        page_num = 0
 
-        while len(results) < limit and offset <= 200:
-            page_num += 1
-            self._report(f"DuckDuckGo: Ergebnisseite {page_num} ...")
-            data = urllib.parse.urlencode({"q": query, "s": offset, "kl": "de-de"}).encode("utf-8")
-            request = urllib.request.Request(
-                self.endpoint,
-                data=data,
-                headers={
-                    "Accept": "text/html",
-                    "Content-Type": "application/x-www-form-urlencoded",
-                    "User-Agent": "Mozilla/5.0 (compatible; capper-lead-research/0.1)",
-                },
-                method="POST",
-            )
-            try:
-                html_text = _read_text(request, timeout=20)
-            except SearchProviderError:
+        for query in expand_queries(category, location):
+            if len(results) >= limit:
                 break
+            offset = 0
+            page_num = 0
+            while len(results) < limit and offset <= 200:
+                page_num += 1
+                self._report(f"DuckDuckGo: '{query}' Seite {page_num} ...")
+                data = urllib.parse.urlencode({"q": query, "s": offset, "kl": "de-de"}).encode("utf-8")
+                request = urllib.request.Request(
+                    self.endpoint,
+                    data=data,
+                    headers={
+                        "Accept": "text/html",
+                        "Content-Type": "application/x-www-form-urlencoded",
+                        "User-Agent": "Mozilla/5.0 (compatible; capper-lead-research/0.1)",
+                    },
+                    method="POST",
+                )
+                try:
+                    html_text = _read_text(request, timeout=20)
+                except SearchProviderError:
+                    break
 
-            links = duckduckgo_links_from_html(html_text)
-            if not links:
-                break
-            for url in links:
-                normalized_url = normalize_result_url(url)
-                if not normalized_url:
-                    continue
-                key = normalized_url.lower().rstrip("/")
-                if key in seen:
-                    continue
-                seen.add(key)
-                results.append(SearchResult(title=normalized_url, url=normalized_url, snippet="DuckDuckGo result"))
-                if len(results) >= limit:
-                    return results
-            offset += len(links)
-            time.sleep(0.4)
+                links = duckduckgo_links_from_html(html_text)
+                if not links:
+                    break
+                new_in_page = 0
+                for url in links:
+                    normalized_url = normalize_result_url(url)
+                    if not normalized_url or not is_valid_lead_url(normalized_url):
+                        continue
+                    key = normalized_url.lower().rstrip("/")
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    new_in_page += 1
+                    results.append(SearchResult(title=normalized_url, url=normalized_url, snippet="DuckDuckGo result"))
+                    if len(results) >= limit:
+                        self._report(f"DuckDuckGo: {len(results)} Websites gefunden")
+                        return results
+                offset += len(links)
+                if new_in_page == 0:
+                    break
+                time.sleep(0.4)
 
         self._report(f"DuckDuckGo: {len(results)} Websites gefunden")
         return results
@@ -782,6 +791,25 @@ def build_query(category: str, location: str) -> str:
     if location:
         parts.insert(1, location)
     return " ".join(part for part in parts if part).strip()
+
+
+def expand_queries(category: str, location: str) -> list[str]:
+    """Build multiple search queries so engines that cap a single query (e.g.
+    ~100 Google results) still yield many websites. Without a location, the query
+    is expanded across major cities."""
+    if location.strip():
+        return [build_query(category, location)]
+    queries = [build_query(category, "")]
+    for city in DEFAULT_OSM_LOCATIONS:
+        queries.append(build_query(category, city))
+    return queries
+
+
+def is_valid_lead_url(url: str) -> bool:
+    if not url:
+        return False
+    parsed = urllib.parse.urlparse(url.strip())
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
 def provider_from_name(name: str, seed_file: Path | None = None, source_profile: str = "web") -> SearchProvider:

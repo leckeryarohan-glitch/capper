@@ -115,6 +115,9 @@ python3 -m lead_research discover \
   configured API providers) for the widest coverage.
 - `--limit` controls how many candidate websites are inspected (raise it for
   thousands of websites).
+- Web-search providers (SerpAPI, DuckDuckGo) automatically run multiple queries
+  across major cities when no location is given, so they keep fetching until the
+  website limit is reached instead of stopping at a single query's ~100 results.
 - `--workers` controls how many websites are crawled at the same time.
 - `--max-leads` stops the run once enough unique leads are collected.
 - `--dedupe email` (default) keeps only one lead per email address; use

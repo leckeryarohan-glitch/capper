@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+import urllib.parse
 
 from lead_research.models import SearchResult
 from unittest.mock import patch
@@ -14,7 +15,9 @@ from lead_research.search import (
     combined_provider,
     decode_duckduckgo_href,
     duckduckgo_links_from_html,
+    expand_queries,
     google_items_to_results,
+    is_valid_lead_url,
     nominatim_item_matches_location,
     nominatim_items_to_results,
     osm_elements_to_results,
@@ -237,6 +240,52 @@ class SearchTests(unittest.TestCase):
 
         urls = sorted(result.url for result in results)
         self.assertEqual(urls, ["https://one.example/", "https://two.example/"])
+
+    def test_expand_queries_adds_cities_without_location(self) -> None:
+        single = expand_queries("hotel", "Berlin")
+        self.assertEqual(len(single), 1)
+
+        many = expand_queries("hotel", "")
+        self.assertGreater(len(many), 5)
+        self.assertTrue(any("Berlin" in q for q in many))
+        self.assertTrue(any("Hamburg" in q for q in many))
+
+    def test_is_valid_lead_url_rejects_relative_and_redirects(self) -> None:
+        self.assertTrue(is_valid_lead_url("https://example.test/kontakt"))
+        self.assertFalse(is_valid_lead_url("/goto?url=CAESabc"))
+        self.assertFalse(is_valid_lead_url(""))
+
+    def test_serpapi_items_to_results_skips_relative_links(self) -> None:
+        results = serpapi_items_to_results(
+            {
+                "organic_results": [
+                    {"title": "Good", "link": "https://good.example/"},
+                    {"title": "Redirect junk", "link": "/goto?url=CAESabc"},
+                ]
+            }
+        )
+        self.assertEqual([r.url for r in results], ["https://good.example/"])
+
+    def test_serpapi_runs_multiple_queries_without_location(self) -> None:
+        captured: list[str] = []
+
+        def fake_read_json(request, timeout=20):
+            params = urllib.parse.parse_qs(urllib.parse.urlparse(request.full_url).query)
+            query = params.get("q", [""])[0]
+            start = params.get("start", ["0"])[0]
+            captured.append(query)
+            if start != "0":
+                return {"organic_results": []}
+            idx = len(captured)
+            return {"organic_results": [{"title": str(idx), "link": f"https://site{idx}.example/"}]}
+
+        provider = SerpApiSearchProvider(api_key="test-key")
+        with patch("lead_research.search._read_json", side_effect=fake_read_json):
+            results = provider.search("hotel", "", 5)
+
+        self.assertEqual(len(results), 5)
+        # multiple distinct queries (cities) were used, not just one
+        self.assertGreater(len(set(captured)), 1)
 
 
 if __name__ == "__main__":
