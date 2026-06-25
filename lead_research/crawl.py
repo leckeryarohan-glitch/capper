@@ -15,6 +15,27 @@ from .models import Lead, SearchResult, classify_email
 
 USER_AGENT = "capper-lead-research/0.1 (+compliance-review)"
 
+# German businesses are legally required to publish an Impressum with contact
+# details, so try these common paths even when they are not linked.
+CONTACT_PATH_GUESSES = (
+    "/impressum",
+    "/impressum/",
+    "/kontakt",
+    "/kontakt/",
+    "/contact",
+    "/contact/",
+    "/imprint",
+    "/legal-notice",
+)
+
+
+def guessed_contact_urls(start_url: str) -> list[str]:
+    parsed = urllib.parse.urlparse(start_url)
+    if not parsed.scheme or not parsed.netloc:
+        return []
+    base = f"{parsed.scheme}://{parsed.netloc}"
+    return [base + path for path in CONTACT_PATH_GUESSES]
+
 
 @dataclass(frozen=True)
 class CrawlConfig:
@@ -43,22 +64,31 @@ class LeadCrawler:
             return []
 
         queue = [start_url]
+        for guessed in guessed_contact_urls(start_url):
+            if guessed not in queue:
+                queue.append(guessed)
         visited: set[str] = set()
+        seen_emails: set[str] = set()
         leads: list[Lead] = []
         page_title = result.title
         phone = ""
+        fetched = 0
+        attempts = 0
+        max_attempts = self.config.max_pages_per_site + len(CONTACT_PATH_GUESSES) + 2
 
-        while queue and len(visited) < self.config.max_pages_per_site:
+        while queue and fetched < self.config.max_pages_per_site and attempts < max_attempts:
             url = strip_fragment(queue.pop(0))
             if url in visited or not self._allowed(url):
                 continue
             visited.add(url)
+            attempts += 1
             if self.on_page:
                 self.on_page(url)
 
             response = fetch_url(url)
             if response is None:
                 continue
+            fetched += 1
 
             html_text, final_url = response
             title, contact_links = parse_page(html_text, final_url)
@@ -66,9 +96,12 @@ class LeadCrawler:
             phone = phone or extract_phone(html_text)
 
             for email in extract_emails(html_text):
+                if email in seen_emails:
+                    continue
                 status = classify_email(email)
                 if status.value == "personal_review_required" and not self.config.include_personal:
                     continue
+                seen_emails.add(email)
                 lead = Lead(
                     category=category,
                     source_url=result.url,
@@ -84,9 +117,9 @@ class LeadCrawler:
                 if self.on_lead:
                     self.on_lead(lead)
 
-            for link in contact_links:
+            for offset, link in enumerate(contact_links):
                 if link not in visited and link not in queue:
-                    queue.append(link)
+                    queue.insert(offset, link)
 
             if self.config.delay_seconds > 0:
                 time.sleep(self.config.delay_seconds)
