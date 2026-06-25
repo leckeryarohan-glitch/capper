@@ -209,6 +209,21 @@ class SearchTests(unittest.TestCase):
         self.assertIn("OpenStreetMap", labels)
         self.assertIn("DuckDuckGo", labels)
 
+    def test_combined_provider_respects_source_toggles(self) -> None:
+        with patch.dict("os.environ", {}, clear=True):
+            only_ddg = combined_provider(use_osm=False, use_duckduckgo=True)
+            only_osm = combined_provider(use_osm=True, use_duckduckgo=False)
+            none_selected = combined_provider(use_osm=False, use_duckduckgo=False)
+
+        self.assertEqual([source_label(p) for p in only_ddg.providers], ["DuckDuckGo"])
+        self.assertEqual([source_label(p) for p in only_osm.providers], ["OpenStreetMap"])
+        self.assertEqual(none_selected.providers, [])
+
+    def test_overpass_query_without_location_requests_many_results(self) -> None:
+        query = build_overpass_query("hotel", "", 50)
+        # out tags center <count>; count should be well above the old ~21/city cap
+        self.assertRegex(query, r"out tags center \d{3,};")
+
     def test_serpapi_paging_collects_multiple_pages(self) -> None:
         pages = [
             {"organic_results": [{"title": "1", "link": "https://one.example/"}]},
