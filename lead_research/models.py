@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -59,6 +60,10 @@ class Lead:
     def domain(self) -> str:
         return self.email.split("@", 1)[-1].lower()
 
+    @property
+    def email_key(self) -> str:
+        return self.email.strip().lower()
+
     def key(self) -> tuple[str, str]:
         return (self.email.lower(), self.website.lower())
 
@@ -73,13 +78,53 @@ def classify_email(email: str) -> ConsentStatus:
     return ConsentStatus.PERSONAL_REVIEW_REQUIRED
 
 
-def dedupe_leads(leads: Iterable[Lead]) -> list[Lead]:
-    seen: set[tuple[str, str]] = set()
+def dedupe_leads(leads: Iterable[Lead], by: str = "email") -> list[Lead]:
+    """Remove duplicate leads.
+
+    by="email" keeps only the first lead per email address (global dedupe),
+    by="email_website" keeps the first lead per (email, website) pair.
+    """
+    seen: set = set()
     unique: list[Lead] = []
     for lead in leads:
-        key = lead.key()
+        key = lead.email_key if by == "email" else lead.key()
+        if not key or (by == "email" and not lead.email_key):
+            continue
         if key in seen:
             continue
         seen.add(key)
         unique.append(lead)
     return unique
+
+
+class LeadDeduplicator:
+    """Thread-safe, incremental duplicate checker for streaming pipelines."""
+
+    def __init__(self, by: str = "email"):
+        self.by = by
+        self._seen: set = set()
+        self._lock = threading.Lock()
+
+    def _key(self, lead: Lead):
+        return lead.email_key if self.by == "email" else lead.key()
+
+    def is_new(self, lead: Lead) -> bool:
+        key = self._key(lead)
+        if not key:
+            return False
+        with self._lock:
+            if key in self._seen:
+                return False
+            self._seen.add(key)
+            return True
+
+    def add_existing(self, leads: Iterable[Lead]) -> None:
+        with self._lock:
+            for lead in leads:
+                key = self._key(lead)
+                if key:
+                    self._seen.add(key)
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._seen)

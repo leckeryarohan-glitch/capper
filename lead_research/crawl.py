@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -34,6 +35,7 @@ class LeadCrawler:
         self.on_page = on_page
         self.on_lead = on_lead
         self._robots_cache: dict[str, urllib.robotparser.RobotFileParser] = {}
+        self._robots_lock = threading.Lock()
 
     def crawl_result(self, result: SearchResult, category: str) -> list[Lead]:
         start_url = normalize_url(result.url)
@@ -96,7 +98,8 @@ class LeadCrawler:
             return True
 
         host = normalized_host(url)
-        parser = self._robots_cache.get(host)
+        with self._robots_lock:
+            parser = self._robots_cache.get(host)
         if parser is None:
             parser = urllib.robotparser.RobotFileParser()
             parsed = urllib.parse.urlparse(url)
@@ -106,7 +109,8 @@ class LeadCrawler:
                 parser.read()
             except Exception:
                 return True
-            self._robots_cache[host] = parser
+            with self._robots_lock:
+                self._robots_cache[host] = parser
 
         try:
             return parser.can_fetch(USER_AGENT, url)

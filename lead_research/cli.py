@@ -5,9 +5,8 @@ import sys
 from pathlib import Path
 
 from .batch import read_terms, run_batch_discovery
-from .crawl import CrawlConfig, LeadCrawler
-from .export import write_csv, write_json
-from .models import dedupe_leads
+from .crawl import CrawlConfig
+from .pipeline import DEFAULT_WORKERS, DiscoveryConfig, run_discovery
 from .search import SearchProviderError, provider_from_name
 from .suppression import SuppressionList
 
@@ -54,6 +53,24 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=1.0,
         help="Delay in seconds between page requests on a site.",
+    )
+    discover.add_argument(
+        "--workers",
+        type=int,
+        default=DEFAULT_WORKERS,
+        help="Number of websites to crawl in parallel.",
+    )
+    discover.add_argument(
+        "--max-leads",
+        type=int,
+        default=100000,
+        help="Stop after this many deduplicated reviewable leads.",
+    )
+    discover.add_argument(
+        "--dedupe",
+        choices=["email", "email_website"],
+        default="email",
+        help="Deduplicate by email only (default) or by email+website.",
     )
     discover.add_argument(
         "--include-personal-review",
@@ -178,32 +195,40 @@ def run_discover(args: argparse.Namespace) -> int:
         raise ValueError("--limit must be at least 1")
     if args.max_pages_per_site < 1:
         raise ValueError("--max-pages-per-site must be at least 1")
+    if args.max_leads < 1:
+        raise ValueError("--max-leads must be at least 1")
+    if args.workers < 1:
+        raise ValueError("--workers must be at least 1")
 
     provider = provider_from_name(args.provider, args.seed_file, args.source_profile)
-    results = provider.search(args.category, args.location, args.limit)
-
-    crawler = LeadCrawler(
-        CrawlConfig(
-            max_pages_per_site=args.max_pages_per_site,
-            delay_seconds=args.delay,
-            include_personal=args.include_personal_review,
-            respect_robots=not args.ignore_robots,
-        )
+    config = DiscoveryConfig(
+        category=args.category,
+        location=args.location,
+        limit=args.limit,
+        max_pages_per_site=args.max_pages_per_site,
+        delay=args.delay,
+        include_personal=args.include_personal_review,
+        respect_robots=not args.ignore_robots,
+        workers=args.workers,
+        max_leads=args.max_leads,
+        dedupe_by=args.dedupe,
     )
 
-    leads = []
-    for result in results:
-        leads.extend(crawler.crawl_result(result, args.category))
+    stats = run_discovery(
+        provider=provider,
+        config=config,
+        suppression=SuppressionList(args.suppression_file),
+        output=args.output,
+    )
 
-    leads = dedupe_leads(leads)
-    leads = SuppressionList(args.suppression_file).apply(leads)
-
-    if args.output.suffix.lower() == ".json":
-        write_json(leads, args.output)
-    else:
-        write_csv(leads, args.output)
-
-    print(f"Discovered {len(leads)} reviewable lead(s). Wrote {args.output}.")
+    print(f"Discovered {stats.leads_found} reviewable lead(s). Wrote {args.output}.")
+    print(
+        f"Statistics: {stats.websites_done}/{stats.websites_total} websites, "
+        f"{stats.pages_fetched} pages, {stats.unique_domains} domains, "
+        f"{stats.duplicates_skipped} duplicates skipped, "
+        f"{stats.suppressed_skipped} suppressed, "
+        f"{stats.leads_per_minute} leads/min."
+    )
     if not args.include_personal_review:
         print("Personal-looking emails were excluded. Use --include-personal-review to export them for manual review.")
     return 0
