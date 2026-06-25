@@ -130,9 +130,13 @@ websites to inspect (`Websites (max)`) and how many to crawl in parallel
 emails are excluded by default.
 
 If no location is entered, Capper searches a default set of large German cities
-in smaller Overpass requests instead of running one global query. Entering a
-specific city, for example `Berlin`, usually produces faster and more targeted
-results.
+in smaller Overpass requests instead of running one global query, and now
+collects up to ~100 businesses per city (raise `Websites (max)` for more).
+Entering a specific city, for example `Berlin`, usually produces faster and more
+targeted results.
+
+Use the `OpenStreetMap` and `DuckDuckGo` checkboxes to choose which no-key
+sources are used for the search. Disabling a source skips it entirely.
 
 You can also run the no-key workflow from the CLI:
 

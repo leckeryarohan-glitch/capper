@@ -121,6 +121,10 @@ OVERPASS_ENDPOINTS = (
 
 NOMINATIM_ENDPOINT = "https://nominatim.openstreetmap.org/search"
 
+# Minimum number of OSM websites to request per city when no location is given,
+# so multi-city runs are not throttled to a tiny share each.
+OSM_MIN_PER_LOCATION = 100
+
 
 class SearchProviderError(RuntimeError):
     pass
@@ -373,7 +377,11 @@ class OpenStreetMapSearchProvider(SearchProvider):
         results: list[SearchResult] = []
         seen_urls: set[str] = set()
         locations = osm_location_plan(location)
-        per_location_limit = limit if location.strip() else max(8, ceil(limit / len(locations)))
+        per_location_limit = (
+            limit
+            if location.strip()
+            else min(limit, max(OSM_MIN_PER_LOCATION, ceil(limit / len(locations))))
+        )
         failures: list[str] = []
         has_explicit_location = bool(location.strip())
 
@@ -472,7 +480,7 @@ def build_overpass_query(category: str, location: str, limit: int) -> str:
     else:
         scoped_selectors = [f"nwr{selector};" for selector in selectors]
 
-    count = max(limit * 5, limit)
+    count = max(limit * 10, 200)
     return (
         "[out:json][timeout:35];\n"
         f"{area_setup}"
@@ -801,12 +809,13 @@ def auto_provider() -> SearchProvider:
     return combined_provider()
 
 
-def combined_provider() -> SearchProvider:
-    """Combine all available no-key and key-based sources for maximum coverage."""
-    providers: list[SearchProvider] = [
-        OpenStreetMapSearchProvider(),
-        DuckDuckGoSearchProvider(),
-    ]
+def combined_provider(use_osm: bool = True, use_duckduckgo: bool = True) -> SearchProvider:
+    """Combine the selected no-key and key-based sources for maximum coverage."""
+    providers: list[SearchProvider] = []
+    if use_osm:
+        providers.append(OpenStreetMapSearchProvider())
+    if use_duckduckgo:
+        providers.append(DuckDuckGoSearchProvider())
     if os.getenv("GOOGLE_SEARCH_API_KEY") and os.getenv("GOOGLE_SEARCH_ENGINE_ID"):
         providers.append(GoogleCustomSearchProvider())
     if os.getenv("BRAVE_SEARCH_API_KEY"):

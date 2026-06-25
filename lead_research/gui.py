@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Mapping
 
 from .pipeline import DEFAULT_WORKERS, DiscoveryConfig, LeadStats, run_discovery
-from .search import provider_from_name
+from .search import SearchProviderError, combined_provider
 from .suppression import SuppressionList
 
 
@@ -85,7 +85,14 @@ def run_gui_discovery(
     if serpapi_key:
         os.environ["SERPAPI_API_KEY"] = serpapi_key
 
-    provider = provider_from_name(DEFAULT_PROVIDER)
+    use_osm = bool(values.get("use_osm", True))
+    use_duckduckgo = bool(values.get("use_duckduckgo", True))
+    provider = combined_provider(use_osm=use_osm, use_duckduckgo=use_duckduckgo)
+    if not getattr(provider, "providers", None):
+        raise SearchProviderError(
+            "Keine Suchquelle ausgewaehlt. Aktiviere OpenStreetMap oder DuckDuckGo "
+            "oder hinterlege einen API-Key."
+        )
     config = DiscoveryConfig(
         category=category,
         location=location,
@@ -138,6 +145,8 @@ def run_gui() -> int:
             self.limit = tk.StringVar(value=DEFAULT_LIMIT)
             self.workers = tk.StringVar(value=DEFAULT_WORKERS_TEXT)
             self.serpapi_key = tk.StringVar(value=os.environ.get("SERPAPI_API_KEY", ""))
+            self.use_osm = tk.BooleanVar(value=True)
+            self.use_duckduckgo = tk.BooleanVar(value=True)
             self.status_text = tk.StringVar(value="Bereit.")
             self.lead_count_text = tk.StringVar(value="Gefundene Leads: 0")
             self.stats_text = tk.StringVar(value="Statistik: noch keine Suche gestartet.")
@@ -170,7 +179,9 @@ def run_gui() -> int:
             ttk.Label(limits_frame, text="Websites (max)").grid(row=0, column=2, sticky="w")
             ttk.Entry(limits_frame, textvariable=self.limit, width=10).grid(row=0, column=3, padx=(4, 16))
             ttk.Label(limits_frame, text="Threads").grid(row=0, column=4, sticky="w")
-            ttk.Entry(limits_frame, textvariable=self.workers, width=6).grid(row=0, column=5, padx=(4, 0))
+            ttk.Entry(limits_frame, textvariable=self.workers, width=6).grid(row=0, column=5, padx=(4, 16))
+            ttk.Checkbutton(limits_frame, text="OpenStreetMap", variable=self.use_osm).grid(row=0, column=6, padx=(0, 8))
+            ttk.Checkbutton(limits_frame, text="DuckDuckGo", variable=self.use_duckduckgo).grid(row=0, column=7)
 
             ttk.Label(outer, text="CSV-Ausgabe").grid(row=4, column=0, sticky="w", pady=4)
             ttk.Entry(outer, textvariable=self.output).grid(row=4, column=1, sticky="ew", pady=4)
@@ -248,6 +259,8 @@ def run_gui() -> int:
                 "limit": self.limit.get(),
                 "workers": self.workers.get(),
                 "serpapi_key": self.serpapi_key.get(),
+                "use_osm": self.use_osm.get(),
+                "use_duckduckgo": self.use_duckduckgo.get(),
             }
             try:
                 require_text(values, "category", "Kategorie")

@@ -11,6 +11,8 @@ from lead_research.models import Lead, SearchResult
 
 
 class FakeProvider:
+    providers = ["osm"]
+
     def search(self, category: str, location: str, limit: int) -> list[SearchResult]:
         return [SearchResult(title="Hotel Beispiel", url="https://hotel.example")]
 
@@ -79,7 +81,7 @@ class GuiArgumentTests(unittest.TestCase):
         events: "queue.Queue[tuple]" = queue.Queue()
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / "leads.csv"
-            with patch("lead_research.gui.provider_from_name", return_value=FakeProvider()), patch(
+            with patch("lead_research.gui.combined_provider", return_value=FakeProvider()), patch(
                 "lead_research.pipeline.LeadCrawler", FakeCrawler
             ):
                 exit_code = run_gui_discovery(
