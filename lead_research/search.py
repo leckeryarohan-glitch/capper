@@ -12,6 +12,7 @@ from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from math import ceil
 from pathlib import Path
+from typing import Callable
 
 from .models import SearchResult
 
@@ -126,9 +127,38 @@ class SearchProviderError(RuntimeError):
 
 
 class SearchProvider(ABC):
+    on_status: "Callable[[str], None] | None" = None
+
+    def _report(self, message: str) -> None:
+        callback = getattr(self, "on_status", None)
+        if callback is None:
+            return
+        try:
+            callback(message)
+        except Exception:  # noqa: BLE001 - status reporting must never break a search
+            pass
+
     @abstractmethod
     def search(self, category: str, location: str, limit: int) -> list[SearchResult]:
         raise NotImplementedError
+
+
+SOURCE_LABELS = {
+    "OpenStreetMapSearchProvider": "OpenStreetMap",
+    "DuckDuckGoSearchProvider": "DuckDuckGo",
+    "GoogleCustomSearchProvider": "Google",
+    "BraveSearchProvider": "Brave",
+    "BingSearchProvider": "Bing",
+    "SerpApiSearchProvider": "SerpAPI",
+    "CommonSourcesSearchProvider": "Branchenquellen",
+    "MultiSourceProvider": "Kombiniert",
+    "FileSearchProvider": "Datei",
+    "NominatimSearchProvider": "Nominatim",
+}
+
+
+def source_label(provider: SearchProvider) -> str:
+    return SOURCE_LABELS.get(type(provider).__name__, type(provider).__name__)
 
 
 class FileSearchProvider(SearchProvider):
@@ -312,6 +342,7 @@ class OpenStreetMapSearchProvider(SearchProvider):
         has_explicit_location = bool(location.strip())
 
         for current_location in locations:
+            self._report(f"OpenStreetMap: suche '{category}' in {current_location} ...")
             location_results = self._search_nominatim(category, current_location, per_location_limit) if has_explicit_location else []
             try:
                 location_results.extend(self._search_location(category, current_location, per_location_limit))
@@ -319,6 +350,7 @@ class OpenStreetMapSearchProvider(SearchProvider):
                 failures.append(f"{current_location}: {exc}")
             if not location_results:
                 location_results = self._search_nominatim(category, current_location, per_location_limit)
+            self._report(f"OpenStreetMap: {current_location} -> {len(location_results)} Treffer")
             if not location_results:
                 continue
             for result in location_results:
@@ -544,8 +576,11 @@ class DuckDuckGoSearchProvider(SearchProvider):
         results: list[SearchResult] = []
         seen: set[str] = set()
         offset = 0
+        page_num = 0
 
         while len(results) < limit and offset <= 200:
+            page_num += 1
+            self._report(f"DuckDuckGo: Ergebnisseite {page_num} ...")
             data = urllib.parse.urlencode({"q": query, "s": offset, "kl": "de-de"}).encode("utf-8")
             request = urllib.request.Request(
                 self.endpoint,
@@ -579,6 +614,7 @@ class DuckDuckGoSearchProvider(SearchProvider):
             offset += len(links)
             time.sleep(0.4)
 
+        self._report(f"DuckDuckGo: {len(results)} Websites gefunden")
         return results
 
 
@@ -618,14 +654,25 @@ class MultiSourceProvider(SearchProvider):
         if limit < 1 or not self.providers:
             return []
 
+        labels = ", ".join(source_label(provider) for provider in self.providers)
+        self._report(f"Kombiniere {len(self.providers)} Quellen: {labels}")
+        for provider in self.providers:
+            try:
+                provider.on_status = self.on_status
+            except Exception:  # noqa: BLE001
+                pass
+
         grouped: list[list[SearchResult]] = []
         with ThreadPoolExecutor(max_workers=len(self.providers)) as executor:
-            futures = [
-                executor.submit(self._safe_search, provider, category, location, limit)
+            futures = {
+                executor.submit(self._safe_search, provider, category, location, limit): provider
                 for provider in self.providers
-            ]
+            }
             for future in as_completed(futures):
-                grouped.append(future.result())
+                provider = futures[future]
+                group = future.result()
+                self._report(f"{source_label(provider)}: {len(group)} Websites geliefert")
+                grouped.append(group)
 
         merged: list[SearchResult] = []
         seen: set[str] = set()

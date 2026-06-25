@@ -214,11 +214,23 @@ def run_discover(args: argparse.Namespace) -> int:
         dedupe_by=args.dedupe,
     )
 
+    def report(kind: str, *payload: object) -> None:
+        if kind == "status":
+            print(payload[0])
+        elif kind == "site_done":
+            url, new_leads, run_stats = payload
+            print(
+                f"[{run_stats.websites_done}/{run_stats.websites_total}] {url} "
+                f"(+{new_leads}) | leads={run_stats.leads_found} dups={run_stats.duplicates_skipped} "
+                f"pages={run_stats.pages_fetched}"
+            )
+
     stats = run_discovery(
         provider=provider,
         config=config,
         suppression=SuppressionList(args.suppression_file),
         output=args.output,
+        on_event=report,
     )
 
     print(f"Discovered {stats.leads_found} reviewable lead(s). Wrote {args.output}.")

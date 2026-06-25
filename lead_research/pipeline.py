@@ -91,9 +91,17 @@ def run_discovery(
     emit = on_event or (lambda *args, **kwargs: None)
     stats = LeadStats()
 
-    emit("status", "Suche Unternehmen und Websites ...")
+    emit("status", "Bereite Suche vor ...")
+    try:
+        provider.on_status = lambda message: emit("status", message)
+    except Exception:  # noqa: BLE001 - status hook is optional
+        pass
+
+    scope = f" in {config.location}" if config.location.strip() else ""
+    emit("status", f"Suche Quellen fuer '{config.category}'{scope} (max. {config.limit} Websites) ...")
     search_results = provider.search(config.category, config.location, config.limit)
     stats.websites_total = len(search_results)
+    emit("status", f"{stats.websites_total} Websites gefunden. Starte Crawling mit {max(1, config.workers)} Threads ...")
     emit("total", stats.websites_total)
 
     dedup = LeadDeduplicator(by=config.dedupe_by)
@@ -104,9 +112,11 @@ def run_discovery(
 
     page_lock = threading.Lock()
 
-    def on_page(_url: str) -> None:
+    def on_page(url: str) -> None:
         with page_lock:
             stats.pages_fetched += 1
+            count = stats.pages_fetched
+        emit("page", url, count)
 
     crawler = LeadCrawler(
         CrawlConfig(
@@ -148,14 +158,18 @@ def run_discovery(
                 for result in search_results
             }
             for future in as_completed(futures):
+                result = futures[future]
                 try:
                     site_leads = future.result()
                 except Exception as exc:  # noqa: BLE001 - keep run alive on a single site failure
                     site_leads = []
                     emit("warning", f"Website-Fehler: {exc}")
                 stats.websites_done += 1
+                leads_before = stats.leads_found
                 for lead in site_leads:
                     store_lead(lead)
+                new_leads = stats.leads_found - leads_before
+                emit("site_done", result.url, new_leads, stats)
                 emit("progress", stats)
                 if stats.leads_found >= config.max_leads:
                     for pending in futures:
