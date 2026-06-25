@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import threading
 import time
-import urllib.error
 import urllib.parse
 import urllib.request
 import urllib.robotparser
@@ -152,14 +151,14 @@ class LeadCrawler:
 
 
 def fetch_url(url: str) -> tuple[str, str] | None:
-    request = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": USER_AGENT,
-            "Accept": "text/html,application/xhtml+xml",
-        },
-    )
     try:
+        request = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": USER_AGENT,
+                "Accept": "text/html,application/xhtml+xml",
+            },
+        )
         with urllib.request.urlopen(request, timeout=15) as response:
             content_type = response.headers.get("Content-Type", "")
             if "text/html" not in content_type and "application/xhtml+xml" not in content_type:
@@ -167,7 +166,7 @@ def fetch_url(url: str) -> tuple[str, str] | None:
             raw = response.read(1_000_000)
             charset = response.headers.get_content_charset() or "utf-8"
             return raw.decode(charset, errors="replace"), response.geturl()
-    except (urllib.error.URLError, TimeoutError, ValueError):
+    except Exception:  # noqa: BLE001 - one unreachable/invalid URL must not abort a crawl
         return None
 
 

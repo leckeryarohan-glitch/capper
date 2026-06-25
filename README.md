@@ -24,6 +24,7 @@ easy opt-out.
   - Brave Search API via `BRAVE_SEARCH_API_KEY`
   - Bing Web Search API via `BING_SEARCH_API_KEY`
   - SerpAPI via `SERPAPI_API_KEY`
+  - ZenRows (Google SERP) via `ZENROWS_API_KEY`
 - File-based seed provider for manually reviewed URLs.
 - Website crawling with `robots.txt` checks enabled by default.
 - Contact and imprint page discovery, including automatically trying common
@@ -115,6 +116,9 @@ python3 -m lead_research discover \
   configured API providers) for the widest coverage.
 - `--limit` controls how many candidate websites are inspected (raise it for
   thousands of websites).
+- Web-search providers (SerpAPI, DuckDuckGo) automatically run multiple queries
+  across major cities when no location is given, so they keep fetching until the
+  website limit is reached instead of stopping at a single query's ~100 results.
 - `--workers` controls how many websites are crawled at the same time.
 - `--max-leads` stops the run once enough unique leads are collected.
 - `--dedupe email` (default) keeps only one lead per email address; use
@@ -149,16 +153,19 @@ python3 -m lead_research discover \
   --output leads.csv
 ```
 
-### SerpAPI key
+### SerpAPI / ZenRows keys
 
-If you have a SerpAPI key, paste it into the `SerpAPI Key` field in the GUI.
-Capper then adds Google results via SerpAPI to the combined `all` search
-(OpenStreetMap, Nominatim, DuckDuckGo). You can also set it as an environment
-variable, and from the CLI use SerpAPI directly or as part of `--provider all`:
+If you have a SerpAPI or ZenRows key, paste it into the `SerpAPI Key` or
+`ZenRows Key` field in the GUI. Capper then adds Google results via that service
+to the combined `all` search (OpenStreetMap, Nominatim, DuckDuckGo). You can also
+set them as environment variables, and from the CLI use them directly or as part
+of `--provider all`:
 
 ```bash
 export SERPAPI_API_KEY="your-serpapi-key"
+export ZENROWS_API_KEY="your-zenrows-key"
 python3 -m lead_research discover --category "hotel" --location "Berlin" --provider serpapi --output leads.csv
+python3 -m lead_research discover --category "hotel" --location "Berlin" --provider zenrows --output leads.csv
 python3 -m lead_research discover --category "hotel" --location "Berlin" --provider all --output leads.csv
 ```
 

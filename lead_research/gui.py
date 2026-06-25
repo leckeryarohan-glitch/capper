@@ -85,6 +85,10 @@ def run_gui_discovery(
     if serpapi_key:
         os.environ["SERPAPI_API_KEY"] = serpapi_key
 
+    zenrows_key = str(values.get("zenrows_key", "")).strip()
+    if zenrows_key:
+        os.environ["ZENROWS_API_KEY"] = zenrows_key
+
     use_osm = bool(values.get("use_osm", True))
     use_duckduckgo = bool(values.get("use_duckduckgo", True))
     provider = combined_provider(use_osm=use_osm, use_duckduckgo=use_duckduckgo)
@@ -145,6 +149,7 @@ def run_gui() -> int:
             self.limit = tk.StringVar(value=DEFAULT_LIMIT)
             self.workers = tk.StringVar(value=DEFAULT_WORKERS_TEXT)
             self.serpapi_key = tk.StringVar(value=os.environ.get("SERPAPI_API_KEY", ""))
+            self.zenrows_key = tk.StringVar(value=os.environ.get("ZENROWS_API_KEY", ""))
             self.use_osm = tk.BooleanVar(value=True)
             self.use_duckduckgo = tk.BooleanVar(value=True)
             self.status_text = tk.StringVar(value="Bereit.")
@@ -191,13 +196,18 @@ def run_gui() -> int:
             ttk.Entry(outer, textvariable=self.suppression_file).grid(row=5, column=1, sticky="ew", pady=4)
             ttk.Button(outer, text="Auswaehlen", command=self._choose_suppression).grid(row=5, column=2, padx=(8, 0), pady=4)
 
-            ttk.Label(outer, text="SerpAPI Key").grid(row=6, column=0, sticky="w", pady=4)
-            serpapi_entry = ttk.Entry(outer, textvariable=self.serpapi_key, show="*")
-            serpapi_entry.grid(row=6, column=1, columnspan=2, sticky="ew", pady=4)
+            keys_frame = ttk.Frame(outer)
+            keys_frame.grid(row=6, column=0, columnspan=3, sticky="ew", pady=4)
+            keys_frame.columnconfigure(1, weight=1)
+            keys_frame.columnconfigure(3, weight=1)
+            ttk.Label(keys_frame, text="SerpAPI Key").grid(row=0, column=0, sticky="w", padx=(0, 4))
+            ttk.Entry(keys_frame, textvariable=self.serpapi_key, show="*").grid(row=0, column=1, sticky="ew", padx=(0, 12))
+            ttk.Label(keys_frame, text="ZenRows Key").grid(row=0, column=2, sticky="w", padx=(0, 4))
+            ttk.Entry(keys_frame, textvariable=self.zenrows_key, show="*").grid(row=0, column=3, sticky="ew")
 
             source_text = (
                 "Vollautomatisch ohne API-Key: Capper kombiniert OpenStreetMap/Overpass, Nominatim "
-                "und DuckDuckGo. Mit SerpAPI-Key wird zusaetzlich Google ueber SerpAPI genutzt. "
+                "und DuckDuckGo. Mit SerpAPI- oder ZenRows-Key wird zusaetzlich Google genutzt. "
                 "Gefundene Websites werden parallel nach oeffentlichen B2B-Kontakten durchsucht; "
                 "doppelte E-Mails werden automatisch entfernt."
             )
@@ -259,6 +269,7 @@ def run_gui() -> int:
                 "limit": self.limit.get(),
                 "workers": self.workers.get(),
                 "serpapi_key": self.serpapi_key.get(),
+                "zenrows_key": self.zenrows_key.get(),
                 "use_osm": self.use_osm.get(),
                 "use_duckduckgo": self.use_duckduckgo.get(),
             }
