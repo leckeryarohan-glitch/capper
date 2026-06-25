@@ -5,8 +5,11 @@ import unittest
 from lead_research.models import SearchResult
 from lead_research.search import (
     CommonSourcesSearchProvider,
+    MultiSourceProvider,
     SearchProvider,
     build_overpass_query,
+    decode_duckduckgo_href,
+    duckduckgo_links_from_html,
     google_items_to_results,
     nominatim_item_matches_location,
     nominatim_items_to_results,
@@ -136,6 +139,47 @@ class SearchTests(unittest.TestCase):
         self.assertEqual(provider.calls[0][0], "hotel site:gelbeseiten.de")
         self.assertEqual(provider.calls[0][1], "Berlin")
         self.assertEqual(provider.calls[1][0], "hotel site:wlw.de")
+
+    def test_decode_duckduckgo_href_handles_redirect_and_direct(self) -> None:
+        redirect = "//duckduckgo.com/l/?uddg=https%3A%2F%2Fhotel.example%2Fkontakt&rut=abc"
+        self.assertEqual(decode_duckduckgo_href(redirect), "https://hotel.example/kontakt")
+        self.assertEqual(decode_duckduckgo_href("https://direct.example/"), "https://direct.example/")
+        self.assertEqual(decode_duckduckgo_href("//duckduckgo.com/about"), "")
+
+    def test_duckduckgo_links_from_html_extracts_result_links(self) -> None:
+        html_text = (
+            '<a rel="nofollow" class="result__a" '
+            'href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fhotel-a.example%2F">Hotel A</a>'
+            '<a class="result__a" href="https://hotel-b.example/kontakt">Hotel B</a>'
+            '<a class="other" href="https://ignore.example/">Ignore</a>'
+        )
+
+        links = duckduckgo_links_from_html(html_text)
+
+        self.assertIn("https://hotel-a.example/", links)
+        self.assertIn("https://hotel-b.example/kontakt", links)
+        self.assertNotIn("https://ignore.example/", links)
+
+    def test_multi_source_provider_merges_and_dedupes(self) -> None:
+        class StaticProvider(SearchProvider):
+            def __init__(self, results):
+                self._results = results
+
+            def search(self, category, location, limit):
+                return self._results
+
+        provider_a = StaticProvider([SearchResult(title="A", url="https://a.example/")])
+        provider_b = StaticProvider(
+            [
+                SearchResult(title="A-dup", url="https://a.example"),
+                SearchResult(title="B", url="https://b.example/"),
+            ]
+        )
+
+        merged = MultiSourceProvider([provider_a, provider_b]).search("hotel", "", 10)
+        urls = sorted(result.url for result in merged)
+
+        self.assertEqual(urls, ["https://a.example/", "https://b.example/"])
 
 
 if __name__ == "__main__":

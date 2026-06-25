@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import html
+import itertools
 import json
 import os
+import re
+import time
 import urllib.parse
 import urllib.request
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from math import ceil
 from pathlib import Path
 
@@ -527,6 +532,126 @@ def escape_overpass_regex(value: str) -> str:
     return escaped
 
 
+class DuckDuckGoSearchProvider(SearchProvider):
+    """No-key web search using the DuckDuckGo HTML endpoint, like a normal user."""
+
+    endpoint = "https://html.duckduckgo.com/html/"
+
+    def search(self, category: str, location: str, limit: int) -> list[SearchResult]:
+        if limit < 1:
+            return []
+        query = build_query(category, location)
+        results: list[SearchResult] = []
+        seen: set[str] = set()
+        offset = 0
+
+        while len(results) < limit and offset <= 200:
+            data = urllib.parse.urlencode({"q": query, "s": offset, "kl": "de-de"}).encode("utf-8")
+            request = urllib.request.Request(
+                self.endpoint,
+                data=data,
+                headers={
+                    "Accept": "text/html",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "User-Agent": "Mozilla/5.0 (compatible; capper-lead-research/0.1)",
+                },
+                method="POST",
+            )
+            try:
+                html_text = _read_text(request, timeout=20)
+            except SearchProviderError:
+                break
+
+            links = duckduckgo_links_from_html(html_text)
+            if not links:
+                break
+            for url in links:
+                normalized_url = normalize_result_url(url)
+                if not normalized_url:
+                    continue
+                key = normalized_url.lower().rstrip("/")
+                if key in seen:
+                    continue
+                seen.add(key)
+                results.append(SearchResult(title=normalized_url, url=normalized_url, snippet="DuckDuckGo result"))
+                if len(results) >= limit:
+                    return results
+            offset += len(links)
+            time.sleep(0.4)
+
+        return results
+
+
+def duckduckgo_links_from_html(html_text: str) -> list[str]:
+    links: list[str] = []
+    for attrs in re.findall(r"<a\b([^>]*)>", html_text, re.IGNORECASE):
+        if "result__a" not in attrs and "result__url" not in attrs:
+            continue
+        match = re.search(r'href="([^"]+)"', attrs, re.IGNORECASE)
+        if not match:
+            continue
+        url = decode_duckduckgo_href(html.unescape(match.group(1)))
+        if url:
+            links.append(url)
+    return links
+
+
+def decode_duckduckgo_href(href: str) -> str:
+    if href.startswith("//"):
+        href = "https:" + href
+    parsed = urllib.parse.urlparse(href)
+    if "duckduckgo.com" in parsed.netloc and parsed.path.startswith("/l/"):
+        target = urllib.parse.parse_qs(parsed.query).get("uddg", [""])[0]
+        return target or ""
+    if parsed.scheme in {"http", "https"} and "duckduckgo.com" not in parsed.netloc:
+        return href
+    return ""
+
+
+class MultiSourceProvider(SearchProvider):
+    """Aggregates several providers concurrently and merges deduplicated results."""
+
+    def __init__(self, providers: list[SearchProvider]):
+        self.providers = [provider for provider in providers if provider is not None]
+
+    def search(self, category: str, location: str, limit: int) -> list[SearchResult]:
+        if limit < 1 or not self.providers:
+            return []
+
+        grouped: list[list[SearchResult]] = []
+        with ThreadPoolExecutor(max_workers=len(self.providers)) as executor:
+            futures = [
+                executor.submit(self._safe_search, provider, category, location, limit)
+                for provider in self.providers
+            ]
+            for future in as_completed(futures):
+                grouped.append(future.result())
+
+        merged: list[SearchResult] = []
+        seen: set[str] = set()
+        for group in itertools.zip_longest(*grouped):
+            for result in group:
+                if result is None:
+                    continue
+                key = result.url.lower().rstrip("/")
+                if key in seen:
+                    continue
+                seen.add(key)
+                merged.append(result)
+                if len(merged) >= limit:
+                    return merged
+        return merged
+
+    @staticmethod
+    def _safe_search(provider: SearchProvider, category: str, location: str, limit: int) -> list[SearchResult]:
+        try:
+            return provider.search(category, location, limit)
+        except SearchProviderError:
+            return []
+        except Exception:  # noqa: BLE001 - one failing source must not abort the others
+            return []
+
+
 class CommonSourcesSearchProvider(SearchProvider):
     """Searches common business directory and marketplace domains through an API provider."""
 
@@ -572,6 +697,10 @@ def provider_from_name(name: str, seed_file: Path | None = None, source_profile:
         if isinstance(provider, OpenStreetMapSearchProvider):
             return provider
         return with_source_profile(provider, source_profile)
+    if normalized == "all":
+        return combined_provider()
+    if normalized in {"duckduckgo", "ddg"}:
+        return DuckDuckGoSearchProvider()
     if normalized == "google":
         return with_source_profile(GoogleCustomSearchProvider(), source_profile)
     if normalized == "osm":
@@ -586,7 +715,24 @@ def provider_from_name(name: str, seed_file: Path | None = None, source_profile:
 
 
 def auto_provider() -> SearchProvider:
-    return OpenStreetMapSearchProvider()
+    return combined_provider()
+
+
+def combined_provider() -> SearchProvider:
+    """Combine all available no-key and key-based sources for maximum coverage."""
+    providers: list[SearchProvider] = [
+        OpenStreetMapSearchProvider(),
+        DuckDuckGoSearchProvider(),
+    ]
+    if os.getenv("GOOGLE_SEARCH_API_KEY") and os.getenv("GOOGLE_SEARCH_ENGINE_ID"):
+        providers.append(GoogleCustomSearchProvider())
+    if os.getenv("BRAVE_SEARCH_API_KEY"):
+        providers.append(BraveSearchProvider())
+    if os.getenv("BING_SEARCH_API_KEY"):
+        providers.append(BingSearchProvider())
+    if os.getenv("SERPAPI_API_KEY"):
+        providers.append(SerpApiSearchProvider())
+    return MultiSourceProvider(providers)
 
 
 def api_provider() -> SearchProvider:
@@ -611,6 +757,16 @@ def with_source_profile(provider: SearchProvider, source_profile: str) -> Search
     if normalized == "common":
         return CommonSourcesSearchProvider(provider)
     raise SearchProviderError(f"Unsupported source profile: {source_profile}")
+
+
+def _read_text(request: urllib.request.Request, timeout: int = 20) -> str:
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            raw = response.read(2_000_000)
+            charset = response.headers.get_content_charset() or "utf-8"
+            return raw.decode(charset, errors="replace")
+    except OSError as exc:
+        raise SearchProviderError(f"Search provider request failed: {exc}") from exc
 
 
 def _read_json(request: urllib.request.Request, timeout: int = 20) -> dict:

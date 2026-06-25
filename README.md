@@ -14,8 +14,10 @@ easy opt-out.
 ## Features
 
 - Category and optional location based search queries.
-- No-key automated provider:
+- No-key automated providers:
+  - Combined multi-source via `--provider all` (default in the GUI)
   - OpenStreetMap/Overpass via `--provider osm`
+  - DuckDuckGo web search via `--provider duckduckgo`
 - Official API search providers:
   - Google Custom Search JSON API via `GOOGLE_SEARCH_API_KEY` and
     `GOOGLE_SEARCH_ENGINE_ID`
@@ -95,13 +97,17 @@ During the run, the GUI shows:
 ```bash
 python3 -m lead_research discover \
   --category "hotel" \
-  --provider osm \
-  --limit 200 \
-  --workers 16 \
+  --provider all \
+  --limit 1000 \
+  --workers 24 \
   --max-leads 5000 \
   --output leads.csv
 ```
 
+- `--provider all` combines OpenStreetMap, Nominatim, and DuckDuckGo (plus any
+  configured API providers) for the widest coverage.
+- `--limit` controls how many candidate websites are inspected (raise it for
+  thousands of websites).
 - `--workers` controls how many websites are crawled at the same time.
 - `--max-leads` stops the run once enough unique leads are collected.
 - `--dedupe email` (default) keeps only one lead per email address; use
@@ -109,11 +115,13 @@ python3 -m lead_research discover \
 - Results are streamed to the CSV as they are found, so long runs persist
   progress even if interrupted.
 
-The GUI is fully automated without API keys. It uses OpenStreetMap/Overpass to
-find real businesses that match the category and optional location, takes their
-public website URLs, then crawls those websites for public B2B contact details.
-Website crawling still respects `robots.txt` and personal-looking emails are
-excluded by default.
+The GUI is fully automated without API keys. It combines OpenStreetMap/Overpass,
+Nominatim, and DuckDuckGo to find real businesses that match the category and
+optional location, takes their public website URLs, then crawls those websites
+in parallel for public B2B contact details. The GUI lets you set how many
+websites to inspect (`Websites (max)`) and how many to crawl in parallel
+(`Threads`). Website crawling still respects `robots.txt` and personal-looking
+emails are excluded by default.
 
 If no location is entered, Capper searches a default set of large German cities
 in smaller Overpass requests instead of running one global query. Entering a

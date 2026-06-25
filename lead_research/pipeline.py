@@ -15,7 +15,7 @@ from .search import SearchProvider
 from .suppression import SuppressionList
 
 
-DEFAULT_WORKERS = 8
+DEFAULT_WORKERS = 12
 
 
 @dataclass
