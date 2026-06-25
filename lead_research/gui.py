@@ -135,6 +135,7 @@ def run_gui() -> int:
             self.status_text = tk.StringVar(value="Bereit.")
             self.lead_count_text = tk.StringVar(value="Gefundene Leads: 0")
             self.stats_text = tk.StringVar(value="Statistik: noch keine Suche gestartet.")
+            self.current_page_text = tk.StringVar(value="Aktuelle Seite: -")
             self.progress_value = tk.DoubleVar(value=0)
 
             self._build()
@@ -187,7 +188,10 @@ def run_gui() -> int:
             self.progress.grid(row=8, column=0, columnspan=3, sticky="ew")
             ttk.Label(outer, textvariable=self.status_text).grid(row=9, column=0, columnspan=2, sticky="w", pady=(4, 0))
             ttk.Label(outer, textvariable=self.lead_count_text).grid(row=9, column=2, sticky="e", pady=(4, 0))
-            ttk.Label(outer, textvariable=self.stats_text).grid(row=10, column=0, columnspan=3, sticky="w", pady=(2, 6))
+            ttk.Label(outer, textvariable=self.stats_text).grid(row=10, column=0, columnspan=3, sticky="w", pady=(2, 0))
+            ttk.Label(outer, textvariable=self.current_page_text, foreground="#555").grid(
+                row=11, column=0, columnspan=3, sticky="w", pady=(0, 6)
+            )
 
             columns = ("company", "email", "website", "status")
             self.lead_table = ttk.Treeview(outer, columns=columns, show="headings", height=8)
@@ -199,12 +203,12 @@ def run_gui() -> int:
             self.lead_table.column("email", width=180)
             self.lead_table.column("website", width=260)
             self.lead_table.column("status", width=110)
-            self.lead_table.grid(row=11, column=0, columnspan=3, sticky="nsew", pady=(8, 8))
+            self.lead_table.grid(row=12, column=0, columnspan=3, sticky="nsew", pady=(8, 8))
 
             self.log = scrolledtext.ScrolledText(outer, height=8, state="disabled")
-            self.log.grid(row=12, column=0, columnspan=3, sticky="nsew")
-            outer.rowconfigure(11, weight=1)
+            self.log.grid(row=13, column=0, columnspan=3, sticky="nsew")
             outer.rowconfigure(12, weight=1)
+            outer.rowconfigure(13, weight=1)
 
         def _choose_output(self) -> None:
             selected = filedialog.asksaveasfilename(
@@ -251,6 +255,7 @@ def run_gui() -> int:
             self.status_text.set("Starte Suche ...")
             self.lead_count_text.set("Gefundene Leads: 0")
             self.stats_text.set("Statistik: Suche wird vorbereitet ...")
+            self.current_page_text.set("Aktuelle Seite: -")
             for item in self.lead_table.get_children():
                 self.lead_table.delete(item)
 
@@ -300,6 +305,18 @@ def run_gui() -> int:
                     f"Website {stats.websites_done}/{stats.websites_total} · {stats.leads_per_minute} Leads/min"
                 )
                 self._update_stats(stats)
+            elif kind == "page":
+                url, count = message[1], message[2]
+                self.current_page_text.set(f"Aktuelle Seite ({count}): {url}")
+                self._append_log(f"  geprueft: {url}\n")
+            elif kind == "site_done":
+                url, new_leads, stats = message[1], message[2], message[3]
+                self.progress.configure(maximum=max(stats.websites_total, 1))
+                self.progress_value.set(stats.websites_done)
+                self._update_stats(stats)
+                self._append_log(
+                    f"Website fertig ({stats.websites_done}/{stats.websites_total}): {url} (+{new_leads} Leads)\n"
+                )
             elif kind == "warning":
                 self._append_log("Hinweis: " + message[1] + "\n")
             elif kind == "lead":

@@ -96,6 +96,28 @@ class PipelineTests(unittest.TestCase):
         emails = sorted(row["email"] for row in rows)
         self.assertEqual(emails, ["info@a.test", "kontakt@b.test"])
 
+    def test_run_discovery_emits_page_and_site_events(self) -> None:
+        results = [SearchResult(title="A", url="https://a.test")]
+        FakeCrawler.leads_by_url = {"https://a.test": [make_lead("info@a.test", "https://a.test")]}
+        events: list[tuple] = []
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "leads.csv"
+            with patch("lead_research.pipeline.LeadCrawler", FakeCrawler):
+                run_discovery(
+                    provider=FakeProvider(results),
+                    config=DiscoveryConfig(category="hotel", workers=1, delay=0.0),
+                    suppression=SuppressionList(None),
+                    output=output,
+                    on_event=lambda *event: events.append(event),
+                )
+
+        kinds = [event[0] for event in events]
+        self.assertIn("status", kinds)
+        self.assertIn("page", kinds)
+        self.assertIn("site_done", kinds)
+        self.assertIn("finished", kinds)
+
     def test_run_discovery_respects_max_leads(self) -> None:
         results = [SearchResult(title=f"S{i}", url=f"https://s{i}.test") for i in range(5)]
         FakeCrawler.leads_by_url = {

@@ -82,13 +82,19 @@ Then:
 3. Choose the CSV output file.
 4. Click **Leads suchen**.
 
-During the run, the GUI shows:
+During the run, the GUI shows live progress:
 
+- preparation status per source and location (e.g. which city OpenStreetMap is
+  querying and how many results each source returned),
 - a progress bar for crawled websites,
-- the currently inspected website/page,
+- the currently inspected page (`Aktuelle Seite`) and a scrolling log of every
+  page that was checked and every website that finished,
 - the live number of found leads,
 - a statistics line (websites, pages, unique domains, duplicates skipped, suppressed, leads/min),
 - and a table with each lead as soon as it is discovered.
+
+The CLI prints the same preparation status and a per-website progress line so you
+always see what is happening during long runs.
 
 ## Scaling to thousands of leads per day
 
