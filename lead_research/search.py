@@ -154,6 +154,7 @@ SOURCE_LABELS = {
     "BraveSearchProvider": "Brave",
     "BingSearchProvider": "Bing",
     "SerpApiSearchProvider": "SerpAPI",
+    "ZenRowsSearchProvider": "ZenRows",
     "CommonSourcesSearchProvider": "Branchenquellen",
     "MultiSourceProvider": "Kombiniert",
     "FileSearchProvider": "Datei",
@@ -321,6 +322,77 @@ def serpapi_items_to_results(data: dict) -> list[SearchResult]:
         for item in data.get("organic_results", [])
         if is_valid_lead_url(item.get("link", ""))
     ]
+
+
+class ZenRowsSearchProvider(SearchProvider):
+    """Google SERP scraping via the ZenRows API (autoparse), used like SerpAPI."""
+
+    endpoint = "https://api.zenrows.com/v1/"
+
+    def __init__(self, api_key: str | None = None):
+        self.api_key = api_key or os.getenv("ZENROWS_API_KEY")
+        if not self.api_key:
+            raise SearchProviderError("ZENROWS_API_KEY is required for ZenRows search.")
+
+    def search(self, category: str, location: str, limit: int) -> list[SearchResult]:
+        if limit < 1:
+            return []
+        results: list[SearchResult] = []
+        seen: set[str] = set()
+
+        for query in expand_queries(category, location):
+            if len(results) >= limit:
+                break
+            start = 0
+            while len(results) < limit and start <= 80:
+                self._report(f"ZenRows: '{query}' ab {start} ...")
+                google_url = "https://www.google.com/search?" + urllib.parse.urlencode(
+                    {"q": query, "num": 20, "start": start, "hl": "de", "gl": "de"}
+                )
+                params = urllib.parse.urlencode(
+                    {"apikey": self.api_key, "url": google_url, "autoparse": "true"}
+                )
+                request = urllib.request.Request(
+                    f"{self.endpoint}?{params}",
+                    headers={"Accept": "application/json", "User-Agent": "capper-lead-research/0.1"},
+                )
+                try:
+                    page_results = zenrows_items_to_results(_read_json(request, timeout=40))
+                except SearchProviderError:
+                    break
+                if not page_results:
+                    break
+                new_in_page = 0
+                for result in page_results:
+                    key = result.url.lower().rstrip("/")
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    new_in_page += 1
+                    results.append(result)
+                    if len(results) >= limit:
+                        self._report(f"ZenRows: {len(results)} Websites gefunden")
+                        return results
+                start += 20
+                if new_in_page == 0:
+                    break
+
+        self._report(f"ZenRows: {len(results)} Websites gefunden")
+        return results
+
+
+def zenrows_items_to_results(data: dict) -> list[SearchResult]:
+    items = data.get("organic_results") or data.get("organic") or []
+    results: list[SearchResult] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        link = item.get("link") or item.get("url") or ""
+        if not is_valid_lead_url(link):
+            continue
+        snippet = item.get("description") or item.get("snippet") or ""
+        results.append(SearchResult(title=item.get("title", ""), url=link, snippet=snippet))
+    return results
 
 
 class GoogleCustomSearchProvider(SearchProvider):
@@ -837,6 +909,8 @@ def provider_from_name(name: str, seed_file: Path | None = None, source_profile:
         return with_source_profile(BingSearchProvider(), source_profile)
     if normalized == "serpapi":
         return with_source_profile(SerpApiSearchProvider(), source_profile)
+    if normalized == "zenrows":
+        return with_source_profile(ZenRowsSearchProvider(), source_profile)
     raise SearchProviderError(f"Unsupported provider: {name}")
 
 
@@ -859,6 +933,8 @@ def combined_provider(use_osm: bool = True, use_duckduckgo: bool = True) -> Sear
         providers.append(BingSearchProvider())
     if os.getenv("SERPAPI_API_KEY"):
         providers.append(SerpApiSearchProvider())
+    if os.getenv("ZENROWS_API_KEY"):
+        providers.append(ZenRowsSearchProvider())
     return MultiSourceProvider(providers)
 
 

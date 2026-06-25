@@ -25,7 +25,9 @@ from lead_research.search import (
     osm_selectors_for_category,
     serpapi_items_to_results,
     source_label,
+    zenrows_items_to_results,
 )
+from lead_research.search import ZenRowsSearchProvider
 
 
 class RecordingProvider(SearchProvider):
@@ -211,6 +213,50 @@ class SearchTests(unittest.TestCase):
         self.assertIn("SerpAPI", labels)
         self.assertIn("OpenStreetMap", labels)
         self.assertIn("DuckDuckGo", labels)
+
+    def test_combined_provider_includes_zenrows_when_key_set(self) -> None:
+        with patch.dict("os.environ", {"ZENROWS_API_KEY": "zr-key"}, clear=True):
+            provider = combined_provider()
+
+        labels = [source_label(sub) for sub in provider.providers]
+        self.assertIn("ZenRows", labels)
+        self.assertIn("OpenStreetMap", labels)
+
+    def test_zenrows_items_to_results_parses_and_filters(self) -> None:
+        results = zenrows_items_to_results(
+            {
+                "organic_results": [
+                    {"title": "Good", "link": "https://good.example/", "description": "desc"},
+                    {"title": "Bad", "link": "/goto?url=CAES"},
+                    {"title": "Url key", "url": "https://second.example/"},
+                ]
+            }
+        )
+
+        urls = sorted(r.url for r in results)
+        self.assertEqual(urls, ["https://good.example/", "https://second.example/"])
+
+    def test_zenrows_search_pages_and_expands(self) -> None:
+        captured: list[tuple[str, str]] = []
+
+        def fake_read_json(request, timeout=20):
+            api_params = urllib.parse.parse_qs(urllib.parse.urlparse(request.full_url).query)
+            google_url = api_params.get("url", [""])[0]
+            google_params = urllib.parse.parse_qs(urllib.parse.urlparse(google_url).query)
+            query = google_params.get("q", [""])[0]
+            start = google_params.get("start", ["0"])[0]
+            captured.append((query, start))
+            if start != "0":
+                return {"organic_results": []}
+            idx = len(captured)
+            return {"organic_results": [{"title": str(idx), "link": f"https://zr{idx}.example/"}]}
+
+        provider = ZenRowsSearchProvider(api_key="zr-key")
+        with patch("lead_research.search._read_json", side_effect=fake_read_json):
+            results = provider.search("hotel", "", 4)
+
+        self.assertEqual(len(results), 4)
+        self.assertGreater(len({q for q, _ in captured}), 1)
 
     def test_combined_provider_respects_source_toggles(self) -> None:
         with patch.dict("os.environ", {}, clear=True):
