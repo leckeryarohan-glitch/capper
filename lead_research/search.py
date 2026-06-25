@@ -25,15 +25,58 @@ COMMON_SOURCE_DOMAINS = (
 )
 
 OSM_CATEGORY_TAGS = {
-    "hotel": (("tourism", "hotel"), ("tourism", "guest_house"), ("tourism", "hostel")),
-    "restaurant": (("amenity", "restaurant"), ("amenity", "cafe"), ("amenity", "fast_food")),
+    "hotel": (("tourism", "hotel"), ("tourism", "guest_house"), ("tourism", "hostel"), ("tourism", "motel")),
+    "pension": (("tourism", "guest_house"), ("tourism", "hotel")),
+    "restaurant": (("amenity", "restaurant"),),
+    "cafe": (("amenity", "cafe"),),
+    "kaffee": (("amenity", "cafe"),),
+    "bar": (("amenity", "bar"), ("amenity", "pub")),
+    "imbiss": (("amenity", "fast_food"),),
+    "baeckerei": (("shop", "bakery"),),
+    "bäckerei": (("shop", "bakery"),),
+    "metzger": (("shop", "butcher"),),
     "lager": (("building", "warehouse"), ("landuse", "industrial"), ("industrial", "warehouse")),
     "logistik": (("office", "logistics"), ("industrial", "logistics"), ("landuse", "industrial")),
+    "spedition": (("office", "logistics"), ("industrial", "logistics")),
     "elektronik": (("shop", "electronics"),),
+    "elektriker": (("craft", "electrician"),),
+    "it": (("office", "it"), ("office", "company")),
+    "software": (("office", "it"), ("office", "company")),
     "friseur": (("shop", "hairdresser"),),
+    "kosmetik": (("shop", "beauty"), ("shop", "cosmetics")),
     "arzt": (("amenity", "doctors"),),
     "zahnarzt": (("amenity", "dentist"),),
+    "apotheke": (("amenity", "pharmacy"),),
+    "tierarzt": (("amenity", "veterinary"),),
+    "physio": (("healthcare", "physiotherapist"), ("amenity", "clinic")),
     "auto": (("shop", "car_repair"), ("shop", "car"), ("amenity", "car_rental")),
+    "kfz": (("shop", "car_repair"), ("shop", "car")),
+    "werkstatt": (("shop", "car_repair"), ("craft", "")),
+    "handwerk": (("craft", ""),),
+    "maler": (("craft", "painter"),),
+    "tischler": (("craft", "carpenter"), ("craft", "joiner")),
+    "schreiner": (("craft", "carpenter"), ("craft", "joiner")),
+    "sanitaer": (("craft", "plumber"),),
+    "sanitär": (("craft", "plumber"),),
+    "klempner": (("craft", "plumber"),),
+    "dachdecker": (("craft", "roofer"),),
+    "bau": (("craft", "builder"), ("office", "construction")),
+    "immobilien": (("office", "estate_agent"),),
+    "makler": (("office", "estate_agent"),),
+    "anwalt": (("office", "lawyer"),),
+    "rechtsanwalt": (("office", "lawyer"),),
+    "steuerberater": (("office", "tax_advisor"), ("office", "accountant")),
+    "versicherung": (("office", "insurance"),),
+    "fitness": (("leisure", "fitness_centre"),),
+    "supermarkt": (("shop", "supermarket"),),
+    "moebel": (("shop", "furniture"),),
+    "möbel": (("shop", "furniture"),),
+    "blumen": (("shop", "florist"),),
+    "florist": (("shop", "florist"),),
+    "optiker": (("shop", "optician"),),
+    "buero": (("office", "company"),),
+    "büro": (("office", "company"),),
+    "firma": (("office", "company"),),
 }
 
 DEFAULT_OSM_LOCATIONS = (
@@ -47,11 +90,27 @@ DEFAULT_OSM_LOCATIONS = (
     "Dortmund",
     "Essen",
     "Leipzig",
+    "Bremen",
+    "Dresden",
+    "Hannover",
+    "Nürnberg",
+    "Duisburg",
+    "Bochum",
+    "Wuppertal",
+    "Bielefeld",
+    "Bonn",
+    "Münster",
+    "Mannheim",
+    "Karlsruhe",
+    "Augsburg",
+    "Wiesbaden",
 )
 
 OVERPASS_ENDPOINTS = (
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.openstreetmap.ru/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
 )
 
 NOMINATIM_ENDPOINT = "https://nominatim.openstreetmap.org/search"
@@ -356,7 +415,10 @@ def osm_selectors_for_category(category: str) -> list[str]:
     selectors: list[str] = []
     for keyword, tag_pairs in OSM_CATEGORY_TAGS.items():
         if keyword in normalized:
-            selectors.extend(f'["{key}"="{value}"]' for key, value in tag_pairs)
+            for key, value in tag_pairs:
+                selector = f'["{key}"]' if not value else f'["{key}"="{value}"]'
+                if selector not in selectors:
+                    selectors.append(selector)
     if selectors:
         return selectors
 

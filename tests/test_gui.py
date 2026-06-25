@@ -17,10 +17,13 @@ class FakeProvider:
 
 class FakeCrawler:
     def __init__(self, config, on_page=None, on_lead=None):
+        self.config = config
         self.on_page = on_page
         self.on_lead = on_lead
 
     def crawl_result(self, result: SearchResult, category: str) -> list[Lead]:
+        if self.on_page:
+            self.on_page("https://hotel.example/kontakt")
         lead = Lead(
             category=category,
             source_url=result.url,
@@ -28,11 +31,14 @@ class FakeCrawler:
             email="info@hotel.example",
             company_name="Hotel Beispiel",
         )
-        if self.on_page:
-            self.on_page("https://hotel.example/kontakt")
-        if self.on_lead:
-            self.on_lead(lead)
-        return [lead]
+        duplicate = Lead(
+            category=category,
+            source_url=result.url,
+            website="https://hotel.example/impressum",
+            email="info@hotel.example",
+            company_name="Hotel Beispiel",
+        )
+        return [lead, duplicate]
 
 
 class GuiArgumentTests(unittest.TestCase):
@@ -51,7 +57,8 @@ class GuiArgumentTests(unittest.TestCase):
         self.assertIn("hotel", argv)
         self.assertIn("--provider", argv)
         self.assertIn("osm", argv)
-        self.assertNotIn("--source-profile", argv)
+        self.assertIn("--workers", argv)
+        self.assertIn("--max-leads", argv)
         self.assertIn("--location", argv)
         self.assertIn("Berlin", argv)
         self.assertIn("--suppression-file", argv)
@@ -67,12 +74,12 @@ class GuiArgumentTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_simple_gui_argv({"category": "  "})
 
-    def test_run_gui_discovery_emits_progress_and_leads(self) -> None:
+    def test_run_gui_discovery_emits_progress_stats_and_dedupes(self) -> None:
         events: "queue.Queue[tuple]" = queue.Queue()
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / "leads.csv"
             with patch("lead_research.gui.provider_from_name", return_value=FakeProvider()), patch(
-                "lead_research.gui.LeadCrawler", FakeCrawler
+                "lead_research.pipeline.LeadCrawler", FakeCrawler
             ):
                 exit_code = run_gui_discovery(
                     {
@@ -87,10 +94,17 @@ class GuiArgumentTests(unittest.TestCase):
         emitted = []
         while not events.empty():
             emitted.append(events.get())
+
+        kinds = [event[0] for event in emitted]
         self.assertIn(("total", 1), emitted)
-        self.assertTrue(any(event[0] == "progress" for event in emitted))
-        self.assertTrue(any(event[0] == "lead" for event in emitted))
-        self.assertTrue(any(event[0] == "finished" and event[1] == 1 for event in emitted))
+        self.assertIn("progress", kinds)
+        self.assertIn("lead", kinds)
+
+        finished = [event for event in emitted if event[0] == "finished"]
+        self.assertEqual(len(finished), 1)
+        stats = finished[0][1]
+        self.assertEqual(stats.leads_found, 1)
+        self.assertEqual(stats.duplicates_skipped, 1)
 
 
 if __name__ == "__main__":

@@ -10,12 +10,15 @@ class SuppressionList:
         self.path = path
         self._entries = load_entries(path) if path else set()
 
+    def is_suppressed(self, lead: Lead) -> bool:
+        email = lead.email.lower()
+        domain = f"@{lead.domain}"
+        return email in self._entries or domain in self._entries or lead.domain in self._entries
+
     def apply(self, leads: list[Lead]) -> list[Lead]:
         filtered: list[Lead] = []
         for lead in leads:
-            email = lead.email.lower()
-            domain = f"@{lead.domain}"
-            if email in self._entries or domain in self._entries or lead.domain in self._entries:
+            if self.is_suppressed(lead):
                 lead.consent_status = ConsentStatus.SUPPRESSED
                 lead.notes.append("Suppressed by opt-out list")
                 continue

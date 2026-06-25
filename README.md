@@ -30,6 +30,9 @@ easy opt-out.
 - Personal-looking emails are excluded by default and can only be exported with
   an explicit review flag.
 - Suppression list support for opt-outs and blocked domains.
+- Global email-based deduplication so the same address is never stored twice.
+- Parallel website crawling (`--workers`) for high daily lead volume.
+- Streaming CSV output and live statistics (websites, pages, domains, duplicates, leads/min).
 - Batch mode for many category/location combinations with checkpoint/resume.
 - Simple desktop GUI: enter a category and start the lead search.
 - CSV and JSON export with source URLs and discovery timestamps.
@@ -82,7 +85,29 @@ During the run, the GUI shows:
 - a progress bar for crawled websites,
 - the currently inspected website/page,
 - the live number of found leads,
+- a statistics line (websites, pages, unique domains, duplicates skipped, suppressed, leads/min),
 - and a table with each lead as soon as it is discovered.
+
+## Scaling to thousands of leads per day
+
+`discover` crawls websites in parallel and writes results incrementally:
+
+```bash
+python3 -m lead_research discover \
+  --category "hotel" \
+  --provider osm \
+  --limit 200 \
+  --workers 16 \
+  --max-leads 5000 \
+  --output leads.csv
+```
+
+- `--workers` controls how many websites are crawled at the same time.
+- `--max-leads` stops the run once enough unique leads are collected.
+- `--dedupe email` (default) keeps only one lead per email address; use
+  `--dedupe email_website` to keep one per email/website pair.
+- Results are streamed to the CSV as they are found, so long runs persist
+  progress even if interrupted.
 
 The GUI is fully automated without API keys. It uses OpenStreetMap/Overpass to
 find real businesses that match the category and optional location, takes their

@@ -5,9 +5,7 @@ import threading
 from pathlib import Path
 from typing import Mapping
 
-from .crawl import CrawlConfig, LeadCrawler
-from .export import write_csv, write_json
-from .models import Lead, dedupe_leads
+from .pipeline import DEFAULT_WORKERS, DiscoveryConfig, LeadStats, run_discovery
 from .search import provider_from_name
 from .suppression import SuppressionList
 
@@ -16,6 +14,8 @@ DEFAULT_OUTPUT = "leads.csv"
 DEFAULT_LIMIT = "50"
 DEFAULT_MAX_PAGES = "3"
 DEFAULT_DELAY = "1.0"
+DEFAULT_MAX_LEADS = "1000"
+DEFAULT_WORKERS_TEXT = str(DEFAULT_WORKERS)
 
 
 def build_simple_gui_argv(values: Mapping[str, str | bool]) -> list[str]:
@@ -34,6 +34,10 @@ def build_simple_gui_argv(values: Mapping[str, str | bool]) -> list[str]:
         DEFAULT_MAX_PAGES,
         "--delay",
         DEFAULT_DELAY,
+        "--workers",
+        DEFAULT_WORKERS_TEXT,
+        "--max-leads",
+        str(values.get("max_leads", DEFAULT_MAX_LEADS)).strip() or DEFAULT_MAX_LEADS,
         "--output",
         output,
     ]
@@ -55,6 +59,14 @@ def require_text(values: Mapping[str, str | bool], key: str, label: str) -> str:
     return value.strip()
 
 
+def parse_positive_int(value: str | bool | None, default: int) -> int:
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
 def run_gui_discovery(
     values: Mapping[str, str | bool],
     events: "queue.Queue[tuple]",
@@ -63,52 +75,29 @@ def run_gui_discovery(
     location = str(values.get("location", "")).strip()
     output = Path(str(values.get("output", DEFAULT_OUTPUT)).strip() or DEFAULT_OUTPUT)
     suppression_path = optional_existing_path(values.get("suppression_file"))
+    max_leads = parse_positive_int(values.get("max_leads"), int(DEFAULT_MAX_LEADS))
 
-    events.put(("status", "Suche Unternehmen und Websites ..."))
     provider = provider_from_name("osm")
-    search_results = provider.search(category, location, int(DEFAULT_LIMIT))
-    events.put(("total", len(search_results)))
-
-    suppression = SuppressionList(suppression_path)
-    seen_live: set[tuple[str, str]] = set()
-    collected: list[Lead] = []
-
-    def publish_lead(lead: Lead) -> None:
-        key = lead.key()
-        if key in seen_live:
-            return
-        filtered = suppression.apply([lead])
-        if not filtered:
-            return
-        seen_live.add(key)
-        events.put(("lead", filtered[0], len(seen_live)))
-
-    def publish_page(url: str) -> None:
-        events.put(("page", url))
-
-    crawler = LeadCrawler(
-        CrawlConfig(
-            max_pages_per_site=int(DEFAULT_MAX_PAGES),
-            delay_seconds=float(DEFAULT_DELAY),
-            include_personal=False,
-            respect_robots=True,
-        ),
-        on_page=publish_page,
-        on_lead=publish_lead,
+    config = DiscoveryConfig(
+        category=category,
+        location=location,
+        limit=int(DEFAULT_LIMIT),
+        max_pages_per_site=int(DEFAULT_MAX_PAGES),
+        delay=float(DEFAULT_DELAY),
+        include_personal=False,
+        respect_robots=True,
+        workers=DEFAULT_WORKERS,
+        max_leads=max_leads,
+        dedupe_by="email",
     )
 
-    for index, result in enumerate(search_results, start=1):
-        events.put(("progress", index - 1, len(search_results), result.url))
-        collected.extend(crawler.crawl_result(result, category))
-        events.put(("progress", index, len(search_results), result.url))
-
-    final_leads = suppression.apply(dedupe_leads(collected))
-    if output.suffix.lower() == ".json":
-        write_json(final_leads, output)
-    else:
-        write_csv(final_leads, output)
-
-    events.put(("finished", len(final_leads), str(output)))
+    run_discovery(
+        provider=provider,
+        config=config,
+        suppression=SuppressionList(suppression_path),
+        output=output,
+        on_event=lambda *event: events.put(event),
+    )
     return 0
 
 
@@ -132,14 +121,15 @@ def run_gui() -> int:
             self.root.title("Capper Lead Finder")
             self.messages: "queue.Queue[tuple]" = queue.Queue()
             self.worker: threading.Thread | None = None
-            self.live_lead_count = 0
 
             self.category = tk.StringVar(value="hotel")
             self.location = tk.StringVar(value="")
             self.output = tk.StringVar(value=DEFAULT_OUTPUT)
             self.suppression_file = tk.StringVar(value="examples/suppression.txt")
+            self.max_leads = tk.StringVar(value=DEFAULT_MAX_LEADS)
             self.status_text = tk.StringVar(value="Bereit.")
             self.lead_count_text = tk.StringVar(value="Gefundene Leads: 0")
+            self.stats_text = tk.StringVar(value="Statistik: noch keine Suche gestartet.")
             self.progress_value = tk.DoubleVar(value=0)
 
             self._build()
@@ -161,27 +151,32 @@ def run_gui() -> int:
             ttk.Label(outer, text="Ort optional").grid(row=2, column=0, sticky="w", pady=4)
             ttk.Entry(outer, textvariable=self.location).grid(row=2, column=1, columnspan=2, sticky="ew", pady=4)
 
-            ttk.Label(outer, text="CSV-Ausgabe").grid(row=3, column=0, sticky="w", pady=4)
-            ttk.Entry(outer, textvariable=self.output).grid(row=3, column=1, sticky="ew", pady=4)
-            ttk.Button(outer, text="Auswaehlen", command=self._choose_output).grid(row=3, column=2, padx=(8, 0), pady=4)
+            ttk.Label(outer, text="Max. Leads").grid(row=3, column=0, sticky="w", pady=4)
+            ttk.Entry(outer, textvariable=self.max_leads).grid(row=3, column=1, columnspan=2, sticky="ew", pady=4)
 
-            ttk.Label(outer, text="Opt-out Liste").grid(row=4, column=0, sticky="w", pady=4)
-            ttk.Entry(outer, textvariable=self.suppression_file).grid(row=4, column=1, sticky="ew", pady=4)
-            ttk.Button(outer, text="Auswaehlen", command=self._choose_suppression).grid(row=4, column=2, padx=(8, 0), pady=4)
+            ttk.Label(outer, text="CSV-Ausgabe").grid(row=4, column=0, sticky="w", pady=4)
+            ttk.Entry(outer, textvariable=self.output).grid(row=4, column=1, sticky="ew", pady=4)
+            ttk.Button(outer, text="Auswaehlen", command=self._choose_output).grid(row=4, column=2, padx=(8, 0), pady=4)
+
+            ttk.Label(outer, text="Opt-out Liste").grid(row=5, column=0, sticky="w", pady=4)
+            ttk.Entry(outer, textvariable=self.suppression_file).grid(row=5, column=1, sticky="ew", pady=4)
+            ttk.Button(outer, text="Auswaehlen", command=self._choose_suppression).grid(row=5, column=2, padx=(8, 0), pady=4)
 
             source_text = (
                 "Vollautomatisch ohne API-Key: Capper nutzt OpenStreetMap/Overpass und Nominatim, "
-                "findet reale Unternehmen mit Website und durchsucht diese Websites nach oeffentlichen B2B-Kontakten."
+                "findet reale Unternehmen mit Website und durchsucht diese Websites parallel nach "
+                "oeffentlichen B2B-Kontakten. Doppelte E-Mails werden automatisch entfernt."
             )
-            ttk.Label(outer, text=source_text, wraplength=720).grid(row=5, column=0, columnspan=3, sticky="ew", pady=(10, 8))
+            ttk.Label(outer, text=source_text, wraplength=760).grid(row=6, column=0, columnspan=3, sticky="ew", pady=(10, 8))
 
             self.start_button = ttk.Button(outer, text="Leads suchen", command=self._start)
-            self.start_button.grid(row=6, column=0, columnspan=3, sticky="ew", pady=(4, 10))
+            self.start_button.grid(row=7, column=0, columnspan=3, sticky="ew", pady=(4, 10))
 
             self.progress = ttk.Progressbar(outer, variable=self.progress_value, maximum=1)
-            self.progress.grid(row=7, column=0, columnspan=3, sticky="ew")
-            ttk.Label(outer, textvariable=self.status_text).grid(row=8, column=0, columnspan=2, sticky="w", pady=(4, 0))
-            ttk.Label(outer, textvariable=self.lead_count_text).grid(row=8, column=2, sticky="e", pady=(4, 0))
+            self.progress.grid(row=8, column=0, columnspan=3, sticky="ew")
+            ttk.Label(outer, textvariable=self.status_text).grid(row=9, column=0, columnspan=2, sticky="w", pady=(4, 0))
+            ttk.Label(outer, textvariable=self.lead_count_text).grid(row=9, column=2, sticky="e", pady=(4, 0))
+            ttk.Label(outer, textvariable=self.stats_text).grid(row=10, column=0, columnspan=3, sticky="w", pady=(2, 6))
 
             columns = ("company", "email", "website", "status")
             self.lead_table = ttk.Treeview(outer, columns=columns, show="headings", height=8)
@@ -193,12 +188,12 @@ def run_gui() -> int:
             self.lead_table.column("email", width=180)
             self.lead_table.column("website", width=260)
             self.lead_table.column("status", width=110)
-            self.lead_table.grid(row=9, column=0, columnspan=3, sticky="nsew", pady=(8, 8))
+            self.lead_table.grid(row=11, column=0, columnspan=3, sticky="nsew", pady=(8, 8))
 
             self.log = scrolledtext.ScrolledText(outer, height=8, state="disabled")
-            self.log.grid(row=10, column=0, columnspan=3, sticky="nsew")
-            outer.rowconfigure(9, weight=1)
-            outer.rowconfigure(10, weight=1)
+            self.log.grid(row=12, column=0, columnspan=3, sticky="nsew")
+            outer.rowconfigure(11, weight=1)
+            outer.rowconfigure(12, weight=1)
 
         def _choose_output(self) -> None:
             selected = filedialog.asksaveasfilename(
@@ -223,26 +218,26 @@ def run_gui() -> int:
                 "location": self.location.get(),
                 "output": self.output.get(),
                 "suppression_file": self.suppression_file.get(),
+                "max_leads": self.max_leads.get(),
             }
             try:
-                argv = build_simple_gui_argv(values)
+                require_text(values, "category", "Kategorie")
             except ValueError as exc:
                 messagebox.showerror("Eingabe pruefen", str(exc))
                 return
 
             self._reset_run()
             self._append_log("\nStarte vollautomatische Suche fuer Kategorie: " + self.category.get().strip() + "\n")
-            self._append_log("Befehl: capper " + " ".join(argv) + "\n")
             self.start_button.configure(state="disabled")
             self.worker = threading.Thread(target=self._run_discovery, args=(values,), daemon=True)
             self.worker.start()
 
         def _reset_run(self) -> None:
-            self.live_lead_count = 0
             self.progress.configure(maximum=1)
             self.progress_value.set(0)
             self.status_text.set("Starte Suche ...")
             self.lead_count_text.set("Gefundene Leads: 0")
+            self.stats_text.set("Statistik: Suche wird vorbereitet ...")
             for item in self.lead_table.get_children():
                 self.lead_table.delete(item)
 
@@ -263,6 +258,17 @@ def run_gui() -> int:
                 self._handle_message(message)
             self.root.after(100, self._poll_messages)
 
+        def _update_stats(self, stats: LeadStats) -> None:
+            self.lead_count_text.set(f"Gefundene Leads: {stats.leads_found}")
+            self.stats_text.set(
+                f"Websites {stats.websites_done}/{stats.websites_total} · "
+                f"Seiten {stats.pages_fetched} · "
+                f"Firmen-Domains {stats.unique_domains} · "
+                f"Duplikate uebersprungen {stats.duplicates_skipped} · "
+                f"Gesperrt {stats.suppressed_skipped} · "
+                f"{stats.leads_per_minute}/min"
+            )
+
         def _handle_message(self, message: tuple) -> None:
             kind = message[0]
             if kind == "status":
@@ -272,18 +278,20 @@ def run_gui() -> int:
                 total = max(int(message[1]), 1)
                 self.progress.configure(maximum=total)
                 self.progress_value.set(0)
-                self.status_text.set(f"{message[1]} Websites gefunden. Starte Crawling ...")
+                self.status_text.set(f"{message[1]} Websites gefunden. Starte paralleles Crawling ...")
             elif kind == "progress":
-                current, total, url = message[1], message[2], message[3]
-                self.progress.configure(maximum=max(total, 1))
-                self.progress_value.set(current)
-                self.status_text.set(f"Website {current}/{total}: {url}")
-            elif kind == "page":
-                self._append_log("Pruefe Seite: " + message[1] + "\n")
+                stats = message[1]
+                self.progress.configure(maximum=max(stats.websites_total, 1))
+                self.progress_value.set(stats.websites_done)
+                self.status_text.set(
+                    f"Website {stats.websites_done}/{stats.websites_total} · {stats.leads_per_minute} Leads/min"
+                )
+                self._update_stats(stats)
+            elif kind == "warning":
+                self._append_log("Hinweis: " + message[1] + "\n")
             elif kind == "lead":
-                lead, count = message[1], message[2]
-                self.live_lead_count = count
-                self.lead_count_text.set(f"Gefundene Leads: {count}")
+                lead, stats = message[1], message[2]
+                self._update_stats(stats)
                 self.lead_table.insert(
                     "",
                     "end",
@@ -296,10 +304,13 @@ def run_gui() -> int:
                 )
                 self._append_log(f"Lead gefunden: {lead.email} ({lead.company_name})\n")
             elif kind == "finished":
-                count, output = message[1], message[2]
-                self.lead_count_text.set(f"Gefundene Leads: {count}")
-                self.status_text.set(f"Fertig. {count} Leads geschrieben nach {output}.")
-                self._append_log(f"Fertig. {count} Leads geschrieben nach {output}.\n")
+                stats, output = message[1], message[2]
+                self._update_stats(stats)
+                self.status_text.set(f"Fertig. {stats.leads_found} Leads geschrieben nach {output}.")
+                self._append_log(
+                    f"Fertig. {stats.leads_found} Leads, {stats.duplicates_skipped} Duplikate uebersprungen, "
+                    f"geschrieben nach {output}.\n"
+                )
             elif kind == "error":
                 self.status_text.set("Fehler: " + message[1])
                 self._append_log("Fehler: " + message[1] + "\n")
