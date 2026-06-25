@@ -3,11 +3,15 @@ from __future__ import annotations
 import unittest
 
 from lead_research.models import SearchResult
+from unittest.mock import patch
+
 from lead_research.search import (
     CommonSourcesSearchProvider,
     MultiSourceProvider,
     SearchProvider,
+    SerpApiSearchProvider,
     build_overpass_query,
+    combined_provider,
     decode_duckduckgo_href,
     duckduckgo_links_from_html,
     google_items_to_results,
@@ -16,6 +20,8 @@ from lead_research.search import (
     osm_elements_to_results,
     osm_location_plan,
     osm_selectors_for_category,
+    serpapi_items_to_results,
+    source_label,
 )
 
 
@@ -180,6 +186,42 @@ class SearchTests(unittest.TestCase):
         urls = sorted(result.url for result in merged)
 
         self.assertEqual(urls, ["https://a.example/", "https://b.example/"])
+
+    def test_serpapi_items_to_results_maps_organic_results(self) -> None:
+        results = serpapi_items_to_results(
+            {
+                "organic_results": [
+                    {"title": "Hotel A", "link": "https://hotel-a.example/", "snippet": "A"},
+                    {"title": "No link"},
+                ]
+            }
+        )
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].url, "https://hotel-a.example/")
+
+    def test_combined_provider_includes_serpapi_when_key_set(self) -> None:
+        with patch.dict("os.environ", {"SERPAPI_API_KEY": "test-key"}, clear=False):
+            provider = combined_provider()
+
+        labels = [source_label(sub) for sub in provider.providers]
+        self.assertIn("SerpAPI", labels)
+        self.assertIn("OpenStreetMap", labels)
+        self.assertIn("DuckDuckGo", labels)
+
+    def test_serpapi_paging_collects_multiple_pages(self) -> None:
+        pages = [
+            {"organic_results": [{"title": "1", "link": "https://one.example/"}]},
+            {"organic_results": [{"title": "2", "link": "https://two.example/"}]},
+            {"organic_results": []},
+        ]
+        provider = SerpApiSearchProvider(api_key="test-key")
+
+        with patch("lead_research.search._read_json", side_effect=pages):
+            results = provider.search("hotel", "Berlin", 10)
+
+        urls = sorted(result.url for result in results)
+        self.assertEqual(urls, ["https://one.example/", "https://two.example/"])
 
 
 if __name__ == "__main__":

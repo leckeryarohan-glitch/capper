@@ -255,23 +255,59 @@ class SerpApiSearchProvider(SearchProvider):
             raise SearchProviderError("SERPAPI_API_KEY is required for SerpAPI search.")
 
     def search(self, category: str, location: str, limit: int) -> list[SearchResult]:
+        if limit < 1:
+            return []
         query = build_query(category, location)
-        params = urllib.parse.urlencode({"engine": "google", "q": query, "api_key": self.api_key})
-        request = urllib.request.Request(
-            f"{self.endpoint}?{params}",
-            headers={"Accept": "application/json", "User-Agent": "capper-lead-research/0.1"},
-        )
-        data = _read_json(request)
-        organic_results = data.get("organic_results", [])
-        return [
-            SearchResult(
-                title=item.get("title", ""),
-                url=item.get("link", ""),
-                snippet=item.get("snippet", ""),
+        results: list[SearchResult] = []
+        seen: set[str] = set()
+        start = 0
+
+        while len(results) < limit and start <= 90:
+            self._report(f"SerpAPI: Ergebnisse ab {start} ...")
+            params = urllib.parse.urlencode(
+                {
+                    "engine": "google",
+                    "q": query,
+                    "api_key": self.api_key,
+                    "num": 10,
+                    "start": start,
+                }
             )
-            for item in organic_results
-            if item.get("link")
-        ][:limit]
+            request = urllib.request.Request(
+                f"{self.endpoint}?{params}",
+                headers={"Accept": "application/json", "User-Agent": "capper-lead-research/0.1"},
+            )
+            try:
+                page_results = serpapi_items_to_results(_read_json(request))
+            except SearchProviderError:
+                break
+            if not page_results:
+                break
+            for result in page_results:
+                key = result.url.lower().rstrip("/")
+                if key in seen:
+                    continue
+                seen.add(key)
+                results.append(result)
+                if len(results) >= limit:
+                    self._report(f"SerpAPI: {len(results)} Websites gefunden")
+                    return results
+            start += len(page_results)
+
+        self._report(f"SerpAPI: {len(results)} Websites gefunden")
+        return results
+
+
+def serpapi_items_to_results(data: dict) -> list[SearchResult]:
+    return [
+        SearchResult(
+            title=item.get("title", ""),
+            url=item.get("link", ""),
+            snippet=item.get("snippet", ""),
+        )
+        for item in data.get("organic_results", [])
+        if item.get("link")
+    ]
 
 
 class GoogleCustomSearchProvider(SearchProvider):

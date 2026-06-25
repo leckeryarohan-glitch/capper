@@ -144,6 +144,19 @@ python3 -m lead_research discover \
   --output leads.csv
 ```
 
+### SerpAPI key
+
+If you have a SerpAPI key, paste it into the `SerpAPI Key` field in the GUI.
+Capper then adds Google results via SerpAPI to the combined `all` search
+(OpenStreetMap, Nominatim, DuckDuckGo). You can also set it as an environment
+variable, and from the CLI use SerpAPI directly or as part of `--provider all`:
+
+```bash
+export SERPAPI_API_KEY="your-serpapi-key"
+python3 -m lead_research discover --category "hotel" --location "Berlin" --provider serpapi --output leads.csv
+python3 -m lead_research discover --category "hotel" --location "Berlin" --provider all --output leads.csv
+```
+
 Google-backed search remains available when you do have credentials:
 
 ```bash

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import queue
 import threading
 from pathlib import Path
@@ -80,6 +81,10 @@ def run_gui_discovery(
     limit = parse_positive_int(values.get("limit"), int(DEFAULT_LIMIT))
     workers = parse_positive_int(values.get("workers"), DEFAULT_WORKERS)
 
+    serpapi_key = str(values.get("serpapi_key", "")).strip()
+    if serpapi_key:
+        os.environ["SERPAPI_API_KEY"] = serpapi_key
+
     provider = provider_from_name(DEFAULT_PROVIDER)
     config = DiscoveryConfig(
         category=category,
@@ -132,6 +137,7 @@ def run_gui() -> int:
             self.max_leads = tk.StringVar(value=DEFAULT_MAX_LEADS)
             self.limit = tk.StringVar(value=DEFAULT_LIMIT)
             self.workers = tk.StringVar(value=DEFAULT_WORKERS_TEXT)
+            self.serpapi_key = tk.StringVar(value=os.environ.get("SERPAPI_API_KEY", ""))
             self.status_text = tk.StringVar(value="Bereit.")
             self.lead_count_text = tk.StringVar(value="Gefundene Leads: 0")
             self.stats_text = tk.StringVar(value="Statistik: noch keine Suche gestartet.")
@@ -174,23 +180,28 @@ def run_gui() -> int:
             ttk.Entry(outer, textvariable=self.suppression_file).grid(row=5, column=1, sticky="ew", pady=4)
             ttk.Button(outer, text="Auswaehlen", command=self._choose_suppression).grid(row=5, column=2, padx=(8, 0), pady=4)
 
+            ttk.Label(outer, text="SerpAPI Key").grid(row=6, column=0, sticky="w", pady=4)
+            serpapi_entry = ttk.Entry(outer, textvariable=self.serpapi_key, show="*")
+            serpapi_entry.grid(row=6, column=1, columnspan=2, sticky="ew", pady=4)
+
             source_text = (
                 "Vollautomatisch ohne API-Key: Capper kombiniert OpenStreetMap/Overpass, Nominatim "
-                "und DuckDuckGo, findet reale Unternehmen mit Website und durchsucht diese parallel "
-                "nach oeffentlichen B2B-Kontakten. Doppelte E-Mails werden automatisch entfernt."
+                "und DuckDuckGo. Mit SerpAPI-Key wird zusaetzlich Google ueber SerpAPI genutzt. "
+                "Gefundene Websites werden parallel nach oeffentlichen B2B-Kontakten durchsucht; "
+                "doppelte E-Mails werden automatisch entfernt."
             )
-            ttk.Label(outer, text=source_text, wraplength=760).grid(row=6, column=0, columnspan=3, sticky="ew", pady=(10, 8))
+            ttk.Label(outer, text=source_text, wraplength=760).grid(row=7, column=0, columnspan=3, sticky="ew", pady=(10, 8))
 
             self.start_button = ttk.Button(outer, text="Leads suchen", command=self._start)
-            self.start_button.grid(row=7, column=0, columnspan=3, sticky="ew", pady=(4, 10))
+            self.start_button.grid(row=8, column=0, columnspan=3, sticky="ew", pady=(4, 10))
 
             self.progress = ttk.Progressbar(outer, variable=self.progress_value, maximum=1)
-            self.progress.grid(row=8, column=0, columnspan=3, sticky="ew")
-            ttk.Label(outer, textvariable=self.status_text).grid(row=9, column=0, columnspan=2, sticky="w", pady=(4, 0))
-            ttk.Label(outer, textvariable=self.lead_count_text).grid(row=9, column=2, sticky="e", pady=(4, 0))
-            ttk.Label(outer, textvariable=self.stats_text).grid(row=10, column=0, columnspan=3, sticky="w", pady=(2, 0))
+            self.progress.grid(row=9, column=0, columnspan=3, sticky="ew")
+            ttk.Label(outer, textvariable=self.status_text).grid(row=10, column=0, columnspan=2, sticky="w", pady=(4, 0))
+            ttk.Label(outer, textvariable=self.lead_count_text).grid(row=10, column=2, sticky="e", pady=(4, 0))
+            ttk.Label(outer, textvariable=self.stats_text).grid(row=11, column=0, columnspan=3, sticky="w", pady=(2, 0))
             ttk.Label(outer, textvariable=self.current_page_text, foreground="#555").grid(
-                row=11, column=0, columnspan=3, sticky="w", pady=(0, 6)
+                row=12, column=0, columnspan=3, sticky="w", pady=(0, 6)
             )
 
             columns = ("company", "email", "website", "status")
@@ -203,12 +214,12 @@ def run_gui() -> int:
             self.lead_table.column("email", width=180)
             self.lead_table.column("website", width=260)
             self.lead_table.column("status", width=110)
-            self.lead_table.grid(row=12, column=0, columnspan=3, sticky="nsew", pady=(8, 8))
+            self.lead_table.grid(row=13, column=0, columnspan=3, sticky="nsew", pady=(8, 8))
 
             self.log = scrolledtext.ScrolledText(outer, height=8, state="disabled")
-            self.log.grid(row=13, column=0, columnspan=3, sticky="nsew")
-            outer.rowconfigure(12, weight=1)
+            self.log.grid(row=14, column=0, columnspan=3, sticky="nsew")
             outer.rowconfigure(13, weight=1)
+            outer.rowconfigure(14, weight=1)
 
         def _choose_output(self) -> None:
             selected = filedialog.asksaveasfilename(
@@ -236,6 +247,7 @@ def run_gui() -> int:
                 "max_leads": self.max_leads.get(),
                 "limit": self.limit.get(),
                 "workers": self.workers.get(),
+                "serpapi_key": self.serpapi_key.get(),
             }
             try:
                 require_text(values, "category", "Kategorie")
