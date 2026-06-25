@@ -275,6 +275,9 @@ class SerpApiSearchProvider(SearchProvider):
                     "api_key": self.api_key,
                     "num": 10,
                     "start": start,
+                    "hl": "de",
+                    "gl": "de",
+                    "google_domain": "google.de",
                 }
             )
             request = urllib.request.Request(
@@ -287,16 +290,20 @@ class SerpApiSearchProvider(SearchProvider):
                 break
             if not page_results:
                 break
+            new_in_page = 0
             for result in page_results:
                 key = result.url.lower().rstrip("/")
                 if key in seen:
                     continue
                 seen.add(key)
+                new_in_page += 1
                 results.append(result)
                 if len(results) >= limit:
                     self._report(f"SerpAPI: {len(results)} Websites gefunden")
                     return results
-            start += len(page_results)
+            start += 10
+            if new_in_page == 0:
+                break
 
         self._report(f"SerpAPI: {len(results)} Websites gefunden")
         return results

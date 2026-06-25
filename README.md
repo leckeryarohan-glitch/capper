@@ -26,7 +26,8 @@ easy opt-out.
   - SerpAPI via `SERPAPI_API_KEY`
 - File-based seed provider for manually reviewed URLs.
 - Website crawling with `robots.txt` checks enabled by default.
-- Contact and imprint page discovery.
+- Contact and imprint page discovery, including automatically trying common
+  `Impressum`/`Kontakt` paths (German sites must publish contact details there).
 - Public email and phone extraction.
 - Role-address preference (`info@`, `kontakt@`, `sales@`, etc.).
 - Personal-looking emails are excluded by default and can only be exported with
