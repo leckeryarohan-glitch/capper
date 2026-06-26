@@ -52,6 +52,19 @@ class LocationTests(unittest.TestCase):
         self.assertEqual(pairs[0][1], "DE")
         self.assertEqual(pairs[5][1], "AT")
 
+    def test_cities_for_mass_web_search_returns_all_cached_cities(self) -> None:
+        from lead_research.locations import cities_for_mass_web_search
+
+        pairs = cities_for_mass_web_search(("DE",))
+        self.assertGreater(len(pairs), 1000)
+        self.assertEqual(pairs[0][1], "DE")
+
+    def test_cities_for_mass_web_search_can_cap_per_country(self) -> None:
+        from lead_research.locations import cities_for_mass_web_search
+
+        pairs = cities_for_mass_web_search(("DE", "AT"), per_country=3)
+        self.assertEqual(len(pairs), 6)
+
 
 if __name__ == "__main__":
     unittest.main()
