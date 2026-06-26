@@ -268,6 +268,22 @@ class SearchTests(unittest.TestCase):
         self.assertEqual(data["organic_results"][0]["link"], "https://ok.example/")
         self.assertEqual(attempts["count"], 3)
 
+    def test_zenrows_uses_adaptive_stealth_mode(self) -> None:
+        captured_urls: list[str] = []
+
+        def fake_read_json_with_retry(request, timeout=60, retries=4, backoff_seconds=2.0, **kwargs):
+            captured_urls.append(request.full_url)
+            return {"organic_results": [{"title": "Hotel", "link": "https://hotel.example/"}]}
+
+        provider = ZenRowsSearchProvider(api_key="zr-key")
+        with patch("lead_research.search._read_json_with_retry", side_effect=fake_read_json_with_retry), patch(
+            "lead_research.search.time.sleep"
+        ):
+            results = provider.search("hotel", "Berlin", 1)
+
+        self.assertEqual(len(results), 1)
+        self.assertIn("mode=auto", captured_urls[0])
+
     def test_zenrows_search_pages_and_expands(self) -> None:
         captured: list[tuple[str, str]] = []
 
