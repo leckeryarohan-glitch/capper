@@ -8,6 +8,7 @@ from .batch import read_terms, run_batch_discovery
 from .crawl import CrawlConfig
 from .pipeline import DEFAULT_WORKERS, DiscoveryConfig, run_discovery
 from .search import SearchProviderError, provider_from_name
+from .locations import parse_countries
 from .suppression import SuppressionList
 
 
@@ -24,6 +25,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     discover.add_argument("--category", required=True, help="Business category, e.g. hotel.")
     discover.add_argument("--location", default="", help="Optional location, e.g. Berlin.")
+    discover.add_argument(
+        "--countries",
+        default="DE",
+        help="Comma-separated ISO country codes for nationwide search when no location is given (DE, AT).",
+    )
     discover.add_argument(
         "--provider",
         choices=["all", "auto", "osm", "duckduckgo", "google", "brave", "bing", "serpapi", "zenrows", "file"],
@@ -204,6 +210,7 @@ def run_discover(args: argparse.Namespace) -> int:
     config = DiscoveryConfig(
         category=args.category,
         location=args.location,
+        countries=parse_countries(args.countries),
         limit=args.limit,
         max_pages_per_site=args.max_pages_per_site,
         delay=args.delay,

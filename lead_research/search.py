@@ -10,10 +10,18 @@ import urllib.parse
 import urllib.request
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from math import ceil
 from pathlib import Path
 from typing import Callable
 
+from .locations import (
+    DEFAULT_COUNTRIES,
+    SUPPORTED_COUNTRIES,
+    ZENROWS_LOCALE,
+    country_label,
+    top_cities_for_web_search,
+)
 from .models import SearchResult
 
 
@@ -85,32 +93,10 @@ OSM_CATEGORY_TAGS = {
     "firma": (("office", "company"),),
 }
 
-DEFAULT_OSM_LOCATIONS = (
-    "Berlin",
-    "Hamburg",
-    "München",
-    "Köln",
-    "Frankfurt am Main",
-    "Stuttgart",
-    "Düsseldorf",
-    "Dortmund",
-    "Essen",
-    "Leipzig",
-    "Bremen",
-    "Dresden",
-    "Hannover",
-    "Nürnberg",
-    "Duisburg",
-    "Bochum",
-    "Wuppertal",
-    "Bielefeld",
-    "Bonn",
-    "Münster",
-    "Mannheim",
-    "Karlsruhe",
-    "Augsburg",
-    "Wiesbaden",
-)
+@dataclass(frozen=True)
+class OsmSearchTarget:
+    label: str
+    country_code: str | None = None
 
 OVERPASS_ENDPOINTS = (
     "https://overpass-api.de/api/interpreter",
@@ -143,7 +129,13 @@ class SearchProvider(ABC):
             pass
 
     @abstractmethod
-    def search(self, category: str, location: str, limit: int) -> list[SearchResult]:
+    def search(
+        self,
+        category: str,
+        location: str,
+        limit: int,
+        countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+    ) -> list[SearchResult]:
         raise NotImplementedError
 
 
@@ -172,7 +164,13 @@ class FileSearchProvider(SearchProvider):
     def __init__(self, path: Path):
         self.path = path
 
-    def search(self, category: str, location: str, limit: int) -> list[SearchResult]:
+    def search(
+        self,
+        category: str,
+        location: str,
+        limit: int,
+        countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+    ) -> list[SearchResult]:
         if not self.path.exists():
             raise SearchProviderError(f"Seed file does not exist: {self.path}")
 
@@ -195,7 +193,13 @@ class BraveSearchProvider(SearchProvider):
         if not self.api_key:
             raise SearchProviderError("BRAVE_SEARCH_API_KEY is required for Brave search.")
 
-    def search(self, category: str, location: str, limit: int) -> list[SearchResult]:
+    def search(
+        self,
+        category: str,
+        location: str,
+        limit: int,
+        countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+    ) -> list[SearchResult]:
         query = build_query(category, location)
         params = urllib.parse.urlencode({"q": query, "count": min(limit, 20)})
         request = urllib.request.Request(
@@ -227,7 +231,13 @@ class BingSearchProvider(SearchProvider):
         if not self.api_key:
             raise SearchProviderError("BING_SEARCH_API_KEY is required for Bing search.")
 
-    def search(self, category: str, location: str, limit: int) -> list[SearchResult]:
+    def search(
+        self,
+        category: str,
+        location: str,
+        limit: int,
+        countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+    ) -> list[SearchResult]:
         query = build_query(category, location)
         params = urllib.parse.urlencode({"q": query, "count": min(limit, 50)})
         request = urllib.request.Request(
@@ -259,13 +269,19 @@ class SerpApiSearchProvider(SearchProvider):
         if not self.api_key:
             raise SearchProviderError("SERPAPI_API_KEY is required for SerpAPI search.")
 
-    def search(self, category: str, location: str, limit: int) -> list[SearchResult]:
+    def search(
+        self,
+        category: str,
+        location: str,
+        limit: int,
+        countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+    ) -> list[SearchResult]:
         if limit < 1:
             return []
         results: list[SearchResult] = []
         seen: set[str] = set()
 
-        for query in expand_queries(category, location):
+        for query in expand_queries(category, location, countries):
             if len(results) >= limit:
                 break
             start = 0
@@ -325,39 +341,49 @@ def serpapi_items_to_results(data: dict) -> list[SearchResult]:
 
 
 class ZenRowsSearchProvider(SearchProvider):
-    """Google SERP scraping via the ZenRows API (autoparse), used like SerpAPI."""
+    """Google SERP scraping via the ZenRows Search Results API."""
 
-    endpoint = "https://api.zenrows.com/v1/"
+    serp_endpoint = "https://serp.api.zenrows.com/v1/targets/google/search"
 
     def __init__(self, api_key: str | None = None):
         self.api_key = api_key or os.getenv("ZENROWS_API_KEY")
         if not self.api_key:
             raise SearchProviderError("ZENROWS_API_KEY is required for ZenRows search.")
 
-    def search(self, category: str, location: str, limit: int) -> list[SearchResult]:
+    def search(
+        self,
+        category: str,
+        location: str,
+        limit: int,
+        countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+    ) -> list[SearchResult]:
         if limit < 1:
             return []
         results: list[SearchResult] = []
         seen: set[str] = set()
 
-        for query in expand_queries(category, location):
+        for query_text, country_code in expand_query_plans(category, location, countries):
             if len(results) >= limit:
                 break
+            locale_country, tld = ZENROWS_LOCALE.get(country_code, ZENROWS_LOCALE["DE"])
             start = 0
             while len(results) < limit and start <= 80:
-                self._report(f"ZenRows: '{query}' ab {start} ...")
-                google_url = "https://www.google.com/search?" + urllib.parse.urlencode(
-                    {"q": query, "num": 20, "start": start, "hl": "de", "gl": "de"}
-                )
+                self._report(f"ZenRows: '{query_text}' ab {start} ({country_code}) ...")
+                encoded_query = urllib.parse.quote(query_text)
                 params = urllib.parse.urlencode(
-                    {"apikey": self.api_key, "url": google_url, "autoparse": "true"}
+                    {
+                        "apikey": self.api_key,
+                        "country": locale_country,
+                        "tld": tld,
+                        "start": str(start),
+                    }
                 )
                 request = urllib.request.Request(
-                    f"{self.endpoint}?{params}",
+                    f"{self.serp_endpoint}/{encoded_query}?{params}",
                     headers={"Accept": "application/json", "User-Agent": "capper-lead-research/0.1"},
                 )
                 try:
-                    page_results = zenrows_items_to_results(_read_json(request, timeout=40))
+                    page_results = zenrows_items_to_results(_read_json(request, timeout=60))
                 except SearchProviderError:
                     break
                 if not page_results:
@@ -373,7 +399,7 @@ class ZenRowsSearchProvider(SearchProvider):
                     if len(results) >= limit:
                         self._report(f"ZenRows: {len(results)} Websites gefunden")
                         return results
-                start += 20
+                start += 10
                 if new_in_page == 0:
                     break
 
@@ -406,7 +432,13 @@ class GoogleCustomSearchProvider(SearchProvider):
         if not self.search_engine_id:
             raise SearchProviderError("GOOGLE_SEARCH_ENGINE_ID is required for Google search.")
 
-    def search(self, category: str, location: str, limit: int) -> list[SearchResult]:
+    def search(
+        self,
+        category: str,
+        location: str,
+        limit: int,
+        countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+    ) -> list[SearchResult]:
         query = build_query(category, location)
         results: list[SearchResult] = []
         start = 1
@@ -451,31 +483,48 @@ class OpenStreetMapSearchProvider(SearchProvider):
     def __init__(self, endpoints: tuple[str, ...] = OVERPASS_ENDPOINTS):
         self.endpoints = endpoints
 
-    def search(self, category: str, location: str, limit: int) -> list[SearchResult]:
+    def search(
+        self,
+        category: str,
+        location: str,
+        limit: int,
+        countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+    ) -> list[SearchResult]:
         if limit < 1:
             return []
 
         results: list[SearchResult] = []
         seen_urls: set[str] = set()
-        locations = osm_location_plan(location)
+        targets = osm_location_plan(location, countries)
         per_location_limit = (
             limit
             if location.strip()
-            else min(limit, max(OSM_MIN_PER_LOCATION, ceil(limit / len(locations))))
+            else min(limit, max(OSM_MIN_PER_LOCATION, ceil(limit / len(targets))))
         )
         failures: list[str] = []
         has_explicit_location = bool(location.strip())
 
-        for current_location in locations:
-            self._report(f"OpenStreetMap: suche '{category}' in {current_location} ...")
-            location_results = self._search_nominatim(category, current_location, per_location_limit) if has_explicit_location else []
+        for target in targets:
+            self._report(f"OpenStreetMap: suche '{category}' in {target.label} ...")
+            location_results = (
+                self._search_nominatim(category, target.label, per_location_limit)
+                if has_explicit_location
+                else []
+            )
             try:
-                location_results.extend(self._search_location(category, current_location, per_location_limit))
+                location_results.extend(
+                    self._search_location(
+                        category,
+                        target.label,
+                        per_location_limit,
+                        country_code=target.country_code,
+                    )
+                )
             except SearchProviderError as exc:
-                failures.append(f"{current_location}: {exc}")
+                failures.append(f"{target.label}: {exc}")
             if not location_results:
-                location_results = self._search_nominatim(category, current_location, per_location_limit)
-            self._report(f"OpenStreetMap: {current_location} -> {len(location_results)} Treffer")
+                location_results = self._search_nominatim(category, target.label, per_location_limit)
+            self._report(f"OpenStreetMap: {target.label} -> {len(location_results)} Treffer")
             if not location_results:
                 continue
             for result in location_results:
@@ -491,8 +540,14 @@ class OpenStreetMapSearchProvider(SearchProvider):
             raise SearchProviderError("OpenStreetMap/Overpass search failed: " + " | ".join(failures[:3]))
         return results
 
-    def _search_location(self, category: str, location: str, limit: int) -> list[SearchResult]:
-        query = build_overpass_query(category, location, limit)
+    def _search_location(
+        self,
+        category: str,
+        location: str,
+        limit: int,
+        country_code: str | None = None,
+    ) -> list[SearchResult]:
+        query = build_overpass_query(category, location, limit, country_code=country_code)
         failures: list[str] = []
         for endpoint in self.endpoints:
             request = urllib.request.Request(
@@ -540,19 +595,34 @@ class OpenStreetMapSearchProvider(SearchProvider):
         return nominatim_items_to_results(data, limit, location)
 
 
-def osm_location_plan(location: str) -> tuple[str, ...]:
+def osm_location_plan(
+    location: str,
+    countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+) -> tuple[OsmSearchTarget, ...]:
     stripped = location.strip()
     if stripped:
-        return (stripped,)
-    return DEFAULT_OSM_LOCATIONS
+        return (OsmSearchTarget(label=stripped),)
+    return tuple(
+        OsmSearchTarget(label=country_label(code), country_code=code)
+        for code in countries
+        if code in SUPPORTED_COUNTRIES
+    )
 
 
-def build_overpass_query(category: str, location: str, limit: int) -> str:
+def build_overpass_query(
+    category: str,
+    location: str,
+    limit: int,
+    country_code: str | None = None,
+) -> str:
     selectors = osm_selectors_for_category(category)
     scoped_selectors = []
     area_setup = ""
     location_name = location.strip()
-    if location_name:
+    if country_code:
+        area_setup = f'area["ISO3166-1"="{country_code}"][admin_level=2]->.searchArea;\n'
+        scoped_selectors = [f'nwr{selector}(area.searchArea);' for selector in selectors]
+    elif location_name:
         escaped_location = escape_overpass_regex(location_name)
         area_setup = (
             f'area["name"~"^{escaped_location}$",i]["boundary"="administrative"]->.searchArea;\n'
@@ -694,13 +764,19 @@ class DuckDuckGoSearchProvider(SearchProvider):
 
     endpoint = "https://html.duckduckgo.com/html/"
 
-    def search(self, category: str, location: str, limit: int) -> list[SearchResult]:
+    def search(
+        self,
+        category: str,
+        location: str,
+        limit: int,
+        countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+    ) -> list[SearchResult]:
         if limit < 1:
             return []
         results: list[SearchResult] = []
         seen: set[str] = set()
 
-        for query in expand_queries(category, location):
+        for query in expand_queries(category, location, countries):
             if len(results) >= limit:
                 break
             offset = 0
@@ -782,7 +858,13 @@ class MultiSourceProvider(SearchProvider):
     def __init__(self, providers: list[SearchProvider]):
         self.providers = [provider for provider in providers if provider is not None]
 
-    def search(self, category: str, location: str, limit: int) -> list[SearchResult]:
+    def search(
+        self,
+        category: str,
+        location: str,
+        limit: int,
+        countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+    ) -> list[SearchResult]:
         if limit < 1 or not self.providers:
             return []
 
@@ -797,7 +879,7 @@ class MultiSourceProvider(SearchProvider):
         grouped: list[list[SearchResult]] = []
         with ThreadPoolExecutor(max_workers=len(self.providers)) as executor:
             futures = {
-                executor.submit(self._safe_search, provider, category, location, limit): provider
+                executor.submit(self._safe_search, provider, category, location, limit, countries): provider
                 for provider in self.providers
             }
             for future in as_completed(futures):
@@ -822,9 +904,15 @@ class MultiSourceProvider(SearchProvider):
         return merged
 
     @staticmethod
-    def _safe_search(provider: SearchProvider, category: str, location: str, limit: int) -> list[SearchResult]:
+    def _safe_search(
+        provider: SearchProvider,
+        category: str,
+        location: str,
+        limit: int,
+        countries: tuple[str, ...],
+    ) -> list[SearchResult]:
         try:
-            return provider.search(category, location, limit)
+            return provider.search(category, location, limit, countries)
         except SearchProviderError:
             return []
         except Exception:  # noqa: BLE001 - one failing source must not abort the others
@@ -838,7 +926,13 @@ class CommonSourcesSearchProvider(SearchProvider):
         self.provider = provider
         self.domains = domains
 
-    def search(self, category: str, location: str, limit: int) -> list[SearchResult]:
+    def search(
+        self,
+        category: str,
+        location: str,
+        limit: int,
+        countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+    ) -> list[SearchResult]:
         if limit < 1:
             return []
 
@@ -865,16 +959,32 @@ def build_query(category: str, location: str) -> str:
     return " ".join(part for part in parts if part).strip()
 
 
-def expand_queries(category: str, location: str) -> list[str]:
+def expand_query_plans(
+    category: str,
+    location: str,
+    countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+) -> list[tuple[str, str]]:
+    """Build search queries with the country code used for localized web search."""
+    if location.strip():
+        country_code = countries[0] if countries else "DE"
+        return [(build_query(category, location), country_code)]
+    plans: list[tuple[str, str]] = []
+    for country_code in countries:
+        plans.append((build_query(category, country_label(country_code)), country_code))
+    for city_name, country_code in top_cities_for_web_search(countries):
+        plans.append((build_query(category, city_name), country_code))
+    return plans
+
+
+def expand_queries(
+    category: str,
+    location: str,
+    countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+) -> list[str]:
     """Build multiple search queries so engines that cap a single query (e.g.
     ~100 Google results) still yield many websites. Without a location, the query
     is expanded across major cities."""
-    if location.strip():
-        return [build_query(category, location)]
-    queries = [build_query(category, "")]
-    for city in DEFAULT_OSM_LOCATIONS:
-        queries.append(build_query(category, city))
-    return queries
+    return [query for query, _ in expand_query_plans(category, location, countries)]
 
 
 def is_valid_lead_url(url: str) -> bool:
@@ -947,9 +1057,11 @@ def api_provider() -> SearchProvider:
         return BingSearchProvider()
     if os.getenv("SERPAPI_API_KEY"):
         return SerpApiSearchProvider()
+    if os.getenv("ZENROWS_API_KEY"):
+        return ZenRowsSearchProvider()
     raise SearchProviderError(
         "No search API key found. Set GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_ENGINE_ID, "
-        "BRAVE_SEARCH_API_KEY, BING_SEARCH_API_KEY, or SERPAPI_API_KEY before starting the GUI."
+        "BRAVE_SEARCH_API_KEY, BING_SEARCH_API_KEY, SERPAPI_API_KEY, or ZENROWS_API_KEY before starting the GUI."
     )
 
 

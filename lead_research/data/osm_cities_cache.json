@@ -1,0 +1,7042 @@
+{
+  "DE": [
+    {
+      "name": "Berlin",
+      "population": 3769962
+    },
+    {
+      "name": "Hamburg",
+      "population": 1862565
+    },
+    {
+      "name": "München",
+      "population": 1484226
+    },
+    {
+      "name": "Köln",
+      "population": 1097519
+    },
+    {
+      "name": "Frankfurt am Main",
+      "population": 701350
+    },
+    {
+      "name": "Düsseldorf",
+      "population": 653253
+    },
+    {
+      "name": "Leipzig",
+      "population": 628718
+    },
+    {
+      "name": "Stuttgart",
+      "population": 613392
+    },
+    {
+      "name": "Dortmund",
+      "population": 600933
+    },
+    {
+      "name": "Dresden",
+      "population": 572240
+    },
+    {
+      "name": "Essen",
+      "population": 569884
+    },
+    {
+      "name": "Hannover",
+      "population": 555372
+    },
+    {
+      "name": "Bremen",
+      "population": 551767
+    },
+    {
+      "name": "Nürnberg",
+      "population": 526091
+    },
+    {
+      "name": "Duisburg",
+      "population": 486855
+    },
+    {
+      "name": "Bochum",
+      "population": 371075
+    },
+    {
+      "name": "Wuppertal",
+      "population": 361077
+    },
+    {
+      "name": "Bonn",
+      "population": 335913
+    },
+    {
+      "name": "Bielefeld",
+      "population": 328864
+    },
+    {
+      "name": "Münster",
+      "population": 314332
+    },
+    {
+      "name": "Mannheim",
+      "population": 310000
+    },
+    {
+      "name": "Augsburg",
+      "population": 301033
+    },
+    {
+      "name": "Wiesbaden",
+      "population": 299946
+    },
+    {
+      "name": "Karlsruhe",
+      "population": 283959
+    },
+    {
+      "name": "Gelsenkirchen",
+      "population": 260368
+    },
+    {
+      "name": "Mönchengladbach",
+      "population": 255430
+    },
+    {
+      "name": "Braunschweig",
+      "population": 248023
+    },
+    {
+      "name": "Kiel",
+      "population": 246306
+    },
+    {
+      "name": "Magdeburg",
+      "population": 244329
+    },
+    {
+      "name": "Chemnitz",
+      "population": 243089
+    },
+    {
+      "name": "Aachen",
+      "population": 241683
+    },
+    {
+      "name": "Halle (Saale)",
+      "population": 231565
+    },
+    {
+      "name": "Mainz",
+      "population": 227277
+    },
+    {
+      "name": "Krefeld",
+      "population": 222058
+    },
+    {
+      "name": "Freiburg im Breisgau",
+      "population": 220286
+    },
+    {
+      "name": "Erfurt",
+      "population": 213332
+    },
+    {
+      "name": "Lübeck",
+      "population": 212958
+    },
+    {
+      "name": "Oberhausen",
+      "population": 209292
+    },
+    {
+      "name": "Rostock",
+      "population": 207830
+    },
+    {
+      "name": "Kassel",
+      "population": 204021
+    },
+    {
+      "name": "Hagen",
+      "population": 186000
+    },
+    {
+      "name": "Potsdam",
+      "population": 178089
+    },
+    {
+      "name": "Saarbrücken",
+      "population": 177201
+    },
+    {
+      "name": "Hamm",
+      "population": 176048
+    },
+    {
+      "name": "Osnabrück",
+      "population": 167730
+    },
+    {
+      "name": "Mülheim an der Ruhr",
+      "population": 167108
+    },
+    {
+      "name": "Solingen",
+      "population": 164205
+    },
+    {
+      "name": "Oldenburg",
+      "population": 163830
+    },
+    {
+      "name": "Ludwigshafen am Rhein",
+      "population": 163340
+    },
+    {
+      "name": "Leverkusen",
+      "population": 160819
+    },
+    {
+      "name": "Darmstadt",
+      "population": 159631
+    },
+    {
+      "name": "Neuss",
+      "population": 159122
+    },
+    {
+      "name": "Herne",
+      "population": 156449
+    },
+    {
+      "name": "Bad Bramstedt",
+      "population": 154390
+    },
+    {
+      "name": "Heidelberg",
+      "population": 152113
+    },
+    {
+      "name": "Paderborn",
+      "population": 151633
+    },
+    {
+      "name": "Regensburg",
+      "population": 145000
+    },
+    {
+      "name": "Offenbach am Main",
+      "population": 136824
+    },
+    {
+      "name": "Göttingen",
+      "population": 135887
+    },
+    {
+      "name": "Fürth",
+      "population": 135082
+    },
+    {
+      "name": "Heilbronn",
+      "population": 131653
+    },
+    {
+      "name": "Ingolstadt",
+      "population": 127886
+    },
+    {
+      "name": "Würzburg",
+      "population": 124700
+    },
+    {
+      "name": "Wolfsburg",
+      "population": 122457
+    },
+    {
+      "name": "Ulm",
+      "population": 121648
+    },
+    {
+      "name": "Erlangen",
+      "population": 120028
+    },
+    {
+      "name": "Pforzheim",
+      "population": 117754
+    },
+    {
+      "name": "Bremerhaven",
+      "population": 117281
+    },
+    {
+      "name": "Remscheid",
+      "population": 116827
+    },
+    {
+      "name": "Bottrop",
+      "population": 116055
+    },
+    {
+      "name": "Recklinghausen",
+      "population": 115320
+    },
+    {
+      "name": "Reutlingen",
+      "population": 112099
+    },
+    {
+      "name": "Jena",
+      "population": 111343
+    },
+    {
+      "name": "Koblenz",
+      "population": 110643
+    },
+    {
+      "name": "Bergisch Gladbach",
+      "population": 109425
+    },
+    {
+      "name": "Trier",
+      "population": 107233
+    },
+    {
+      "name": "Moers",
+      "population": 105102
+    },
+    {
+      "name": "Salzgitter",
+      "population": 103694
+    },
+    {
+      "name": "Gütersloh",
+      "population": 103603
+    },
+    {
+      "name": "Hanau",
+      "population": 101364
+    },
+    {
+      "name": "Cottbus - Chóśebuz",
+      "population": 101036
+    },
+    {
+      "name": "Siegen",
+      "population": 99403
+    },
+    {
+      "name": "Flensburg",
+      "population": 99307
+    },
+    {
+      "name": "Schwerin",
+      "population": 98596
+    },
+    {
+      "name": "Hildesheim",
+      "population": 98510
+    },
+    {
+      "name": "Witten",
+      "population": 97986
+    },
+    {
+      "name": "Kaiserslautern",
+      "population": 97162
+    },
+    {
+      "name": "Iserlohn",
+      "population": 94536
+    },
+    {
+      "name": "Zwickau",
+      "population": 93128
+    },
+    {
+      "name": "Gera",
+      "population": 93125
+    },
+    {
+      "name": "Ratingen",
+      "population": 93099
+    },
+    {
+      "name": "Esslingen am Neckar",
+      "population": 92261
+    },
+    {
+      "name": "Tübingen",
+      "population": 91239
+    },
+    {
+      "name": "Ludwigsburg",
+      "population": 91116
+    },
+    {
+      "name": "Lünen",
+      "population": 90800
+    },
+    {
+      "name": "Düren",
+      "population": 88953
+    },
+    {
+      "name": "Worms",
+      "population": 86283
+    },
+    {
+      "name": "Konstanz",
+      "population": 85692
+    },
+    {
+      "name": "Velbert",
+      "population": 84579
+    },
+    {
+      "name": "Marl",
+      "population": 83634
+    },
+    {
+      "name": "Villingen-Schwenningen",
+      "population": 81128
+    },
+    {
+      "name": "Norderstedt",
+      "population": 80420
+    },
+    {
+      "name": "Minden",
+      "population": 79969
+    },
+    {
+      "name": "Neumünster",
+      "population": 79197
+    },
+    {
+      "name": "Troisdorf",
+      "population": 79026
+    },
+    {
+      "name": "Dorsten",
+      "population": 77294
+    },
+    {
+      "name": "Wilhelmshaven",
+      "population": 75728
+    },
+    {
+      "name": "Viersen",
+      "population": 74941
+    },
+    {
+      "name": "Lüneburg",
+      "population": 74125
+    },
+    {
+      "name": "Brandenburg an der Havel",
+      "population": 74113
+    },
+    {
+      "name": "Delmenhorst",
+      "population": 74052
+    },
+    {
+      "name": "Gladbeck",
+      "population": 74011
+    },
+    {
+      "name": "Castrop-Rauxel",
+      "population": 73751
+    },
+    {
+      "name": "Arnsberg",
+      "population": 73501
+    },
+    {
+      "name": "Rheine",
+      "population": 73484
+    },
+    {
+      "name": "Detmold",
+      "population": 73449
+    },
+    {
+      "name": "Marburg",
+      "population": 73125
+    },
+    {
+      "name": "Lüdenscheid",
+      "population": 72923
+    },
+    {
+      "name": "Bamberg",
+      "population": 72821
+    },
+    {
+      "name": "Landshut",
+      "population": 72404
+    },
+    {
+      "name": "Bayreuth",
+      "population": 72295
+    },
+    {
+      "name": "Bocholt",
+      "population": 70856
+    },
+    {
+      "name": "Celle",
+      "population": 69748
+    },
+    {
+      "name": "Aalen",
+      "population": 68816
+    },
+    {
+      "name": "Fulda",
+      "population": 67980
+    },
+    {
+      "name": "Aschaffenburg",
+      "population": 67844
+    },
+    {
+      "name": "Kempten (Allgäu)",
+      "population": 67645
+    },
+    {
+      "name": "Dessau",
+      "population": 67304
+    },
+    {
+      "name": "Dinslaken",
+      "population": 67190
+    },
+    {
+      "name": "Neuwied",
+      "population": 66455
+    },
+    {
+      "name": "Grevenbroich",
+      "population": 66314
+    },
+    {
+      "name": "Lippstadt",
+      "population": 66312
+    },
+    {
+      "name": "Plauen",
+      "population": 65738
+    },
+    {
+      "name": "Weimar",
+      "population": 65611
+    },
+    {
+      "name": "Herford",
+      "population": 64957
+    },
+    {
+      "name": "Schwäbisch Gmünd",
+      "population": 64416
+    },
+    {
+      "name": "Kerpen",
+      "population": 63784
+    },
+    {
+      "name": "Neubrandenburg",
+      "population": 63437
+    },
+    {
+      "name": "Neu-Ulm",
+      "population": 62610
+    },
+    {
+      "name": "Bergheim",
+      "population": 62454
+    },
+    {
+      "name": "Dormagen",
+      "population": 62312
+    },
+    {
+      "name": "Frankfurt (Oder)",
+      "population": 61969
+    },
+    {
+      "name": "Rosenheim",
+      "population": 61844
+    },
+    {
+      "name": "Sindelfingen",
+      "population": 61669
+    },
+    {
+      "name": "Herten",
+      "population": 60582
+    },
+    {
+      "name": "Wesel",
+      "population": 60070
+    },
+    {
+      "name": "Garbsen",
+      "population": 59912
+    },
+    {
+      "name": "Hürth",
+      "population": 59496
+    },
+    {
+      "name": "Sankt Augustin",
+      "population": 59450
+    },
+    {
+      "name": "Unna",
+      "population": 58856
+    },
+    {
+      "name": "Offenburg",
+      "population": 58769
+    },
+    {
+      "name": "Euskirchen",
+      "population": 58435
+    },
+    {
+      "name": "Friedrichshafen",
+      "population": 58099
+    },
+    {
+      "name": "Stolberg",
+      "population": 57755
+    },
+    {
+      "name": "Eschweiler",
+      "population": 57534
+    },
+    {
+      "name": "Görlitz",
+      "population": 57427
+    },
+    {
+      "name": "Stralsund",
+      "population": 57301
+    },
+    {
+      "name": "Langenfeld",
+      "population": 56982
+    },
+    {
+      "name": "Bad Homburg vor der Höhe",
+      "population": 56688
+    },
+    {
+      "name": "Schweinfurt",
+      "population": 56625
+    },
+    {
+      "name": "Greifswald",
+      "population": 56445
+    },
+    {
+      "name": "Hattingen",
+      "population": 56263
+    },
+    {
+      "name": "Hameln",
+      "population": 56260
+    },
+    {
+      "name": "Göppingen",
+      "population": 55846
+    },
+    {
+      "name": "Waiblingen",
+      "population": 55449
+    },
+    {
+      "name": "Hilden",
+      "population": 54737
+    },
+    {
+      "name": "Baden-Baden",
+      "population": 54454
+    },
+    {
+      "name": "Passau",
+      "population": 54401
+    },
+    {
+      "name": "Meerbusch",
+      "population": 54318
+    },
+    {
+      "name": "Pulheim",
+      "population": 54200
+    },
+    {
+      "name": "Menden (Sauerland)",
+      "population": 53354
+    },
+    {
+      "name": "Nordhorn",
+      "population": 53285
+    },
+    {
+      "name": "Gummersbach",
+      "population": 53183
+    },
+    {
+      "name": "Bergkamen",
+      "population": 52517
+    },
+    {
+      "name": "Ahlen",
+      "population": 52503
+    },
+    {
+      "name": "Neustadt an der Weinstraße",
+      "population": 52400
+    },
+    {
+      "name": "Bad Kreuznach",
+      "population": 52385
+    },
+    {
+      "name": "Lingen (Ems)",
+      "population": 52158
+    },
+    {
+      "name": "Langenhagen",
+      "population": 51847
+    },
+    {
+      "name": "Willich",
+      "population": 51846
+    },
+    {
+      "name": "Wolfenbüttel",
+      "population": 51569
+    },
+    {
+      "name": "Frechen",
+      "population": 51080
+    },
+    {
+      "name": "Ravensburg",
+      "population": 50776
+    },
+    {
+      "name": "Elmshorn",
+      "population": 50772
+    },
+    {
+      "name": "Goslar",
+      "population": 50681
+    },
+    {
+      "name": "Emden",
+      "population": 50535
+    },
+    {
+      "name": "Ibbenbüren",
+      "population": 50438
+    },
+    {
+      "name": "Speyer",
+      "population": 50284
+    },
+    {
+      "name": "Peine",
+      "population": 49810
+    },
+    {
+      "name": "Rheda-Wiedenbrück",
+      "population": 49722
+    },
+    {
+      "name": "Cuxhaven",
+      "population": 49697
+    },
+    {
+      "name": "Hennef",
+      "population": 49217
+    },
+    {
+      "name": "Bornheim",
+      "population": 49121
+    },
+    {
+      "name": "Lörrach",
+      "population": 48307
+    },
+    {
+      "name": "Bad Oeynhausen",
+      "population": 48294
+    },
+    {
+      "name": "Soest",
+      "population": 47460
+    },
+    {
+      "name": "Rastatt",
+      "population": 47110
+    },
+    {
+      "name": "Herzogenrath",
+      "population": 47054
+    },
+    {
+      "name": "Frankenthal (Pfalz)",
+      "population": 47002
+    },
+    {
+      "name": "Lutherstadt Wittenberg",
+      "population": 46837
+    },
+    {
+      "name": "Neunkirchen (Saar)",
+      "population": 46816
+    },
+    {
+      "name": "Schwerte",
+      "population": 46763
+    },
+    {
+      "name": "Böblingen",
+      "population": 46714
+    },
+    {
+      "name": "Landau in der Pfalz",
+      "population": 46677
+    },
+    {
+      "name": "Heidenheim an der Brenz",
+      "population": 46419
+    },
+    {
+      "name": "Dülmen",
+      "population": 46071
+    },
+    {
+      "name": "Gotha",
+      "population": 46030
+    },
+    {
+      "name": "Gronau",
+      "population": 45998
+    },
+    {
+      "name": "Kamen",
+      "population": 45931
+    },
+    {
+      "name": "Freising",
+      "population": 45857
+    },
+    {
+      "name": "Melle",
+      "population": 45844
+    },
+    {
+      "name": "Alsdorf",
+      "population": 45721
+    },
+    {
+      "name": "Singen (Hohentwiel)",
+      "population": 45717
+    },
+    {
+      "name": "Stade",
+      "population": 45682
+    },
+    {
+      "name": "Dachau",
+      "population": 45621
+    },
+    {
+      "name": "Leonberg",
+      "population": 45458
+    },
+    {
+      "name": "Memmingen",
+      "population": 45343
+    },
+    {
+      "name": "Bünde",
+      "population": 45189
+    },
+    {
+      "name": "Straubing",
+      "population": 44741
+    },
+    {
+      "name": "Hof",
+      "population": 44522
+    },
+    {
+      "name": "Fellbach",
+      "population": 44403
+    },
+    {
+      "name": "Brühl",
+      "population": 44029
+    },
+    {
+      "name": "Lahr/Schwarzwald",
+      "population": 43728
+    },
+    {
+      "name": "Erkrath",
+      "population": 43639
+    },
+    {
+      "name": "Pinneberg",
+      "population": 43603
+    },
+    {
+      "name": "Amberg",
+      "population": 43529
+    },
+    {
+      "name": "Borken",
+      "population": 43367
+    },
+    {
+      "name": "Siegburg",
+      "population": 43333
+    },
+    {
+      "name": "Weinheim",
+      "population": 43272
+    },
+    {
+      "name": "Lehrte",
+      "population": 43048
+    },
+    {
+      "name": "Gifhorn",
+      "population": 42993
+    },
+    {
+      "name": "Aurich",
+      "population": 42970
+    },
+    {
+      "name": "Bruchsal",
+      "population": 42911
+    },
+    {
+      "name": "Erkelenz",
+      "population": 42792
+    },
+    {
+      "name": "Wismar",
+      "population": 42557
+    },
+    {
+      "name": "Weiden in der Oberpfalz",
+      "population": 42444
+    },
+    {
+      "name": "Ansbach",
+      "population": 42311
+    },
+    {
+      "name": "Buchholz in der Nordheide",
+      "population": 42276
+    },
+    {
+      "name": "Bietigheim-Bissingen",
+      "population": 42210
+    },
+    {
+      "name": "Homburg",
+      "population": 42040
+    },
+    {
+      "name": "Oranienburg",
+      "population": 42028
+    },
+    {
+      "name": "Kaarst",
+      "population": 42001
+    },
+    {
+      "name": "Bitterfeld-Wolfen",
+      "population": 41816
+    },
+    {
+      "name": "Kaufbeuren",
+      "population": 41759
+    },
+    {
+      "name": "Rottenburg am Neckar",
+      "population": 41718
+    },
+    {
+      "name": "Freiberg",
+      "population": 41498
+    },
+    {
+      "name": "Coburg",
+      "population": 41405
+    },
+    {
+      "name": "Nürtingen",
+      "population": 41154
+    },
+    {
+      "name": "Heinsberg",
+      "population": 40908
+    },
+    {
+      "name": "Falkensee",
+      "population": 40900
+    },
+    {
+      "name": "Neumarkt in der Oberpfalz",
+      "population": 40808
+    },
+    {
+      "name": "Nordhausen",
+      "population": 40767
+    },
+    {
+      "name": "Lemgo",
+      "population": 40717
+    },
+    {
+      "name": "Wunstorf",
+      "population": 40639
+    },
+    {
+      "name": "Niederkassel",
+      "population": 40506
+    },
+    {
+      "name": "Schwabach",
+      "population": 40428
+    },
+    {
+      "name": "Buxtehude",
+      "population": 40122
+    },
+    {
+      "name": "Pirmasens",
+      "population": 40101
+    },
+    {
+      "name": "Monheim am Rhein",
+      "population": 40098
+    },
+    {
+      "name": "Halberstadt",
+      "population": 40000
+    },
+    {
+      "name": "Königswinter",
+      "population": 39976
+    },
+    {
+      "name": "Weißenfels",
+      "population": 39918
+    },
+    {
+      "name": "Bensheim",
+      "population": 39642
+    },
+    {
+      "name": "Laatzen",
+      "population": 39526
+    },
+    {
+      "name": "Löhne",
+      "population": 39512
+    },
+    {
+      "name": "Kirchheim unter Teck",
+      "population": 39389
+    },
+    {
+      "name": "Schorndorf",
+      "population": 39323
+    },
+    {
+      "name": "Freital",
+      "population": 39276
+    },
+    {
+      "name": "Ilmenau",
+      "population": 39000
+    },
+    {
+      "name": "Stendal",
+      "population": 38946
+    },
+    {
+      "name": "Eberswalde",
+      "population": 38844
+    },
+    {
+      "name": "Ettlingen",
+      "population": 38819
+    },
+    {
+      "name": "Hückelhoven",
+      "population": 38709
+    },
+    {
+      "name": "Haltern am See",
+      "population": 38686
+    },
+    {
+      "name": "Erding",
+      "population": 38644
+    },
+    {
+      "name": "Germering",
+      "population": 38478
+    },
+    {
+      "name": "Völklingen",
+      "population": 38468
+    },
+    {
+      "name": "Ahaus",
+      "population": 38262
+    },
+    {
+      "name": "Bautzen - Budyšin",
+      "population": 38207
+    },
+    {
+      "name": "Backnang",
+      "population": 38184
+    },
+    {
+      "name": "Königs Wusterhausen",
+      "population": 38111
+    },
+    {
+      "name": "Mettmann",
+      "population": 37867
+    },
+    {
+      "name": "Saarlouis",
+      "population": 37667
+    },
+    {
+      "name": "Würselen",
+      "population": 37654
+    },
+    {
+      "name": "Pirna",
+      "population": 37645
+    },
+    {
+      "name": "Suhl",
+      "population": 37300
+    },
+    {
+      "name": "Sinsheim",
+      "population": 37036
+    },
+    {
+      "name": "Kamp-Lintfort",
+      "population": 36973
+    },
+    {
+      "name": "Warendorf",
+      "population": 36886
+    },
+    {
+      "name": "Deggendorf",
+      "population": 36854
+    },
+    {
+      "name": "Beckum",
+      "population": 36815
+    },
+    {
+      "name": "Winsen (Luhe)",
+      "population": 36754
+    },
+    {
+      "name": "Schwäbisch Hall",
+      "population": 36660
+    },
+    {
+      "name": "Merseburg",
+      "population": 36392
+    },
+    {
+      "name": "Coesfeld",
+      "population": 36382
+    },
+    {
+      "name": "Voerde",
+      "population": 36282
+    },
+    {
+      "name": "St. Ingbert",
+      "population": 36254
+    },
+    {
+      "name": "Bernau bei Berlin",
+      "population": 36222
+    },
+    {
+      "name": "Meppen",
+      "population": 35935
+    },
+    {
+      "name": "Wesseling",
+      "population": 35859
+    },
+    {
+      "name": "Emsdetten",
+      "population": 35447
+    },
+    {
+      "name": "Porta Westfalica",
+      "population": 35374
+    },
+    {
+      "name": "Greven",
+      "population": 35278
+    },
+    {
+      "name": "Steinfurt",
+      "population": 34822
+    },
+    {
+      "name": "Hemer",
+      "population": 34678
+    },
+    {
+      "name": "Lage",
+      "population": 34671
+    },
+    {
+      "name": "Fürstenfeldbruck",
+      "population": 34648
+    },
+    {
+      "name": "Kempen",
+      "population": 34618
+    },
+    {
+      "name": "Wermelskirchen",
+      "population": 34472
+    },
+    {
+      "name": "Papenburg",
+      "population": 34440
+    },
+    {
+      "name": "Viernheim",
+      "population": 34348
+    },
+    {
+      "name": "Datteln",
+      "population": 34332
+    },
+    {
+      "name": "Zweibrücken",
+      "population": 34084
+    },
+    {
+      "name": "Leer (Ostfriesland)",
+      "population": 34025
+    },
+    {
+      "name": "Radebeul",
+      "population": 34008
+    },
+    {
+      "name": "Kehl",
+      "population": 33991
+    },
+    {
+      "name": "Uelzen",
+      "population": 33991
+    },
+    {
+      "name": "Jülich",
+      "population": 33948
+    },
+    {
+      "name": "Bernburg (Saale)",
+      "population": 33879
+    },
+    {
+      "name": "Tuttlingen",
+      "population": 33394
+    },
+    {
+      "name": "Balingen",
+      "population": 33270
+    },
+    {
+      "name": "Barsinghausen",
+      "population": 33231
+    },
+    {
+      "name": "Korschenbroich",
+      "population": 33078
+    },
+    {
+      "name": "Geldern",
+      "population": 33064
+    },
+    {
+      "name": "Goch",
+      "population": 33063
+    },
+    {
+      "name": "Crailsheim",
+      "population": 33000
+    },
+    {
+      "name": "Altenburg",
+      "population": 32910
+    },
+    {
+      "name": "Forchheim",
+      "population": 32907
+    },
+    {
+      "name": "Naumburg (Saale)",
+      "population": 32804
+    },
+    {
+      "name": "Cloppenburg",
+      "population": 32600
+    },
+    {
+      "name": "Stuhr",
+      "population": 32556
+    },
+    {
+      "name": "Seelze",
+      "population": 32397
+    },
+    {
+      "name": "Itzehoe",
+      "population": 32319
+    },
+    {
+      "name": "Wedel",
+      "population": 32289
+    },
+    {
+      "name": "Rheinfelden (Baden)",
+      "population": 32245
+    },
+    {
+      "name": "Kornwestheim",
+      "population": 32177
+    },
+    {
+      "name": "Vechta",
+      "population": 32104
+    },
+    {
+      "name": "Riesa",
+      "population": 31760
+    },
+    {
+      "name": "Radolfzell am Bodensee",
+      "population": 31734
+    },
+    {
+      "name": "Geestland",
+      "population": 31713
+    },
+    {
+      "name": "Hoyerswerda - Wojerecy",
+      "population": 31681
+    },
+    {
+      "name": "Georgsmarienhütte",
+      "population": 31616
+    },
+    {
+      "name": "Burgdorf",
+      "population": 31615
+    },
+    {
+      "name": "Einbeck",
+      "population": 31591
+    },
+    {
+      "name": "Schönebeck (Elbe)",
+      "population": 31582
+    },
+    {
+      "name": "Biberach an der Riß",
+      "population": 31419
+    },
+    {
+      "name": "Neuruppin",
+      "population": 31037
+    },
+    {
+      "name": "Northeim",
+      "population": 30973
+    },
+    {
+      "name": "Fürstenwalde/Spree",
+      "population": 30967
+    },
+    {
+      "name": "Gevelsberg",
+      "population": 30949
+    },
+    {
+      "name": "Weyhe",
+      "population": 30920
+    },
+    {
+      "name": "Kreuztal",
+      "population": 30899
+    },
+    {
+      "name": "Delbrück",
+      "population": 30828
+    },
+    {
+      "name": "Nienburg/Weser",
+      "population": 30677
+    },
+    {
+      "name": "Rendsburg",
+      "population": 30633
+    },
+    {
+      "name": "Rheinberg",
+      "population": 30610
+    },
+    {
+      "name": "Oer-Erkenschwick",
+      "population": 30550
+    },
+    {
+      "name": "Ganderkesee",
+      "population": 30460
+    },
+    {
+      "name": "Herrenberg",
+      "population": 30373
+    },
+    {
+      "name": "Köthen (Anhalt)",
+      "population": 30345
+    },
+    {
+      "name": "Eisenhüttenstadt",
+      "population": 30234
+    },
+    {
+      "name": "Bramsche",
+      "population": 30134
+    },
+    {
+      "name": "Oelde",
+      "population": 30129
+    },
+    {
+      "name": "Emmerich am Rhein",
+      "population": 30105
+    },
+    {
+      "name": "Meschede",
+      "population": 30103
+    },
+    {
+      "name": "Walsrode",
+      "population": 30100
+    },
+    {
+      "name": "Werl",
+      "population": 30061
+    },
+    {
+      "name": "Bad Salzuflen",
+      "population": 30000
+    },
+    {
+      "name": "Weil am Rhein",
+      "population": 30000
+    },
+    {
+      "name": "Haan",
+      "population": 29985
+    },
+    {
+      "name": "Osterholz-Scharmbeck",
+      "population": 29942
+    },
+    {
+      "name": "Ennepetal",
+      "population": 29825
+    },
+    {
+      "name": "Lohmar",
+      "population": 29679
+    },
+    {
+      "name": "Merzig",
+      "population": 29668
+    },
+    {
+      "name": "Zeitz",
+      "population": 29557
+    },
+    {
+      "name": "Güstrow",
+      "population": 29556
+    },
+    {
+      "name": "Werne",
+      "population": 29448
+    },
+    {
+      "name": "Andernach",
+      "population": 29416
+    },
+    {
+      "name": "Vaihingen an der Enz",
+      "population": 29350
+    },
+    {
+      "name": "Sangerhausen",
+      "population": 29240
+    },
+    {
+      "name": "Königsbrunn",
+      "population": 29207
+    },
+    {
+      "name": "Friedberg",
+      "population": 29081
+    },
+    {
+      "name": "Meißen",
+      "population": 29051
+    },
+    {
+      "name": "Waltrop",
+      "population": 28885
+    },
+    {
+      "name": "Baesweiler",
+      "population": 28718
+    },
+    {
+      "name": "Rietberg",
+      "population": 28696
+    },
+    {
+      "name": "Springe",
+      "population": 28682
+    },
+    {
+      "name": "Bretten",
+      "population": 28589
+    },
+    {
+      "name": "Bühl",
+      "population": 28566
+    },
+    {
+      "name": "Gaggenau",
+      "population": 28546
+    },
+    {
+      "name": "Schwelm",
+      "population": 28537
+    },
+    {
+      "name": "Grimma",
+      "population": 28500
+    },
+    {
+      "name": "Winnenden",
+      "population": 28373
+    },
+    {
+      "name": "Olching",
+      "population": 28347
+    },
+    {
+      "name": "Idar-Oberstein",
+      "population": 28323
+    },
+    {
+      "name": "Neuburg an der Donau",
+      "population": 28184
+    },
+    {
+      "name": "Höxter",
+      "population": 28166
+    },
+    {
+      "name": "Lohne (Oldenburg)",
+      "population": 28157
+    },
+    {
+      "name": "Emmendingen",
+      "population": 28065
+    },
+    {
+      "name": "Sundern",
+      "population": 28022
+    },
+    {
+      "name": "Aschersleben",
+      "population": 27793
+    },
+    {
+      "name": "Rösrath",
+      "population": 27792
+    },
+    {
+      "name": "Geislingen an der Steige",
+      "population": 27791
+    },
+    {
+      "name": "Baunatal",
+      "population": 27755
+    },
+    {
+      "name": "Wegberg",
+      "population": 27713
+    },
+    {
+      "name": "Leichlingen",
+      "population": 27646
+    },
+    {
+      "name": "Kevelaer",
+      "population": 27635
+    },
+    {
+      "name": "Bad Neuenahr-Ahrweiler",
+      "population": 27628
+    },
+    {
+      "name": "Wetter (Ruhr)",
+      "population": 27596
+    },
+    {
+      "name": "Kulmbach",
+      "population": 27592
+    },
+    {
+      "name": "Pfaffenhofen an der Ilm",
+      "population": 27318
+    },
+    {
+      "name": "Landsberg am Lech",
+      "population": 27140
+    },
+    {
+      "name": "Verden (Aller)",
+      "population": 27117
+    },
+    {
+      "name": "Staßfurt",
+      "population": 27060
+    },
+    {
+      "name": "Reinbek",
+      "population": 27048
+    },
+    {
+      "name": "Leimen",
+      "population": 27031
+    },
+    {
+      "name": "Overath",
+      "population": 27022
+    },
+    {
+      "name": "Neukirchen-Vluyn",
+      "population": 26846
+    },
+    {
+      "name": "Rheinbach",
+      "population": 26790
+    },
+    {
+      "name": "Mechernich",
+      "population": 26763
+    },
+    {
+      "name": "Geilenkirchen",
+      "population": 26626
+    },
+    {
+      "name": "Strausberg",
+      "population": 26593
+    },
+    {
+      "name": "Lauf an der Pegnitz",
+      "population": 26515
+    },
+    {
+      "name": "Hamminkeln",
+      "population": 26369
+    },
+    {
+      "name": "Unterschleißheim",
+      "population": 26363
+    },
+    {
+      "name": "Espelkamp",
+      "population": 26350
+    },
+    {
+      "name": "Schloß Holte-Stukenbrock",
+      "population": 26318
+    },
+    {
+      "name": "Nordenham",
+      "population": 26262
+    },
+    {
+      "name": "Wiesloch",
+      "population": 26122
+    },
+    {
+      "name": "Garmisch-Partenkirchen",
+      "population": 26102
+    },
+    {
+      "name": "Lübbecke",
+      "population": 26027
+    },
+    {
+      "name": "Zirndorf",
+      "population": 25957
+    },
+    {
+      "name": "Lennestadt",
+      "population": 25908
+    },
+    {
+      "name": "Sankt Wendel",
+      "population": 25890
+    },
+    {
+      "name": "Herzogenaurach",
+      "population": 25835
+    },
+    {
+      "name": "Hennigsdorf",
+      "population": 25800
+    },
+    {
+      "name": "Neckarsulm",
+      "population": 25754
+    },
+    {
+      "name": "Helmstedt",
+      "population": 25739
+    },
+    {
+      "name": "Olpe",
+      "population": 25714
+    },
+    {
+      "name": "Rottweil",
+      "population": 25701
+    },
+    {
+      "name": "Plettenberg",
+      "population": 25684
+    },
+    {
+      "name": "Bingen",
+      "population": 25659
+    },
+    {
+      "name": "Meiningen",
+      "population": 25582
+    },
+    {
+      "name": "Selm",
+      "population": 25553
+    },
+    {
+      "name": "Brilon",
+      "population": 25499
+    },
+    {
+      "name": "Zittau",
+      "population": 25499
+    },
+    {
+      "name": "Petershagen",
+      "population": 25451
+    },
+    {
+      "name": "Heiligenhaus",
+      "population": 25419
+    },
+    {
+      "name": "Ellwangen",
+      "population": 25250
+    },
+    {
+      "name": "Mosbach",
+      "population": 25197
+    },
+    {
+      "name": "Rinteln",
+      "population": 25187
+    },
+    {
+      "name": "Rudolstadt",
+      "population": 25115
+    },
+    {
+      "name": "Quedlinburg",
+      "population": 25055
+    },
+    {
+      "name": "Wiehl",
+      "population": 25047
+    },
+    {
+      "name": "Delitzsch",
+      "population": 25005
+    },
+    {
+      "name": "Hohen Neuendorf",
+      "population": 25001
+    },
+    {
+      "name": "Schmallenberg",
+      "population": 25000
+    },
+    {
+      "name": "Sprockhövel",
+      "population": 24989
+    },
+    {
+      "name": "Senftenberg - Zły Komorow",
+      "population": 24987
+    },
+    {
+      "name": "Verl",
+      "population": 24947
+    },
+    {
+      "name": "Bad Oldesloe",
+      "population": 24935
+    },
+    {
+      "name": "Mühlacker",
+      "population": 24931
+    },
+    {
+      "name": "Geretsried",
+      "population": 24892
+    },
+    {
+      "name": "Norden",
+      "population": 24887
+    },
+    {
+      "name": "Schleswig",
+      "population": 24846
+    },
+    {
+      "name": "Bad Honnef",
+      "population": 24845
+    },
+    {
+      "name": "Ehingen (Donau)",
+      "population": 24786
+    },
+    {
+      "name": "Achern",
+      "population": 24618
+    },
+    {
+      "name": "Lutherstadt Eisleben",
+      "population": 24552
+    },
+    {
+      "name": "Salzkotten",
+      "population": 24544
+    },
+    {
+      "name": "Markkleeberg",
+      "population": 24448
+    },
+    {
+      "name": "Rathenow",
+      "population": 24387
+    },
+    {
+      "name": "Attendorn",
+      "population": 24336
+    },
+    {
+      "name": "Horb am Neckar",
+      "population": 24308
+    },
+    {
+      "name": "Ingelheim am Rhein",
+      "population": 24283
+    },
+    {
+      "name": "Salzwedel",
+      "population": 24282
+    },
+    {
+      "name": "Ditzingen",
+      "population": 24272
+    },
+    {
+      "name": "Lüdinghausen",
+      "population": 24263
+    },
+    {
+      "name": "Ludwigsfelde",
+      "population": 24168
+    },
+    {
+      "name": "Limbach-Oberfrohna",
+      "population": 24107
+    },
+    {
+      "name": "Übach-Palenberg",
+      "population": 23948
+    },
+    {
+      "name": "Freudenstadt",
+      "population": 23888
+    },
+    {
+      "name": "Harsewinkel",
+      "population": 23789
+    },
+    {
+      "name": "Tiengen",
+      "population": 23674
+    },
+    {
+      "name": "Syke",
+      "population": 23666
+    },
+    {
+      "name": "Meckenheim",
+      "population": 23628
+    },
+    {
+      "name": "Varel",
+      "population": 23554
+    },
+    {
+      "name": "Husum",
+      "population": 23274
+    },
+    {
+      "name": "Unterhaching",
+      "population": 23217
+    },
+    {
+      "name": "Sehnde",
+      "population": 23181
+    },
+    {
+      "name": "Glauchau",
+      "population": 23131
+    },
+    {
+      "name": "Starnberg",
+      "population": 23115
+    },
+    {
+      "name": "Haren (Ems)",
+      "population": 23090
+    },
+    {
+      "name": "Haar",
+      "population": 23056
+    },
+    {
+      "name": "Bad Harzburg",
+      "population": 23053
+    },
+    {
+      "name": "Netphen",
+      "population": 23051
+    },
+    {
+      "name": "Blieskastel",
+      "population": 23020
+    },
+    {
+      "name": "Neheim",
+      "population": 22980
+    },
+    {
+      "name": "Friesoythe",
+      "population": 22945
+    },
+    {
+      "name": "Wallenhorst",
+      "population": 22860
+    },
+    {
+      "name": "Bedburg",
+      "population": 22846
+    },
+    {
+      "name": "Neu Wulmstorf",
+      "population": 22800
+    },
+    {
+      "name": "Öhringen",
+      "population": 22777
+    },
+    {
+      "name": "Vreden",
+      "population": 22758
+    },
+    {
+      "name": "Kleve",
+      "population": 22643
+    },
+    {
+      "name": "Herdecke",
+      "population": 22572
+    },
+    {
+      "name": "Überlingen",
+      "population": 22572
+    },
+    {
+      "name": "Jüchen",
+      "population": 22556
+    },
+    {
+      "name": "Rastede",
+      "population": 22531
+    },
+    {
+      "name": "Waldkraiburg",
+      "population": 22525
+    },
+    {
+      "name": "Bad Mergentheim",
+      "population": 22446
+    },
+    {
+      "name": "Ilsede",
+      "population": 22424
+    },
+    {
+      "name": "Wertheim",
+      "population": 22415
+    },
+    {
+      "name": "Burg",
+      "population": 22406
+    },
+    {
+      "name": "Calw",
+      "population": 22374
+    },
+    {
+      "name": "Senden",
+      "population": 22332
+    },
+    {
+      "name": "Osterode am Harz",
+      "population": 22317
+    },
+    {
+      "name": "Vaterstetten",
+      "population": 22087
+    },
+    {
+      "name": "Zerbst/Anhalt",
+      "population": 22055
+    },
+    {
+      "name": "Radevormwald",
+      "population": 22025
+    },
+    {
+      "name": "St. Tönis",
+      "population": 22000
+    },
+    {
+      "name": "Lengerich",
+      "population": 21978
+    },
+    {
+      "name": "Westerstede",
+      "population": 21919
+    },
+    {
+      "name": "Rees",
+      "population": 21892
+    },
+    {
+      "name": "Metzingen",
+      "population": 21889
+    },
+    {
+      "name": "Neusäß",
+      "population": 21858
+    },
+    {
+      "name": "Apolda",
+      "population": 21738
+    },
+    {
+      "name": "Gersthofen",
+      "population": 21685
+    },
+    {
+      "name": "Bad Kissingen",
+      "population": 21650
+    },
+    {
+      "name": "Waren (Müritz)",
+      "population": 21637
+    },
+    {
+      "name": "Annaberg-Buchholz",
+      "population": 21604
+    },
+    {
+      "name": "Stadthagen",
+      "population": 21594
+    },
+    {
+      "name": "Büren",
+      "population": 21548
+    },
+    {
+      "name": "Haßloch",
+      "population": 21527
+    },
+    {
+      "name": "Aichach",
+      "population": 21488
+    },
+    {
+      "name": "Wipperfürth",
+      "population": 21481
+    },
+    {
+      "name": "Donaueschingen",
+      "population": 21434
+    },
+    {
+      "name": "Rotenburg (Wümme)",
+      "population": 21392
+    },
+    {
+      "name": "Döbeln",
+      "population": 21365
+    },
+    {
+      "name": "Edewecht",
+      "population": 21291
+    },
+    {
+      "name": "Nagold",
+      "population": 21241
+    },
+    {
+      "name": "Xanten",
+      "population": 21186
+    },
+    {
+      "name": "Wildeshausen",
+      "population": 21171
+    },
+    {
+      "name": "Halle (Westf.)",
+      "population": 21167
+    },
+    {
+      "name": "Schwetzingen",
+      "population": 21147
+    },
+    {
+      "name": "Waldkirch",
+      "population": 21141
+    },
+    {
+      "name": "Spremberg - Grodk",
+      "population": 21140
+    },
+    {
+      "name": "Soltau",
+      "population": 21120
+    },
+    {
+      "name": "Werdau",
+      "population": 21114
+    },
+    {
+      "name": "Hockenheim",
+      "population": 21108
+    },
+    {
+      "name": "Lindlar",
+      "population": 21038
+    },
+    {
+      "name": "Günzburg",
+      "population": 21028
+    },
+    {
+      "name": "Wülfrath",
+      "population": 20946
+    },
+    {
+      "name": "Traunreut",
+      "population": 20935
+    },
+    {
+      "name": "Eppingen",
+      "population": 20919
+    },
+    {
+      "name": "Oschersleben (Bode)",
+      "population": 20831
+    },
+    {
+      "name": "Ottobrunn",
+      "population": 20784
+    },
+    {
+      "name": "Versmold",
+      "population": 20753
+    },
+    {
+      "name": "Blankenburg (Harz)",
+      "population": 20745
+    },
+    {
+      "name": "Schramberg",
+      "population": 20716
+    },
+    {
+      "name": "Fröndenberg/Ruhr",
+      "population": 20705
+    },
+    {
+      "name": "Geseke",
+      "population": 20573
+    },
+    {
+      "name": "Coswig",
+      "population": 20561
+    },
+    {
+      "name": "Meinerzhagen",
+      "population": 20554
+    },
+    {
+      "name": "Nördlingen",
+      "population": 20546
+    },
+    {
+      "name": "Puchheim",
+      "population": 20524
+    },
+    {
+      "name": "Tettnang",
+      "population": 20520
+    },
+    {
+      "name": "Mühldorf am Inn",
+      "population": 20500
+    },
+    {
+      "name": "Kitzingen",
+      "population": 20449
+    },
+    {
+      "name": "Neustrelitz",
+      "population": 20426
+    },
+    {
+      "name": "Borna",
+      "population": 20405
+    },
+    {
+      "name": "Kirchhellen",
+      "population": 20398
+    },
+    {
+      "name": "Wittmund",
+      "population": 20363
+    },
+    {
+      "name": "Uetze",
+      "population": 20333
+    },
+    {
+      "name": "Schwanewede",
+      "population": 20329
+    },
+    {
+      "name": "Ochtrup",
+      "population": 20267
+    },
+    {
+      "name": "Enger",
+      "population": 20228
+    },
+    {
+      "name": "Laupheim",
+      "population": 20213
+    },
+    {
+      "name": "Germersheim",
+      "population": 20201
+    },
+    {
+      "name": "Bad Rappenau",
+      "population": 20193
+    },
+    {
+      "name": "Schortens",
+      "population": 20191
+    },
+    {
+      "name": "Luckenwalde",
+      "population": 20185
+    },
+    {
+      "name": "Dillingen/Saar",
+      "population": 20183
+    },
+    {
+      "name": "Lichtenfels",
+      "population": 20169
+    },
+    {
+      "name": "Panketal",
+      "population": 20131
+    },
+    {
+      "name": "Burgwedel",
+      "population": 20123
+    },
+    {
+      "name": "Kürten",
+      "population": 20116
+    },
+    {
+      "name": "Gauting",
+      "population": 20097
+    },
+    {
+      "name": "Kaltenkirchen",
+      "population": 20080
+    },
+    {
+      "name": "Rheinstetten",
+      "population": 20074
+    },
+    {
+      "name": "Quickborn",
+      "population": 20042
+    },
+    {
+      "name": "Hiddenhausen",
+      "population": 20013
+    },
+    {
+      "name": "Stadtlohn",
+      "population": 20005
+    },
+    {
+      "name": "Neustadt am Rübenberge",
+      "population": 20000
+    },
+    {
+      "name": "Zülpich",
+      "population": 20000
+    },
+    {
+      "name": "Torgau",
+      "population": 19992
+    },
+    {
+      "name": "Marsberg",
+      "population": 19908
+    },
+    {
+      "name": "Eislingen/Fils",
+      "population": 19840
+    },
+    {
+      "name": "Bad Tölz",
+      "population": 19821
+    },
+    {
+      "name": "Kleinmachnow",
+      "population": 19777
+    },
+    {
+      "name": "Wittlich",
+      "population": 19740
+    },
+    {
+      "name": "Oberkirch",
+      "population": 19665
+    },
+    {
+      "name": "Bad Waldsee",
+      "population": 19596
+    },
+    {
+      "name": "Donauwörth",
+      "population": 19590
+    },
+    {
+      "name": "Wolfratshausen",
+      "population": 19589
+    },
+    {
+      "name": "Mössingen",
+      "population": 19554
+    },
+    {
+      "name": "Neunkirchen-Seelscheid",
+      "population": 19546
+    },
+    {
+      "name": "Sulzbach-Rosenberg",
+      "population": 19543
+    },
+    {
+      "name": "Teltow",
+      "population": 19541
+    },
+    {
+      "name": "Wenden",
+      "population": 19528
+    },
+    {
+      "name": "Ennigerloh",
+      "population": 19526
+    },
+    {
+      "name": "Hörstel",
+      "population": 19491
+    },
+    {
+      "name": "Nottuln",
+      "population": 19436
+    },
+    {
+      "name": "Crimmitschau",
+      "population": 19396
+    },
+    {
+      "name": "Lebach",
+      "population": 19388
+    },
+    {
+      "name": "Seesen",
+      "population": 19386
+    },
+    {
+      "name": "Schifferstadt",
+      "population": 19277
+    },
+    {
+      "name": "Bad Berleburg",
+      "population": 19236
+    },
+    {
+      "name": "Engelskirchen",
+      "population": 19211
+    },
+    {
+      "name": "Haldensleben",
+      "population": 19188
+    },
+    {
+      "name": "Bückeburg",
+      "population": 19182
+    },
+    {
+      "name": "Dillingen an der Donau",
+      "population": 19149
+    },
+    {
+      "name": "Dingolfing",
+      "population": 19145
+    },
+    {
+      "name": "Gerlingen",
+      "population": 19068
+    },
+    {
+      "name": "Forst (Lausitz) - Baršć (Łužyca)",
+      "population": 19053
+    },
+    {
+      "name": "Rhede",
+      "population": 19051
+    },
+    {
+      "name": "Giengen an der Brenz",
+      "population": 19018
+    },
+    {
+      "name": "Telgte",
+      "population": 18996
+    },
+    {
+      "name": "Alfeld (Leine)",
+      "population": 18974
+    },
+    {
+      "name": "Prenzlau",
+      "population": 18970
+    },
+    {
+      "name": "Vlotho",
+      "population": 18970
+    },
+    {
+      "name": "Schkeuditz",
+      "population": 18915
+    },
+    {
+      "name": "Bad Pyrmont",
+      "population": 18909
+    },
+    {
+      "name": "Buchen (Odenwald)",
+      "population": 18888
+    },
+    {
+      "name": "Reichenbach",
+      "population": 18879
+    },
+    {
+      "name": "Waldbröl",
+      "population": 18872
+    },
+    {
+      "name": "Bergneustadt",
+      "population": 18835
+    },
+    {
+      "name": "Bad Dürkheim",
+      "population": 18830
+    },
+    {
+      "name": "Mayen",
+      "population": 18818
+    },
+    {
+      "name": "Püttlingen",
+      "population": 18748
+    },
+    {
+      "name": "Hechingen",
+      "population": 18741
+    },
+    {
+      "name": "Windeck",
+      "population": 18724
+    },
+    {
+      "name": "Schneverdingen",
+      "population": 18723
+    },
+    {
+      "name": "Bremervörde",
+      "population": 18701
+    },
+    {
+      "name": "Renningen",
+      "population": 18700
+    },
+    {
+      "name": "Schenefeld",
+      "population": 18672
+    },
+    {
+      "name": "Bad Friedrichshall",
+      "population": 18615
+    },
+    {
+      "name": "Eitorf",
+      "population": 18585
+    },
+    {
+      "name": "Weißenburg in Bayern",
+      "population": 18578
+    },
+    {
+      "name": "Mölln",
+      "population": 18520
+    },
+    {
+      "name": "Marktoberdorf",
+      "population": 18487
+    },
+    {
+      "name": "Hemmingen",
+      "population": 18485
+    },
+    {
+      "name": "Müllheim im Markgräflerland",
+      "population": 18454
+    },
+    {
+      "name": "Reichshof",
+      "population": 18454
+    },
+    {
+      "name": "Weil der Stadt",
+      "population": 18415
+    },
+    {
+      "name": "Gilching",
+      "population": 18388
+    },
+    {
+      "name": "Großenhain",
+      "population": 18384
+    },
+    {
+      "name": "Bad Driburg",
+      "population": 18338
+    },
+    {
+      "name": "Lilienthal",
+      "population": 18304
+    },
+    {
+      "name": "Vechelde",
+      "population": 18255
+    },
+    {
+      "name": "Sarstedt",
+      "population": 18237
+    },
+    {
+      "name": "Radeberg",
+      "population": 18153
+    },
+    {
+      "name": "Wörth am Rhein",
+      "population": 18123
+    },
+    {
+      "name": "Hessisch Oldendorf",
+      "population": 18114
+    },
+    {
+      "name": "Burscheid",
+      "population": 18108
+    },
+    {
+      "name": "Marktredwitz",
+      "population": 18087
+    },
+    {
+      "name": "Werdohl",
+      "population": 18073
+    },
+    {
+      "name": "Kolbermoor",
+      "population": 18065
+    },
+    {
+      "name": "Sindorf",
+      "population": 18050
+    },
+    {
+      "name": "Weilheim in Oberbayern",
+      "population": 18000
+    },
+    {
+      "name": "Bönen",
+      "population": 17980
+    },
+    {
+      "name": "Vilshofen an der Donau",
+      "population": 17960
+    },
+    {
+      "name": "Eilenburg",
+      "population": 17950
+    },
+    {
+      "name": "Freudenberg",
+      "population": 17873
+    },
+    {
+      "name": "Munster",
+      "population": 17845
+    },
+    {
+      "name": "Bexbach",
+      "population": 17757
+    },
+    {
+      "name": "Taufkirchen",
+      "population": 17724
+    },
+    {
+      "name": "Burghausen",
+      "population": 17715
+    },
+    {
+      "name": "Vellmar",
+      "population": 17663
+    },
+    {
+      "name": "Garching bei München",
+      "population": 17656
+    },
+    {
+      "name": "Guben",
+      "population": 17655
+    },
+    {
+      "name": "Bad Aibling",
+      "population": 17633
+    },
+    {
+      "name": "Konz",
+      "population": 17628
+    },
+    {
+      "name": "Zossen",
+      "population": 17600
+    },
+    {
+      "name": "Pfullingen",
+      "population": 17584
+    },
+    {
+      "name": "Lahnstein",
+      "population": 17573
+    },
+    {
+      "name": "Schwarzenberg/Erzgebirge",
+      "population": 17542
+    },
+    {
+      "name": "Sachsenheim",
+      "population": 17517
+    },
+    {
+      "name": "Alzey",
+      "population": 17516
+    },
+    {
+      "name": "Bad Reichenhall",
+      "population": 17513
+    },
+    {
+      "name": "Holzminden",
+      "population": 17500
+    },
+    {
+      "name": "Trossingen",
+      "population": 17463
+    },
+    {
+      "name": "Bad Krozingen",
+      "population": 17448
+    },
+    {
+      "name": "Moosburg an der Isar",
+      "population": 17363
+    },
+    {
+      "name": "Altena",
+      "population": 17339
+    },
+    {
+      "name": "Bad Münder",
+      "population": 17325
+    },
+    {
+      "name": "Finnentrop",
+      "population": 17258
+    },
+    {
+      "name": "Oerlinghausen",
+      "population": 17228
+    },
+    {
+      "name": "Oberasbach",
+      "population": 17183
+    },
+    {
+      "name": "Wassenberg",
+      "population": 17182
+    },
+    {
+      "name": "Sinzig",
+      "population": 17135
+    },
+    {
+      "name": "Parchim",
+      "population": 17129
+    },
+    {
+      "name": "Holzwickede",
+      "population": 17081
+    },
+    {
+      "name": "Kreuzau",
+      "population": 17071
+    },
+    {
+      "name": "Ribnitz-Damgarten",
+      "population": 17053
+    },
+    {
+      "name": "Marienberg",
+      "population": 17049
+    },
+    {
+      "name": "Schönefeld",
+      "population": 17017
+    },
+    {
+      "name": "Cham",
+      "population": 17013
+    },
+    {
+      "name": "Bad Saulgau",
+      "population": 17011
+    },
+    {
+      "name": "Wittenberge",
+      "population": 16925
+    },
+    {
+      "name": "Kamenz - Kamjenc",
+      "population": 16918
+    },
+    {
+      "name": "Gescher",
+      "population": 16887
+    },
+    {
+      "name": "Bad Salzungen",
+      "population": 16868
+    },
+    {
+      "name": "Kronach",
+      "population": 16808
+    },
+    {
+      "name": "Illertissen",
+      "population": 16775
+    },
+    {
+      "name": "Kirchlengern",
+      "population": 16719
+    },
+    {
+      "name": "Bad Säckingen",
+      "population": 16673
+    },
+    {
+      "name": "Bendorf",
+      "population": 16636
+    },
+    {
+      "name": "Nauen",
+      "population": 16616
+    },
+    {
+      "name": "Bobingen",
+      "population": 16574
+    },
+    {
+      "name": "Finsterwalde",
+      "population": 16561
+    },
+    {
+      "name": "Stockelsdorf",
+      "population": 16543
+    },
+    {
+      "name": "Diepholz",
+      "population": 16542
+    },
+    {
+      "name": "Brakel",
+      "population": 16535
+    },
+    {
+      "name": "Wardenburg",
+      "population": 16484
+    },
+    {
+      "name": "Damme",
+      "population": 16397
+    },
+    {
+      "name": "Wurzen",
+      "population": 16327
+    },
+    {
+      "name": "Sulzbach/Saar",
+      "population": 16294
+    },
+    {
+      "name": "Schmelz",
+      "population": 16264
+    },
+    {
+      "name": "Gunzenhausen",
+      "population": 16222
+    },
+    {
+      "name": "Halver",
+      "population": 16218
+    },
+    {
+      "name": "Stockach",
+      "population": 16182
+    },
+    {
+      "name": "Bad Neustadt an der Saale",
+      "population": 16179
+    },
+    {
+      "name": "Schrobenhausen",
+      "population": 16172
+    },
+    {
+      "name": "Heidenau",
+      "population": 16151
+    },
+    {
+      "name": "Hövelhof",
+      "population": 16144
+    },
+    {
+      "name": "Kierspe",
+      "population": 16116
+    },
+    {
+      "name": "Lübbenau/Spreewald - Lubnjow/Błota",
+      "population": 16109
+    },
+    {
+      "name": "Poing",
+      "population": 16100
+    },
+    {
+      "name": "Penzberg",
+      "population": 16092
+    },
+    {
+      "name": "Remagen",
+      "population": 16036
+    },
+    {
+      "name": "Freiberg am Neckar",
+      "population": 16024
+    },
+    {
+      "name": "Hude",
+      "population": 16000
+    },
+    {
+      "name": "Beckingen",
+      "population": 15999
+    },
+    {
+      "name": "Gehrden",
+      "population": 15985
+    },
+    {
+      "name": "Marbach am Neckar",
+      "population": 15985
+    },
+    {
+      "name": "Rahden",
+      "population": 15974
+    },
+    {
+      "name": "Hann. Münden",
+      "population": 15909
+    },
+    {
+      "name": "Freilassing",
+      "population": 15890
+    },
+    {
+      "name": "Bruckmühl",
+      "population": 15878
+    },
+    {
+      "name": "Hettstedt",
+      "population": 15855
+    },
+    {
+      "name": "Wadern",
+      "population": 15850
+    },
+    {
+      "name": "Ebersbach an der Fils",
+      "population": 15835
+    },
+    {
+      "name": "Losheim am See",
+      "population": 15821
+    },
+    {
+      "name": "Holzkirchen",
+      "population": 15804
+    },
+    {
+      "name": "Taucha",
+      "population": 15759
+    },
+    {
+      "name": "Schiffweiler",
+      "population": 15754
+    },
+    {
+      "name": "Weener",
+      "population": 15714
+    },
+    {
+      "name": "Spenge",
+      "population": 15707
+    },
+    {
+      "name": "Bad Essen",
+      "population": 15668
+    },
+    {
+      "name": "Königslutter am Elm",
+      "population": 15666
+    },
+    {
+      "name": "Erwitte",
+      "population": 15663
+    },
+    {
+      "name": "Kelheim",
+      "population": 15648
+    },
+    {
+      "name": "Markranstädt",
+      "population": 15619
+    },
+    {
+      "name": "Ahrensfelde",
+      "population": 15612
+    },
+    {
+      "name": "Wendelstein",
+      "population": 15612
+    },
+    {
+      "name": "Sigmaringen",
+      "population": 15593
+    },
+    {
+      "name": "Wendlingen am Neckar",
+      "population": 15554
+    },
+    {
+      "name": "Löbau",
+      "population": 15531
+    },
+    {
+      "name": "Bassum",
+      "population": 15529
+    },
+    {
+      "name": "Mainburg",
+      "population": 15517
+    },
+    {
+      "name": "Brüggen",
+      "population": 15469
+    },
+    {
+      "name": "Eberbach",
+      "population": 15448
+    },
+    {
+      "name": "Clausthal-Zellerfeld",
+      "population": 15413
+    },
+    {
+      "name": "Oyten",
+      "population": 15413
+    },
+    {
+      "name": "Straelen",
+      "population": 15401
+    },
+    {
+      "name": "Altdorf bei Nürnberg",
+      "population": 15383
+    },
+    {
+      "name": "Bad Laasphe",
+      "population": 15347
+    },
+    {
+      "name": "Bad Bentheim",
+      "population": 15311
+    },
+    {
+      "name": "Neustadt bei Coburg",
+      "population": 15278
+    },
+    {
+      "name": "Simmerath",
+      "population": 15266
+    },
+    {
+      "name": "Odenthal",
+      "population": 15258
+    },
+    {
+      "name": "Ascheberg",
+      "population": 15253
+    },
+    {
+      "name": "Bitburg",
+      "population": 15228
+    },
+    {
+      "name": "Ismaning",
+      "population": 15221
+    },
+    {
+      "name": "Boppard",
+      "population": 15181
+    },
+    {
+      "name": "Brake (Unterweser)",
+      "population": 15149
+    },
+    {
+      "name": "Blaustein",
+      "population": 15113
+    },
+    {
+      "name": "Mindelheim",
+      "population": 15108
+    },
+    {
+      "name": "Hückeswagen",
+      "population": 15102
+    },
+    {
+      "name": "Landsberg",
+      "population": 15068
+    },
+    {
+      "name": "Lohr am Main",
+      "population": 15012
+    },
+    {
+      "name": "Weißwasser/Oberlausitz - Běła Woda",
+      "population": 15002
+    },
+    {
+      "name": "Aue",
+      "population": 15000
+    },
+    {
+      "name": "Steinhagen",
+      "population": 15000
+    },
+    {
+      "name": "Traunstein",
+      "population": 15000
+    },
+    {
+      "name": "Hilchenbach",
+      "population": 14993
+    },
+    {
+      "name": "Hohenstein-Ernstthal",
+      "population": 14950
+    },
+    {
+      "name": "Mittweida",
+      "population": 14946
+    },
+    {
+      "name": "Olsberg",
+      "population": 14931
+    },
+    {
+      "name": "Bad Lippspringe",
+      "population": 14922
+    },
+    {
+      "name": "Schriesheim",
+      "population": 14897
+    },
+    {
+      "name": "Schwarzenbek",
+      "population": 14864
+    },
+    {
+      "name": "Drensteinfurt",
+      "population": 14823
+    },
+    {
+      "name": "Karlstadt",
+      "population": 14810
+    },
+    {
+      "name": "Künzelsau",
+      "population": 14802
+    },
+    {
+      "name": "Jessen (Elster)",
+      "population": 14780
+    },
+    {
+      "name": "Grefrath",
+      "population": 14760
+    },
+    {
+      "name": "Oschatz",
+      "population": 14733
+    },
+    {
+      "name": "Langwedel",
+      "population": 14716
+    },
+    {
+      "name": "Oberndorf am Neckar",
+      "population": 14693
+    },
+    {
+      "name": "Winterberg",
+      "population": 14687
+    },
+    {
+      "name": "Ottweiler",
+      "population": 14680
+    },
+    {
+      "name": "Walldorf",
+      "population": 14663
+    },
+    {
+      "name": "Wittstock/Dosse",
+      "population": 14631
+    },
+    {
+      "name": "Lengede",
+      "population": 14625
+    },
+    {
+      "name": "Stadtbergen",
+      "population": 14621
+    },
+    {
+      "name": "Wilsdruff",
+      "population": 14613
+    },
+    {
+      "name": "Frankenberg/Sachsen",
+      "population": 14602
+    },
+    {
+      "name": "Pocking",
+      "population": 14560
+    },
+    {
+      "name": "Markgröningen",
+      "population": 14555
+    },
+    {
+      "name": "Bad Salzdetfurth",
+      "population": 14527
+    },
+    {
+      "name": "Riegelsberg",
+      "population": 14514
+    },
+    {
+      "name": "Münsingen",
+      "population": 14497
+    },
+    {
+      "name": "Malsch",
+      "population": 14483
+    },
+    {
+      "name": "Breisach am Rhein",
+      "population": 14464
+    },
+    {
+      "name": "Baiersbronn",
+      "population": 14453
+    },
+    {
+      "name": "Kalkar",
+      "population": 14389
+    },
+    {
+      "name": "Uslar",
+      "population": 14376
+    },
+    {
+      "name": "Zeven",
+      "population": 14376
+    },
+    {
+      "name": "Eppelheim",
+      "population": 14345
+    },
+    {
+      "name": "Wiefelstede",
+      "population": 14335
+    },
+    {
+      "name": "Bergen auf Rügen",
+      "population": 14328
+    },
+    {
+      "name": "Markdorf",
+      "population": 14318
+    },
+    {
+      "name": "Gernsbach",
+      "population": 14307
+    },
+    {
+      "name": "Bissendorf",
+      "population": 14299
+    },
+    {
+      "name": "Sandhausen",
+      "population": 14292
+    },
+    {
+      "name": "Murrhardt",
+      "population": 14248
+    },
+    {
+      "name": "Langenau",
+      "population": 14244
+    },
+    {
+      "name": "Neckargemünd",
+      "population": 14221
+    },
+    {
+      "name": "Lohfelden",
+      "population": 14220
+    },
+    {
+      "name": "Eckental",
+      "population": 14154
+    },
+    {
+      "name": "Füssen",
+      "population": 14139
+    },
+    {
+      "name": "Selb",
+      "population": 14139
+    },
+    {
+      "name": "Pegnitz",
+      "population": 14137
+    },
+    {
+      "name": "Grafing bei München",
+      "population": 14096
+    },
+    {
+      "name": "Wolgast",
+      "population": 14055
+    },
+    {
+      "name": "Dorfen",
+      "population": 14052
+    },
+    {
+      "name": "Schneeberg",
+      "population": 14027
+    },
+    {
+      "name": "Stein",
+      "population": 14025
+    },
+    {
+      "name": "Lübben (Spreewald) - Lubin (Błota)",
+      "population": 14017
+    },
+    {
+      "name": "Greiz",
+      "population": 14000
+    },
+    {
+      "name": "Lobberich",
+      "population": 14000
+    },
+    {
+      "name": "Neu-Anspach",
+      "population": 14000
+    },
+    {
+      "name": "Ritterhude",
+      "population": 13997
+    },
+    {
+      "name": "Wulfen",
+      "population": 13975
+    },
+    {
+      "name": "Wennigsen (Deister)",
+      "population": 13933
+    },
+    {
+      "name": "Uhingen",
+      "population": 13931
+    },
+    {
+      "name": "Bad Wörishofen",
+      "population": 13925
+    },
+    {
+      "name": "Steinheim",
+      "population": 13907
+    },
+    {
+      "name": "Beverungen",
+      "population": 13859
+    },
+    {
+      "name": "Jever",
+      "population": 13829
+    },
+    {
+      "name": "Ratzeburg",
+      "population": 13785
+    },
+    {
+      "name": "Wiesmoor",
+      "population": 13768
+    },
+    {
+      "name": "Genthin",
+      "population": 13761
+    },
+    {
+      "name": "Rellingen",
+      "population": 13702
+    },
+    {
+      "name": "Plochingen",
+      "population": 13689
+    },
+    {
+      "name": "Templin",
+      "population": 13681
+    },
+    {
+      "name": "Neustadt an der Donau",
+      "population": 13670
+    },
+    {
+      "name": "Meckenbeuren",
+      "population": 13651
+    },
+    {
+      "name": "Schermbeck",
+      "population": 13633
+    },
+    {
+      "name": "Angermünde",
+      "population": 13600
+    },
+    {
+      "name": "Belm",
+      "population": 13581
+    },
+    {
+      "name": "Schöningen",
+      "population": 13570
+    },
+    {
+      "name": "Haßfurt",
+      "population": 13539
+    },
+    {
+      "name": "Preußisch Oldendorf",
+      "population": 13536
+    },
+    {
+      "name": "Marienheide",
+      "population": 13514
+    },
+    {
+      "name": "Bergen",
+      "population": 13491
+    },
+    {
+      "name": "Neubiberg",
+      "population": 13480
+    },
+    {
+      "name": "Coswig (Anhalt)",
+      "population": 13476
+    },
+    {
+      "name": "Oberhaching",
+      "population": 13462
+    },
+    {
+      "name": "Hagen am Teutoburger Wald",
+      "population": 13437
+    },
+    {
+      "name": "Zeulenroda",
+      "population": 13433
+    },
+    {
+      "name": "Langelsheim",
+      "population": 13366
+    },
+    {
+      "name": "Hösbach",
+      "population": 13359
+    },
+    {
+      "name": "Feucht",
+      "population": 13357
+    },
+    {
+      "name": "Tostedt",
+      "population": 13323
+    },
+    {
+      "name": "Denzlingen",
+      "population": 13318
+    },
+    {
+      "name": "Schleiden",
+      "population": 13272
+    },
+    {
+      "name": "Bohmte",
+      "population": 13267
+    },
+    {
+      "name": "Bad Dürrheim",
+      "population": 13260
+    },
+    {
+      "name": "Neutraubling",
+      "population": 13255
+    },
+    {
+      "name": "Weißenhorn",
+      "population": 13252
+    },
+    {
+      "name": "Tauberbischofsheim",
+      "population": 13238
+    },
+    {
+      "name": "Erbach",
+      "population": 13224
+    },
+    {
+      "name": "Sendenhorst",
+      "population": 13222
+    },
+    {
+      "name": "Pfullendorf",
+      "population": 13214
+    },
+    {
+      "name": "Lichtenstein/Sachsen",
+      "population": 13200
+    },
+    {
+      "name": "Lotte",
+      "population": 13160
+    },
+    {
+      "name": "Höchstadt an der Aisch",
+      "population": 13158
+    },
+    {
+      "name": "Schwabmünchen",
+      "population": 13153
+    },
+    {
+      "name": "Schöneiche bei Berlin",
+      "population": 13145
+    },
+    {
+      "name": "Herzberg am Harz",
+      "population": 13140
+    },
+    {
+      "name": "Herbrechtingen",
+      "population": 13128
+    },
+    {
+      "name": "Rödental",
+      "population": 13116
+    },
+    {
+      "name": "Eggenfelden",
+      "population": 13090
+    },
+    {
+      "name": "Löningen",
+      "population": 13088
+    },
+    {
+      "name": "St. Georgen",
+      "population": 13086
+    },
+    {
+      "name": "Vöhringen",
+      "population": 13084
+    },
+    {
+      "name": "Roding",
+      "population": 13060
+    },
+    {
+      "name": "Gräfelfing",
+      "population": 13058
+    },
+    {
+      "name": "Kirchhundem",
+      "population": 13051
+    },
+    {
+      "name": "Auerbach/Vogtland",
+      "population": 13000
+    },
+    {
+      "name": "Burladingen",
+      "population": 12999
+    },
+    {
+      "name": "Neustadt in Sachsen",
+      "population": 12976
+    },
+    {
+      "name": "Landau an der Isar",
+      "population": 12939
+    },
+    {
+      "name": "Anklam",
+      "population": 12930
+    },
+    {
+      "name": "Möckern",
+      "population": 12930
+    },
+    {
+      "name": "Thale",
+      "population": 12903
+    },
+    {
+      "name": "Liblar",
+      "population": 12900
+    },
+    {
+      "name": "Tornesch",
+      "population": 12876
+    },
+    {
+      "name": "Quakenbrück",
+      "population": 12845
+    },
+    {
+      "name": "Asperg",
+      "population": 12842
+    },
+    {
+      "name": "Jüterbog",
+      "population": 12830
+    },
+    {
+      "name": "Frohburg",
+      "population": 12815
+    },
+    {
+      "name": "Bad Urach",
+      "population": 12807
+    },
+    {
+      "name": "Sulingen",
+      "population": 12742
+    },
+    {
+      "name": "Krumbach (Schwaben)",
+      "population": 12729
+    },
+    {
+      "name": "Scheeßel",
+      "population": 12728
+    },
+    {
+      "name": "Markt Schwaben",
+      "population": 12703
+    },
+    {
+      "name": "Mering",
+      "population": 12676
+    },
+    {
+      "name": "Dinklage",
+      "population": 12673
+    },
+    {
+      "name": "Wickede (Ruhr)",
+      "population": 12658
+    },
+    {
+      "name": "Brunsbüttel",
+      "population": 12651
+    },
+    {
+      "name": "Sulz am Neckar",
+      "population": 12638
+    },
+    {
+      "name": "Östringen",
+      "population": 12627
+    },
+    {
+      "name": "Altötting",
+      "population": 12613
+    },
+    {
+      "name": "Gaildorf",
+      "population": 12592
+    },
+    {
+      "name": "Hirschaid",
+      "population": 12586
+    },
+    {
+      "name": "Monschau",
+      "population": 12577
+    },
+    {
+      "name": "Montabaur",
+      "population": 12558
+    },
+    {
+      "name": "Philippsburg",
+      "population": 12558
+    },
+    {
+      "name": "Winsen (Aller)",
+      "population": 12554
+    },
+    {
+      "name": "Haselünne",
+      "population": 12543
+    },
+    {
+      "name": "Zella-Mehlis",
+      "population": 12532
+    },
+    {
+      "name": "Mettlach",
+      "population": 12531
+    },
+    {
+      "name": "Twistringen",
+      "population": 12518
+    },
+    {
+      "name": "Peißenberg",
+      "population": 12516
+    },
+    {
+      "name": "Harsefeld",
+      "population": 12500
+    },
+    {
+      "name": "Manching",
+      "population": 12500
+    },
+    {
+      "name": "Olfen",
+      "population": 12490
+    },
+    {
+      "name": "Neustadt an der Aisch",
+      "population": 12479
+    },
+    {
+      "name": "Hersbruck",
+      "population": 12470
+    },
+    {
+      "name": "Mutterstadt",
+      "population": 12456
+    },
+    {
+      "name": "Wasserburg am Inn",
+      "population": 12439
+    },
+    {
+      "name": "Neuenrade",
+      "population": 12424
+    },
+    {
+      "name": "Wernau (Neckar)",
+      "population": 12418
+    },
+    {
+      "name": "Burgstädt",
+      "population": 12412
+    },
+    {
+      "name": "Spaichingen",
+      "population": 12409
+    },
+    {
+      "name": "Hauzenberg",
+      "population": 12408
+    },
+    {
+      "name": "Bad Freienwalde (Oder)",
+      "population": 12403
+    },
+    {
+      "name": "Plattling",
+      "population": 12401
+    },
+    {
+      "name": "Murnau am Staffelsee",
+      "population": 12395
+    },
+    {
+      "name": "Wittingen",
+      "population": 12383
+    },
+    {
+      "name": "Drolshagen",
+      "population": 12344
+    },
+    {
+      "name": "Hemsbach",
+      "population": 12329
+    },
+    {
+      "name": "Mömbris",
+      "population": 12320
+    },
+    {
+      "name": "Bad Wünnenberg",
+      "population": 12298
+    },
+    {
+      "name": "Regen",
+      "population": 12298
+    },
+    {
+      "name": "Hagenow",
+      "population": 12295
+    },
+    {
+      "name": "Feuchtwangen",
+      "population": 12293
+    },
+    {
+      "name": "Roth",
+      "population": 12292
+    },
+    {
+      "name": "Waldbronn",
+      "population": 12284
+    },
+    {
+      "name": "Stahnsdorf",
+      "population": 12216
+    },
+    {
+      "name": "Gräfenhainichen",
+      "population": 12200
+    },
+    {
+      "name": "Stollberg",
+      "population": 12200
+    },
+    {
+      "name": "Pößneck",
+      "population": 12148
+    },
+    {
+      "name": "Steinheim an der Murr",
+      "population": 12122
+    },
+    {
+      "name": "Tamm",
+      "population": 12112
+    },
+    {
+      "name": "Bad Windsheim",
+      "population": 12102
+    },
+    {
+      "name": "Roßlau",
+      "population": 12096
+    },
+    {
+      "name": "Ludwigslust",
+      "population": 12095
+    },
+    {
+      "name": "Gaimersheim",
+      "population": 12086
+    },
+    {
+      "name": "Perleberg",
+      "population": 12046
+    },
+    {
+      "name": "Walldürn",
+      "population": 12045
+    },
+    {
+      "name": "Bad Lauterberg im Harz",
+      "population": 12023
+    },
+    {
+      "name": "Schongau",
+      "population": 12023
+    },
+    {
+      "name": "Miesbach",
+      "population": 12001
+    },
+    {
+      "name": "Beelitz",
+      "population": 12000
+    },
+    {
+      "name": "Meerane",
+      "population": 12000
+    },
+    {
+      "name": "Buchloe",
+      "population": 11983
+    },
+    {
+      "name": "Durmersheim",
+      "population": 11954
+    },
+    {
+      "name": "Ettenheim",
+      "population": 11950
+    },
+    {
+      "name": "Havixbeck",
+      "population": 11944
+    },
+    {
+      "name": "Schalksmühle",
+      "population": 11944
+    },
+    {
+      "name": "Zschopau",
+      "population": 11939
+    },
+    {
+      "name": "Rielasingen-Worblingen",
+      "population": 11938
+    },
+    {
+      "name": "Hammelburg",
+      "population": 11925
+    },
+    {
+      "name": "Zwönitz",
+      "population": 11905
+    },
+    {
+      "name": "Pritzwalk",
+      "population": 11879
+    },
+    {
+      "name": "Blaubeuren",
+      "population": 11845
+    },
+    {
+      "name": "Pfarrkirchen",
+      "population": 11816
+    },
+    {
+      "name": "Weinsberg",
+      "population": 11812
+    },
+    {
+      "name": "Bad Fallingbostel",
+      "population": 11808
+    },
+    {
+      "name": "Oberderdingen",
+      "population": 11804
+    },
+    {
+      "name": "Bopfingen",
+      "population": 11800
+    },
+    {
+      "name": "Besigheim",
+      "population": 11797
+    },
+    {
+      "name": "Röthenbach an der Pegnitz",
+      "population": 11792
+    },
+    {
+      "name": "Bad Doberan",
+      "population": 11785
+    },
+    {
+      "name": "Brand-Erbisdorf",
+      "population": 11761
+    },
+    {
+      "name": "Bad Iburg",
+      "population": 11733
+    },
+    {
+      "name": "Neuenburg am Rhein",
+      "population": 11710
+    },
+    {
+      "name": "Lechenich",
+      "population": 11700
+    },
+    {
+      "name": "Holzgerlingen",
+      "population": 11689
+    },
+    {
+      "name": "Peiting",
+      "population": 11678
+    },
+    {
+      "name": "Zetel",
+      "population": 11677
+    },
+    {
+      "name": "Lauenburg/Elbe",
+      "population": 11671
+    },
+    {
+      "name": "Hildburghausen",
+      "population": 11660
+    },
+    {
+      "name": "Dinkelsbühl",
+      "population": 11657
+    },
+    {
+      "name": "Erkner",
+      "population": 11641
+    },
+    {
+      "name": "Dossenheim",
+      "population": 11616
+    },
+    {
+      "name": "Wilkau-Haßlau",
+      "population": 11595
+    },
+    {
+      "name": "Bad Dürrenberg",
+      "population": 11534
+    },
+    {
+      "name": "Eisenberg",
+      "population": 11532
+    },
+    {
+      "name": "Gundelfingen",
+      "population": 11527
+    },
+    {
+      "name": "Ochsenfurt",
+      "population": 11522
+    },
+    {
+      "name": "Münchberg",
+      "population": 11521
+    },
+    {
+      "name": "Ladenburg",
+      "population": 11520
+    },
+    {
+      "name": "Raesfeld",
+      "population": 11514
+    },
+    {
+      "name": "Schüttorf",
+      "population": 11507
+    },
+    {
+      "name": "Ergolding",
+      "population": 11497
+    },
+    {
+      "name": "Wolmirstedt",
+      "population": 11477
+    },
+    {
+      "name": "Velten",
+      "population": 11475
+    },
+    {
+      "name": "Egelsbach",
+      "population": 11452
+    },
+    {
+      "name": "Burgthann",
+      "population": 11436
+    },
+    {
+      "name": "Vilsbiburg",
+      "population": 11426
+    },
+    {
+      "name": "Billerbeck",
+      "population": 11416
+    },
+    {
+      "name": "Dassel",
+      "population": 11409
+    },
+    {
+      "name": "Bad Belzig",
+      "population": 11407
+    },
+    {
+      "name": "Olbernhau",
+      "population": 11405
+    },
+    {
+      "name": "Gardelegen",
+      "population": 11400
+    },
+    {
+      "name": "Braunsbedra",
+      "population": 11399
+    },
+    {
+      "name": "Demmin",
+      "population": 11393
+    },
+    {
+      "name": "Oberschleißheim",
+      "population": 11353
+    },
+    {
+      "name": "Bockenem",
+      "population": 11349
+    },
+    {
+      "name": "Osterhofen",
+      "population": 11334
+    },
+    {
+      "name": "Calbe (Saale)",
+      "population": 11319
+    },
+    {
+      "name": "Rothenburg ob der Tauber",
+      "population": 11297
+    },
+    {
+      "name": "Welzheim",
+      "population": 11257
+    },
+    {
+      "name": "Bad Nenndorf",
+      "population": 11214
+    },
+    {
+      "name": "Aerzen",
+      "population": 11204
+    },
+    {
+      "name": "Altensteig",
+      "population": 11180
+    },
+    {
+      "name": "Bestwig",
+      "population": 11171
+    },
+    {
+      "name": "Morbach",
+      "population": 11162
+    },
+    {
+      "name": "Lauffen am Neckar",
+      "population": 11138
+    },
+    {
+      "name": "Ebersberg",
+      "population": 11132
+    },
+    {
+      "name": "Flöha",
+      "population": 11128
+    },
+    {
+      "name": "Meitingen",
+      "population": 11121
+    },
+    {
+      "name": "Gengenbach",
+      "population": 11086
+    },
+    {
+      "name": "Grünwald",
+      "population": 11086
+    },
+    {
+      "name": "Schkopau",
+      "population": 11023
+    },
+    {
+      "name": "Diez",
+      "population": 11011
+    },
+    {
+      "name": "Kemberg",
+      "population": 11000
+    },
+    {
+      "name": "Raubling",
+      "population": 11000
+    },
+    {
+      "name": "Schwaigern",
+      "population": 10998
+    },
+    {
+      "name": "Zehdenick",
+      "population": 10974
+    },
+    {
+      "name": "Laichingen",
+      "population": 10968
+    },
+    {
+      "name": "Oelsnitz",
+      "population": 10954
+    },
+    {
+      "name": "Wolnzach",
+      "population": 10942
+    },
+    {
+      "name": "Haigerloch",
+      "population": 10935
+    },
+    {
+      "name": "Eningen unter Achalm",
+      "population": 10890
+    },
+    {
+      "name": "Bad Malente-Gremsmühlen",
+      "population": 10877
+    },
+    {
+      "name": "Hüsten",
+      "population": 10853
+    },
+    {
+      "name": "Donzdorf",
+      "population": 10800
+    },
+    {
+      "name": "Herbolzheim",
+      "population": 10783
+    },
+    {
+      "name": "Glückstadt",
+      "population": 10779
+    },
+    {
+      "name": "Salzhemmendorf",
+      "population": 10755
+    },
+    {
+      "name": "Lauingen (Donau)",
+      "population": 10736
+    },
+    {
+      "name": "Boizenburg/Elbe",
+      "population": 10731
+    },
+    {
+      "name": "Schwieberdingen",
+      "population": 10720
+    },
+    {
+      "name": "Visselhövede",
+      "population": 10707
+    },
+    {
+      "name": "Burgkirchen an der Alz",
+      "population": 10690
+    },
+    {
+      "name": "Bad Staffelstein",
+      "population": 10662
+    },
+    {
+      "name": "Bischofswerda",
+      "population": 10648
+    },
+    {
+      "name": "Wildau",
+      "population": 10633
+    },
+    {
+      "name": "Lorch",
+      "population": 10607
+    },
+    {
+      "name": "Grevesmühlen",
+      "population": 10594
+    },
+    {
+      "name": "Maxhütte-Haidhof",
+      "population": 10513
+    },
+    {
+      "name": "Prien am Chiemsee",
+      "population": 10512
+    },
+    {
+      "name": "Meßstetten",
+      "population": 10472
+    },
+    {
+      "name": "Planegg",
+      "population": 10459
+    },
+    {
+      "name": "Waldkirchen",
+      "population": 10456
+    },
+    {
+      "name": "Querfurt",
+      "population": 10454
+    },
+    {
+      "name": "Kirchlinteln",
+      "population": 10446
+    },
+    {
+      "name": "Langenzenn",
+      "population": 10443
+    },
+    {
+      "name": "Leingarten",
+      "population": 10429
+    },
+    {
+      "name": "Mülheim-Kärlich",
+      "population": 10416
+    },
+    {
+      "name": "Herxheim bei Landau/Pfalz",
+      "population": 10397
+    },
+    {
+      "name": "Weilheim an der Teck",
+      "population": 10397
+    },
+    {
+      "name": "Bad Wildbad",
+      "population": 10393
+    },
+    {
+      "name": "Riedlingen",
+      "population": 10384
+    },
+    {
+      "name": "Höhenkirchen-Siegertsbrunn",
+      "population": 10368
+    },
+    {
+      "name": "Gemünden am Main",
+      "population": 10290
+    },
+    {
+      "name": "Ottendorf-Okrilla",
+      "population": 10273
+    },
+    {
+      "name": "Rödinghausen",
+      "population": 10266
+    },
+    {
+      "name": "Dießen am Ammersee",
+      "population": 10239
+    },
+    {
+      "name": "Erlenbach am Main",
+      "population": 10235
+    },
+    {
+      "name": "Friedrichsthal",
+      "population": 10232
+    },
+    {
+      "name": "Diedorf",
+      "population": 10229
+    },
+    {
+      "name": "Herrsching am Ammersee",
+      "population": 10206
+    },
+    {
+      "name": "Mengen",
+      "population": 10175
+    },
+    {
+      "name": "Engen",
+      "population": 10168
+    },
+    {
+      "name": "Cadolzburg",
+      "population": 10160
+    },
+    {
+      "name": "Wunsiedel",
+      "population": 10154
+    },
+    {
+      "name": "Bleicherode",
+      "population": 10151
+    },
+    {
+      "name": "Süßen",
+      "population": 10137
+    },
+    {
+      "name": "Heubach",
+      "population": 10133
+    },
+    {
+      "name": "Rutesheim",
+      "population": 10112
+    },
+    {
+      "name": "Roßtal",
+      "population": 10102
+    },
+    {
+      "name": "Gommern",
+      "population": 10090
+    },
+    {
+      "name": "Lenggries",
+      "population": 10077
+    },
+    {
+      "name": "Pasewalk",
+      "population": 10047
+    },
+    {
+      "name": "Werlte",
+      "population": 10007
+    },
+    {
+      "name": "Aulendorf",
+      "population": 10001
+    },
+    {
+      "name": "Kaldenkirchen",
+      "population": 10000
+    },
+    {
+      "name": "Waldniel",
+      "population": 10000
+    },
+    {
+      "name": "Meuselwitz",
+      "population": 9954
+    },
+    {
+      "name": "Bad Gandersheim",
+      "population": 9946
+    },
+    {
+      "name": "Hohenmölsen",
+      "population": 9941
+    },
+    {
+      "name": "Wildberg",
+      "population": 9941
+    },
+    {
+      "name": "Sebnitz",
+      "population": 9932
+    },
+    {
+      "name": "Rehau",
+      "population": 9929
+    },
+    {
+      "name": "Fürstenau",
+      "population": 9928
+    },
+    {
+      "name": "Kirchberg",
+      "population": 9895
+    },
+    {
+      "name": "Kaufering",
+      "population": 9880
+    },
+    {
+      "name": "Kappeln",
+      "population": 9840
+    },
+    {
+      "name": "Goldbach",
+      "population": 9823
+    },
+    {
+      "name": "Borgentreich",
+      "population": 9796
+    },
+    {
+      "name": "Oldenburg in Holstein",
+      "population": 9794
+    },
+    {
+      "name": "Simbach am Inn",
+      "population": 9781
+    },
+    {
+      "name": "Eisenberg (Pfalz)",
+      "population": 9777
+    },
+    {
+      "name": "Laubach",
+      "population": 9775
+    },
+    {
+      "name": "Hainichen",
+      "population": 9744
+    },
+    {
+      "name": "Dörverden",
+      "population": 9721
+    },
+    {
+      "name": "Tangermünde",
+      "population": 9714
+    },
+    {
+      "name": "Geisenfeld",
+      "population": 9704
+    },
+    {
+      "name": "Markt Indersdorf",
+      "population": 9693
+    },
+    {
+      "name": "Worpswede",
+      "population": 9687
+    },
+    {
+      "name": "Barntrup",
+      "population": 9646
+    },
+    {
+      "name": "Lüchow",
+      "population": 9588
+    },
+    {
+      "name": "Luckau",
+      "population": 9567
+    },
+    {
+      "name": "Ostercappeln",
+      "population": 9566
+    },
+    {
+      "name": "Neuenstadt am Kocher",
+      "population": 9517
+    },
+    {
+      "name": "Tutzing",
+      "population": 9506
+    },
+    {
+      "name": "Zwiesel",
+      "population": 9502
+    },
+    {
+      "name": "Bad Liebenwerda",
+      "population": 9486
+    },
+    {
+      "name": "Sassnitz",
+      "population": 9481
+    },
+    {
+      "name": "Zwenkau",
+      "population": 9479
+    },
+    {
+      "name": "Gnarrenburg",
+      "population": 9473
+    },
+    {
+      "name": "Helmbrechts",
+      "population": 9470
+    },
+    {
+      "name": "Tecklenburg",
+      "population": 9461
+    },
+    {
+      "name": "Volkach",
+      "population": 9444
+    },
+    {
+      "name": "Bleckede",
+      "population": 9420
+    },
+    {
+      "name": "Zörbig",
+      "population": 9417
+    },
+    {
+      "name": "Heilsbronn",
+      "population": 9413
+    },
+    {
+      "name": "Großhansdorf",
+      "population": 9394
+    },
+    {
+      "name": "Wahlstedt",
+      "population": 9391
+    },
+    {
+      "name": "Brandis",
+      "population": 9386
+    },
+    {
+      "name": "Dissen am Teutoburger Wald",
+      "population": 9374
+    },
+    {
+      "name": "Höhr-Grenzhausen",
+      "population": 9346
+    },
+    {
+      "name": "Eslohe (Sauerland)",
+      "population": 9342
+    },
+    {
+      "name": "Bad Breisig",
+      "population": 9341
+    },
+    {
+      "name": "Höchberg",
+      "population": 9329
+    },
+    {
+      "name": "Neuenhaus",
+      "population": 9329
+    },
+    {
+      "name": "Taufkirchen (Vils)",
+      "population": 9265
+    },
+    {
+      "name": "Trebbin",
+      "population": 9250
+    },
+    {
+      "name": "Lügde",
+      "population": 9244
+    },
+    {
+      "name": "Breckerfeld",
+      "population": 9229
+    },
+    {
+      "name": "Neustadt an der Orla",
+      "population": 9198
+    },
+    {
+      "name": "Elsfleth",
+      "population": 9195
+    },
+    {
+      "name": "Niebüll",
+      "population": 9183
+    },
+    {
+      "name": "Herzberg (Elster)",
+      "population": 9161
+    },
+    {
+      "name": "Kyritz",
+      "population": 9152
+    },
+    {
+      "name": "Falkenstein/Vogtland",
+      "population": 9150
+    },
+    {
+      "name": "Neustadt im Schwarzwald",
+      "population": 9150
+    },
+    {
+      "name": "Warstein",
+      "population": 9117
+    },
+    {
+      "name": "Auerbach in der Oberpfalz",
+      "population": 9115
+    },
+    {
+      "name": "Teisendorf",
+      "population": 9115
+    },
+    {
+      "name": "Kenzingen",
+      "population": 9098
+    },
+    {
+      "name": "Freystadt",
+      "population": 9089
+    },
+    {
+      "name": "Mansfeld",
+      "population": 9089
+    },
+    {
+      "name": "Klingenthal",
+      "population": 9078
+    },
+    {
+      "name": "Westerland",
+      "population": 9078
+    },
+    {
+      "name": "Endingen am Kaiserstuhl",
+      "population": 9048
+    },
+    {
+      "name": "Laufenburg (Baden)",
+      "population": 9029
+    },
+    {
+      "name": "Bad Ems",
+      "population": 9010
+    },
+    {
+      "name": "Furtwangen",
+      "population": 9004
+    },
+    {
+      "name": "Fehrbellin",
+      "population": 9000
+    },
+    {
+      "name": "Bad Liebenzell",
+      "population": 8996
+    },
+    {
+      "name": "Mücheln (Geiseltal)",
+      "population": 8994
+    },
+    {
+      "name": "Duderstadt",
+      "population": 8986
+    },
+    {
+      "name": "Lößnitz",
+      "population": 8985
+    },
+    {
+      "name": "Ochsenhausen",
+      "population": 8985
+    },
+    {
+      "name": "Essen (Oldenburg)",
+      "population": 8958
+    },
+    {
+      "name": "Landstuhl",
+      "population": 8956
+    },
+    {
+      "name": "Niesky",
+      "population": 8956
+    },
+    {
+      "name": "Furth im Wald",
+      "population": 8953
+    },
+    {
+      "name": "Elsenfeld",
+      "population": 8947
+    },
+    {
+      "name": "Barby",
+      "population": 8900
+    },
+    {
+      "name": "Wertingen",
+      "population": 8871
+    },
+    {
+      "name": "Großräschen",
+      "population": 8863
+    },
+    {
+      "name": "Leinefelde",
+      "population": 8857
+    },
+    {
+      "name": "Bad Bevensen",
+      "population": 8852
+    },
+    {
+      "name": "Ueckermünde",
+      "population": 8846
+    },
+    {
+      "name": "Bruchhausen-Vilsen",
+      "population": 8837
+    },
+    {
+      "name": "Colditz",
+      "population": 8828
+    },
+    {
+      "name": "Borgholzhausen",
+      "population": 8818
+    },
+    {
+      "name": "Dörentrup",
+      "population": 8786
+    },
+    {
+      "name": "Elze",
+      "population": 8767
+    },
+    {
+      "name": "Doberlug-Kirchhain",
+      "population": 8759
+    },
+    {
+      "name": "Kösching",
+      "population": 8748
+    },
+    {
+      "name": "Rauenberg",
+      "population": 8736
+    },
+    {
+      "name": "Dannenberg (Elbe)",
+      "population": 8727
+    },
+    {
+      "name": "Osthofen",
+      "population": 8726
+    },
+    {
+      "name": "Waldenbuch",
+      "population": 8726
+    },
+    {
+      "name": "Mendig",
+      "population": 8725
+    },
+    {
+      "name": "Lützen",
+      "population": 8720
+    },
+    {
+      "name": "Hemmoor",
+      "population": 8714
+    },
+    {
+      "name": "Naunhof",
+      "population": 8710
+    },
+    {
+      "name": "Barth",
+      "population": 8706
+    },
+    {
+      "name": "Garching an der Alz",
+      "population": 8704
+    },
+    {
+      "name": "Schellerten",
+      "population": 8701
+    },
+    {
+      "name": "Mittenwalde",
+      "population": 8700
+    },
+    {
+      "name": "Eichstätt",
+      "population": 8692
+    },
+    {
+      "name": "Ottobeuren",
+      "population": 8672
+    },
+    {
+      "name": "Teterow",
+      "population": 8671
+    },
+    {
+      "name": "Meßkirch",
+      "population": 8659
+    },
+    {
+      "name": "Bad Schmiedeberg",
+      "population": 8655
+    },
+    {
+      "name": "Rain",
+      "population": 8627
+    },
+    {
+      "name": "Torgelow",
+      "population": 8618
+    },
+    {
+      "name": "Neuötting",
+      "population": 8612
+    },
+    {
+      "name": "Großbottwar",
+      "population": 8600
+    },
+    {
+      "name": "Hemau",
+      "population": 8592
+    },
+    {
+      "name": "Grimmen",
+      "population": 8555
+    },
+    {
+      "name": "Ichenhausen",
+      "population": 8529
+    },
+    {
+      "name": "Neunkirchen am Brand",
+      "population": 8520
+    },
+    {
+      "name": "Großostheim",
+      "population": 8505
+    },
+    {
+      "name": "Uedem",
+      "population": 8503
+    },
+    {
+      "name": "Obernburg am Main",
+      "population": 8500
+    },
+    {
+      "name": "Grafenau",
+      "population": 8498
+    },
+    {
+      "name": "Hallstadt",
+      "population": 8494
+    },
+    {
+      "name": "Vetschau/Spreewald - Wětošow/Błota",
+      "population": 8491
+    },
+    {
+      "name": "Vallendar",
+      "population": 8487
+    },
+    {
+      "name": "Bad Griesbach im Rottal",
+      "population": 8485
+    },
+    {
+      "name": "Bad Schussenried",
+      "population": 8477
+    },
+    {
+      "name": "Aschendorf",
+      "population": 8463
+    },
+    {
+      "name": "Allstedt",
+      "population": 8452
+    },
+    {
+      "name": "Nieder-Olm",
+      "population": 8452
+    },
+    {
+      "name": "Reinfeld (Holstein)",
+      "population": 8451
+    },
+    {
+      "name": "Lengenfeld",
+      "population": 8420
+    },
+    {
+      "name": "Premnitz",
+      "population": 8414
+    },
+    {
+      "name": "Kirn",
+      "population": 8406
+    },
+    {
+      "name": "Burgau",
+      "population": 8399
+    },
+    {
+      "name": "Schwarzenbruck",
+      "population": 8397
+    },
+    {
+      "name": "Siegsdorf",
+      "population": 8382
+    },
+    {
+      "name": "Schieder-Schwalenberg",
+      "population": 8363
+    },
+    {
+      "name": "Kandel",
+      "population": 8351
+    },
+    {
+      "name": "Baiersdorf",
+      "population": 8349
+    },
+    {
+      "name": "Arnstein",
+      "population": 8343
+    },
+    {
+      "name": "Möckmühl",
+      "population": 8341
+    },
+    {
+      "name": "Bad Sachsa",
+      "population": 8335
+    },
+    {
+      "name": "Medebach",
+      "population": 8312
+    },
+    {
+      "name": "Gröditz",
+      "population": 8301
+    },
+    {
+      "name": "Könnern",
+      "population": 8295
+    },
+    {
+      "name": "Hausham",
+      "population": 8291
+    },
+    {
+      "name": "Oberkochen",
+      "population": 8290
+    },
+    {
+      "name": "Elsterwerda",
+      "population": 8287
+    },
+    {
+      "name": "Neresheim",
+      "population": 8277
+    },
+    {
+      "name": "Neunburg vorm Wald",
+      "population": 8267
+    },
+    {
+      "name": "Willebadessen",
+      "population": 8267
+    },
+    {
+      "name": "Oederan",
+      "population": 8258
+    },
+    {
+      "name": "Kuppenheim",
+      "population": 8224
+    },
+    {
+      "name": "Malchin",
+      "population": 8208
+    },
+    {
+      "name": "Bad Lausick",
+      "population": 8207
+    },
+    {
+      "name": "Treuen",
+      "population": 8200
+    },
+    {
+      "name": "Altlandsberg",
+      "population": 8189
+    },
+    {
+      "name": "Tirschenreuth",
+      "population": 8189
+    },
+    {
+      "name": "Naila",
+      "population": 8162
+    },
+    {
+      "name": "Rheinsberg",
+      "population": 8120
+    },
+    {
+      "name": "Ramstein-Miesenbach",
+      "population": 8107
+    },
+    {
+      "name": "Lauta",
+      "population": 8053
+    },
+    {
+      "name": "Miltenberg",
+      "population": 8050
+    },
+    {
+      "name": "Dornstetten",
+      "population": 8045
+    },
+    {
+      "name": "Hardegsen",
+      "population": 8038
+    },
+    {
+      "name": "Bad Sulza",
+      "population": 8037
+    },
+    {
+      "name": "Kellinghusen",
+      "population": 8037
+    },
+    {
+      "name": "Calau - Kalawa",
+      "population": 8034
+    },
+    {
+      "name": "Coppenbrügge",
+      "population": 8016
+    },
+    {
+      "name": "Kirchheimbolanden",
+      "population": 8010
+    },
+    {
+      "name": "Viechtach",
+      "population": 8002
+    },
+    {
+      "name": "Treuenbrietzen",
+      "population": 8001
+    },
+    {
+      "name": "Bad Düben",
+      "population": 8000
+    },
+    {
+      "name": "Betzdorf",
+      "population": 8000
+    },
+    {
+      "name": "Waldheim",
+      "population": 8000
+    },
+    {
+      "name": "Daun",
+      "population": 7994
+    },
+    {
+      "name": "Ballenstedt",
+      "population": 7978
+    },
+    {
+      "name": "Bad Liebenstein",
+      "population": 7971
+    },
+    {
+      "name": "Beeskow",
+      "population": 7964
+    },
+    {
+      "name": "Löffingen",
+      "population": 7962
+    },
+    {
+      "name": "Schnaittach",
+      "population": 7949
+    },
+    {
+      "name": "Postbauer-Heng",
+      "population": 7936
+    },
+    {
+      "name": "Mittenwald",
+      "population": 7926
+    },
+    {
+      "name": "Simmern",
+      "population": 7914
+    },
+    {
+      "name": "Werneuchen",
+      "population": 7900
+    },
+    {
+      "name": "Aken",
+      "population": 7891
+    },
+    {
+      "name": "Nierstein",
+      "population": 7877
+    },
+    {
+      "name": "Radeburg",
+      "population": 7874
+    },
+    {
+      "name": "Zell am Harmersbach",
+      "population": 7870
+    },
+    {
+      "name": "Gundelfingen an der Donau",
+      "population": 7854
+    },
+    {
+      "name": "Bad Rothenfelde",
+      "population": 7839
+    },
+    {
+      "name": "Neuendettelsau",
+      "population": 7828
+    },
+    {
+      "name": "Roßwein",
+      "population": 7824
+    },
+    {
+      "name": "Weißenthurm",
+      "population": 7803
+    },
+    {
+      "name": "Hüfingen",
+      "population": 7792
+    },
+    {
+      "name": "Parsberg",
+      "population": 7783
+    },
+    {
+      "name": "Rodewisch",
+      "population": 7762
+    },
+    {
+      "name": "Staufen im Breisgau",
+      "population": 7756
+    },
+    {
+      "name": "Bersenbrück",
+      "population": 7751
+    },
+    {
+      "name": "Bad Berka",
+      "population": 7741
+    },
+    {
+      "name": "Berchtesgaden",
+      "population": 7741
+    },
+    {
+      "name": "Bad Grund",
+      "population": 7738
+    },
+    {
+      "name": "Herrieden",
+      "population": 7726
+    },
+    {
+      "name": "Vohenstrauß",
+      "population": 7722
+    },
+    {
+      "name": "Neuenbürg",
+      "population": 7720
+    },
+    {
+      "name": "Herscheid",
+      "population": 7672
+    },
+    {
+      "name": "Rottenburg an der Laaber",
+      "population": 7658
+    },
+    {
+      "name": "Knittlingen",
+      "population": 7656
+    },
+    {
+      "name": "Leck",
+      "population": 7646
+    },
+    {
+      "name": "Bad Bergzabern",
+      "population": 7641
+    },
+    {
+      "name": "Trittau",
+      "population": 7639
+    },
+    {
+      "name": "Gerolstein",
+      "population": 7617
+    },
+    {
+      "name": "Bützow",
+      "population": 7614
+    },
+    {
+      "name": "Pulsnitz",
+      "population": 7610
+    },
+    {
+      "name": "Groitzsch",
+      "population": 7607
+    },
+    {
+      "name": "Stolzenau",
+      "population": 7588
+    },
+    {
+      "name": "Weikersheim",
+      "population": 7586
+    },
+    {
+      "name": "Bad Abbach",
+      "population": 7585
+    },
+    {
+      "name": "Wörrstadt",
+      "population": 7577
+    },
+    {
+      "name": "Gettorf",
+      "population": 7563
+    },
+    {
+      "name": "Unterföhring",
+      "population": 7553
+    },
+    {
+      "name": "Schwanstetten",
+      "population": 7550
+    },
+    {
+      "name": "Waldsassen",
+      "population": 7501
+    },
+    {
+      "name": "Alzenau",
+      "population": 7500
+    },
+    {
+      "name": "Großröhrsdorf",
+      "population": 7491
+    },
+    {
+      "name": "Kahla",
+      "population": 7489
+    },
+    {
+      "name": "Kühlungsborn",
+      "population": 7489
+    },
+    {
+      "name": "Bad Herrenalb",
+      "population": 7478
+    },
+    {
+      "name": "Gundelsheim",
+      "population": 7460
+    },
+    {
+      "name": "Lemwerder",
+      "population": 7457
+    },
+    {
+      "name": "Hartha",
+      "population": 7436
+    },
+    {
+      "name": "Ebern",
+      "population": 7434
+    },
+    {
+      "name": "Heroldsberg",
+      "population": 7417
+    },
+    {
+      "name": "Teublitz",
+      "population": 7408
+    },
+    {
+      "name": "Holle",
+      "population": 7407
+    },
+    {
+      "name": "Pleinfeld",
+      "population": 7405
+    },
+    {
+      "name": "Havelberg",
+      "population": 7400
+    },
+    {
+      "name": "Saarburg",
+      "population": 7381
+    },
+    {
+      "name": "Wriezen",
+      "population": 7379
+    },
+    {
+      "name": "Ransbach-Baumbach",
+      "population": 7373
+    },
+    {
+      "name": "Rosdorf",
+      "population": 7367
+    },
+    {
+      "name": "Friedrichroda",
+      "population": 7352
+    },
+    {
+      "name": "Leisnig",
+      "population": 7335
+    },
+    {
+      "name": "Waldmünchen",
+      "population": 7319
+    },
+    {
+      "name": "Ortenburg",
+      "population": 7307
+    },
+    {
+      "name": "Renchen",
+      "population": 7298
+    },
+    {
+      "name": "Markneukirchen",
+      "population": 7297
+    },
+    {
+      "name": "Boxberg",
+      "population": 7269
+    },
+    {
+      "name": "Nordholz",
+      "population": 7248
+    },
+    {
+      "name": "Esens",
+      "population": 7221
+    },
+    {
+      "name": "Freyung",
+      "population": 7212
+    },
+    {
+      "name": "Bönnigheim",
+      "population": 7204
+    },
+    {
+      "name": "Thalheim/Erzgebirge",
+      "population": 7200
+    },
+    {
+      "name": "Bad Feilnbach",
+      "population": 7199
+    },
+    {
+      "name": "Scheßlitz",
+      "population": 7184
+    },
+    {
+      "name": "Bovenden",
+      "population": 7181
+    },
+    {
+      "name": "Friedland",
+      "population": 7172
+    },
+    {
+      "name": "Herdorf",
+      "population": 7166
+    },
+    {
+      "name": "Marktheidenfeld",
+      "population": 7158
+    },
+    {
+      "name": "Elzach",
+      "population": 7157
+    },
+    {
+      "name": "Rednitzhembach",
+      "population": 7136
+    },
+    {
+      "name": "Schwarzenbach an der Saale",
+      "population": 7127
+    },
+    {
+      "name": "Greding",
+      "population": 7121
+    },
+    {
+      "name": "Kremmen",
+      "population": 7110
+    },
+    {
+      "name": "Böhlen",
+      "population": 7072
+    },
+    {
+      "name": "Otterndorf",
+      "population": 7057
+    },
+    {
+      "name": "Moringen",
+      "population": 7045
+    },
+    {
+      "name": "Bad Königshofen",
+      "population": 7043
+    },
+    {
+      "name": "Nieheim",
+      "population": 7022
+    },
+    {
+      "name": "Ankum",
+      "population": 7011
+    },
+    {
+      "name": "Beilstein",
+      "population": 7000
+    },
+    {
+      "name": "Horn",
+      "population": 7000
+    },
+    {
+      "name": "Kirchheim bei München",
+      "population": 7000
+    },
+    {
+      "name": "Ronnenberg",
+      "population": 7000
+    },
+    {
+      "name": "Trostberg",
+      "population": 7000
+    },
+    {
+      "name": "Werther (Westf.)",
+      "population": 7000
+    },
+    {
+      "name": "Türkheim",
+      "population": 6998
+    },
+    {
+      "name": "Bad Füssing",
+      "population": 6994
+    },
+    {
+      "name": "Annweiler am Trifels",
+      "population": 6987
+    },
+    {
+      "name": "Leuna",
+      "population": 6977
+    },
+    {
+      "name": "Bernkastel-Kues",
+      "population": 6972
+    },
+    {
+      "name": "Treuchtlingen",
+      "population": 6957
+    },
+    {
+      "name": "Dettelbach",
+      "population": 6949
+    },
+    {
+      "name": "Stavenhagen",
+      "population": 6944
+    },
+    {
+      "name": "Bad Wimpfen",
+      "population": 6924
+    },
+    {
+      "name": "Eibenstock",
+      "population": 6924
+    },
+    {
+      "name": "Birkenfeld",
+      "population": 6922
+    },
+    {
+      "name": "Burgkunstadt",
+      "population": 6915
+    },
+    {
+      "name": "Grafenwöhr",
+      "population": 6907
+    },
+    {
+      "name": "Gerolzhofen",
+      "population": 6902
+    },
+    {
+      "name": "Waging am See",
+      "population": 6888
+    },
+    {
+      "name": "Dingelstädt",
+      "population": 6887
+    },
+    {
+      "name": "Bonndorf im Schwarzwald",
+      "population": 6876
+    },
+    {
+      "name": "Haslach im Kinzigtal",
+      "population": 6874
+    },
+    {
+      "name": "Oppenheim",
+      "population": 6863
+    },
+    {
+      "name": "Ebermannstadt",
+      "population": 6839
+    },
+    {
+      "name": "Grömitz",
+      "population": 6839
+    },
+    {
+      "name": "Leipheim",
+      "population": 6800
+    },
+    {
+      "name": "Geithain",
+      "population": 6797
+    },
+    {
+      "name": "Jerichow",
+      "population": 6773
+    },
+    {
+      "name": "Maulbronn",
+      "population": 6766
+    },
+    {
+      "name": "Höchstädt an der Donau",
+      "population": 6765
+    },
+    {
+      "name": "Wilthen",
+      "population": 6761
+    },
+    {
+      "name": "Geiselhöring",
+      "population": 6755
+    },
+    {
+      "name": "Brackenheim",
+      "population": 6751
+    },
+    {
+      "name": "Bienenbüttel",
+      "population": 6728
+    },
+    {
+      "name": "Müncheberg",
+      "population": 6722
+    },
+    {
+      "name": "Aschheim",
+      "population": 6684
+    },
+    {
+      "name": "Edenkoben",
+      "population": 6655
+    },
+    {
+      "name": "Dinkelscherben",
+      "population": 6647
+    },
+    {
+      "name": "Stadtroda",
+      "population": 6646
+    },
+    {
+      "name": "Arnstorf",
+      "population": 6627
+    },
+    {
+      "name": "Dietenheim",
+      "population": 6622
+    },
+    {
+      "name": "Mallersdorf-Pfaffenberg",
+      "population": 6622
+    },
+    {
+      "name": "Polch",
+      "population": 6607
+    },
+    {
+      "name": "Kall",
+      "population": 6600
+    },
+    {
+      "name": "Trochtelfingen",
+      "population": 6598
+    },
+    {
+      "name": "Rosenfeld",
+      "population": 6578
+    },
+    {
+      "name": "Weidenberg",
+      "population": 6568
+    },
+    {
+      "name": "Falkenberg/Elster",
+      "population": 6561
+    },
+    {
+      "name": "Malchow",
+      "population": 6555
+    },
+    {
+      "name": "Emlichheim",
+      "population": 6553
+    },
+    {
+      "name": "Rheurdt",
+      "population": 6526
+    },
+    {
+      "name": "Sögel",
+      "population": 6526
+    },
+    {
+      "name": "Fürstenberg/Havel",
+      "population": 6500
+    },
+    {
+      "name": "Grünhain-Beierfeld",
+      "population": 6500
+    },
+    {
+      "name": "Bad Sobernheim",
+      "population": 6470
+    },
+    {
+      "name": "Obergünzburg",
+      "population": 6469
+    },
+    {
+      "name": "Burgebrach",
+      "population": 6468
+    },
+    {
+      "name": "Regenstauf",
+      "population": 6465
+    },
+    {
+      "name": "Gau-Algesheim",
+      "population": 6431
+    },
+    {
+      "name": "Haag in Oberbayern",
+      "population": 6411
+    },
+    {
+      "name": "Untergriesbach",
+      "population": 6408
+    },
+    {
+      "name": "Bad Brückenau",
+      "population": 6400
+    },
+    {
+      "name": "Wusterhausen/Dosse",
+      "population": 6400
+    },
+    {
+      "name": "Neuenstein",
+      "population": 6394
+    },
+    {
+      "name": "Uffenheim",
+      "population": 6393
+    },
+    {
+      "name": "Vilseck",
+      "population": 6387
+    },
+    {
+      "name": "Neckartenzlingen",
+      "population": 6361
+    },
+    {
+      "name": "Stadtoldendorf",
+      "population": 6360
+    },
+    {
+      "name": "Zusmarshausen",
+      "population": 6348
+    },
+    {
+      "name": "Altenkirchen (Westerwald)",
+      "population": 6345
+    },
+    {
+      "name": "Bodenwerder",
+      "population": 6337
+    },
+    {
+      "name": "Bad Rodach",
+      "population": 6336
+    },
+    {
+      "name": "Nossen",
+      "population": 6336
+    },
+    {
+      "name": "Ilsenburg (Harz)",
+      "population": 6334
+    },
+    {
+      "name": "Neumarkt-Sankt Veit",
+      "population": 6334
+    },
+    {
+      "name": "Neuhaus am Rennweg",
+      "population": 6323
+    },
+    {
+      "name": "Bad Blankenburg",
+      "population": 6322
+    },
+    {
+      "name": "Mitterteich",
+      "population": 6317
+    },
+    {
+      "name": "Gammertingen",
+      "population": 6312
+    },
+    {
+      "name": "Alpirsbach",
+      "population": 6310
+    },
+    {
+      "name": "Klingenberg am Main",
+      "population": 6305
+    },
+    {
+      "name": "Immenhausen",
+      "population": 6300
+    },
+    {
+      "name": "Neuffen",
+      "population": 6251
+    },
+    {
+      "name": "Speichersdorf",
+      "population": 6250
+    },
+    {
+      "name": "Rochlitz",
+      "population": 6221
+    },
+    {
+      "name": "Bräunlingen",
+      "population": 6200
+    },
+    {
+      "name": "Windsbach",
+      "population": 6175
+    },
+    {
+      "name": "Dornhan",
+      "population": 6160
+    },
+    {
+      "name": "Wermsdorf",
+      "population": 6136
+    },
+    {
+      "name": "Wassertrüdingen",
+      "population": 6129
+    },
+    {
+      "name": "Schrozberg",
+      "population": 6124
+    },
+    {
+      "name": "Ilshofen",
+      "population": 6120
+    },
+    {
+      "name": "Geisingen",
+      "population": 6119
+    },
+    {
+      "name": "Rötha",
+      "population": 6118
+    },
+    {
+      "name": "Nabburg",
+      "population": 6107
+    },
+    {
+      "name": "Neustadt an der Waldnaab",
+      "population": 6106
+    },
+    {
+      "name": "Eggesin",
+      "population": 6098
+    },
+    {
+      "name": "Braunlage",
+      "population": 6082
+    },
+    {
+      "name": "Rodenberg",
+      "population": 6077
+    },
+    {
+      "name": "Großbreitenbach",
+      "population": 6072
+    },
+    {
+      "name": "Thum",
+      "population": 6070
+    },
+    {
+      "name": "Zell im Wiesental",
+      "population": 6067
+    },
+    {
+      "name": "Schirgiswalde-Kirschau",
+      "population": 6057
+    },
+    {
+      "name": "Dohna",
+      "population": 6053
+    },
+    {
+      "name": "Arzberg",
+      "population": 6043
+    },
+    {
+      "name": "Gadebusch",
+      "population": 6042
+    },
+    {
+      "name": "Schöppenstedt",
+      "population": 6032
+    },
+    {
+      "name": "Fredenbeck",
+      "population": 6027
+    },
+    {
+      "name": "Plau am See",
+      "population": 6022
+    },
+    {
+      "name": "Lübz",
+      "population": 6018
+    },
+    {
+      "name": "Tangerhütte",
+      "population": 6016
+    },
+    {
+      "name": "Burg auf Fehmarn",
+      "population": 6000
+    },
+    {
+      "name": "Weida",
+      "population": 6000
+    },
+    {
+      "name": "Osterburg",
+      "population": 5998
+    },
+    {
+      "name": "Geislingen",
+      "population": 5990
+    },
+    {
+      "name": "Sittensen",
+      "population": 5980
+    },
+    {
+      "name": "Marne",
+      "population": 5979
+    },
+    {
+      "name": "Barnstorf",
+      "population": 5970
+    },
+    {
+      "name": "Karstädt",
+      "population": 5967
+    },
+    {
+      "name": "Linz am Rhein",
+      "population": 5962
+    },
+    {
+      "name": "Thannhausen",
+      "population": 5955
+    },
+    {
+      "name": "Wolfach",
+      "population": 5949
+    },
+    {
+      "name": "Sanitz",
+      "population": 5946
+    },
+    {
+      "name": "Meersburg",
+      "population": 5893
+    },
+    {
+      "name": "Zeithain",
+      "population": 5891
+    },
+    {
+      "name": "Norderney",
+      "population": 5875
+    },
+    {
+      "name": "Schlüsselfeld",
+      "population": 5871
+    },
+    {
+      "name": "Oberlungwitz",
+      "population": 5851
+    },
+    {
+      "name": "Eltmann",
+      "population": 5844
+    },
+    {
+      "name": "Haiterbach",
+      "population": 5844
+    },
+    {
+      "name": "Zeil am Main",
+      "population": 5840
+    },
+    {
+      "name": "Schwarmstedt",
+      "population": 5834
+    },
+    {
+      "name": "Heitersheim",
+      "population": 5833
+    },
+    {
+      "name": "Tittmoning",
+      "population": 5826
+    },
+    {
+      "name": "Rohrbach an der Ilm",
+      "population": 5818
+    },
+    {
+      "name": "Feldkirchen",
+      "population": 5817
+    },
+    {
+      "name": "Lauda",
+      "population": 5814
+    },
+    {
+      "name": "Hausach",
+      "population": 5807
+    },
+    {
+      "name": "Grabow",
+      "population": 5800
+    },
+    {
+      "name": "Bernsdorf",
+      "population": 5799
+    },
+    {
+      "name": "Neubulach",
+      "population": 5796
+    },
+    {
+      "name": "Mügeln",
+      "population": 5794
+    },
+    {
+      "name": "Wemding",
+      "population": 5757
+    },
+    {
+      "name": "Tarp",
+      "population": 5752
+    },
+    {
+      "name": "Rockenhausen",
+      "population": 5749
+    },
+    {
+      "name": "Schwarzheide",
+      "population": 5743
+    },
+    {
+      "name": "Drebkau - Drjowk",
+      "population": 5734
+    },
+    {
+      "name": "Westerburg",
+      "population": 5730
+    },
+    {
+      "name": "Gransee",
+      "population": 5721
+    },
+    {
+      "name": "Großschirma",
+      "population": 5721
+    },
+    {
+      "name": "Hermeskeil",
+      "population": 5720
+    },
+    {
+      "name": "Traben-Trarbach",
+      "population": 5711
+    },
+    {
+      "name": "Dietenhofen",
+      "population": 5703
+    },
+    {
+      "name": "Artern",
+      "population": 5700
+    },
+    {
+      "name": "Tharandt",
+      "population": 5700
+    },
+    {
+      "name": "Waibstadt",
+      "population": 5700
+    },
+    {
+      "name": "Herrnhut",
+      "population": 5695
+    },
+    {
+      "name": "Dierdorf",
+      "population": 5691
+    },
+    {
+      "name": "Loxstedt",
+      "population": 5687
+    },
+    {
+      "name": "Bad Hönningen",
+      "population": 5659
+    },
+    {
+      "name": "Wittichenau - Kulow",
+      "population": 5648
+    },
+    {
+      "name": "Leutershausen",
+      "population": 5642
+    },
+    {
+      "name": "Horneburg",
+      "population": 5633
+    },
+    {
+      "name": "Lathen",
+      "population": 5618
+    },
+    {
+      "name": "Adorf/Vogtland",
+      "population": 5600
+    },
+    {
+      "name": "Biesenthal",
+      "population": 5600
+    },
+    {
+      "name": "Bad Birnbach",
+      "population": 5583
+    },
+    {
+      "name": "Windischeschenbach",
+      "population": 5566
+    },
+    {
+      "name": "Borkum",
+      "population": 5559
+    },
+    {
+      "name": "Himmelpforten",
+      "population": 5540
+    },
+    {
+      "name": "Stolpen",
+      "population": 5540
+    },
+    {
+      "name": "Niederstetten",
+      "population": 5503
+    },
+    {
+      "name": "Lugau",
+      "population": 5500
+    },
+    {
+      "name": "Gronau (Leine)",
+      "population": 5487
+    },
+    {
+      "name": "Schwaan",
+      "population": 5483
+    },
+    {
+      "name": "Drochtersen",
+      "population": 5470
+    },
+    {
+      "name": "Ingelfingen",
+      "population": 5467
+    },
+    {
+      "name": "Prüm",
+      "population": 5427
+    },
+    {
+      "name": "Abensberg",
+      "population": 5419
+    },
+    {
+      "name": "Ebstorf",
+      "population": 5416
+    },
+    {
+      "name": "Külsheim",
+      "population": 5414
+    },
+    {
+      "name": "Pfreimd",
+      "population": 5412
+    },
+    {
+      "name": "Altenberg",
+      "population": 5401
+    },
+    {
+      "name": "Hambergen",
+      "population": 5389
+    },
+    {
+      "name": "Wanzleben",
+      "population": 5387
+    },
+    {
+      "name": "Oberammergau",
+      "population": 5379
+    },
+    {
+      "name": "Erbendorf",
+      "population": 5369
+    },
+    {
+      "name": "Klötze",
+      "population": 5369
+    },
+    {
+      "name": "Pottenstein",
+      "population": 5363
+    },
+    {
+      "name": "Altentreptow",
+      "population": 5325
+    },
+    {
+      "name": "Stadt Elbingerode (Harz)",
+      "population": 5317
+    },
+    {
+      "name": "Seelow",
+      "population": 5316
+    },
+    {
+      "name": "Belgern",
+      "population": 5314
+    },
+    {
+      "name": "Beilngries",
+      "population": 5302
+    },
+    {
+      "name": "Lütjenburg",
+      "population": 5269
+    },
+    {
+      "name": "Otterberg",
+      "population": 5256
+    },
+    {
+      "name": "Kitzscher",
+      "population": 5243
+    },
+    {
+      "name": "Osterburken",
+      "population": 5243
+    },
+    {
+      "name": "Ellrich",
+      "population": 5239
+    },
+    {
+      "name": "Heimsheim",
+      "population": 5233
+    },
+    {
+      "name": "Spalt",
+      "population": 5227
+    },
+    {
+      "name": "Geringswalde",
+      "population": 5224
+    },
+    {
+      "name": "Steyerberg",
+      "population": 5218
+    },
+    {
+      "name": "Waldmohr",
+      "population": 5194
+    },
+    {
+      "name": "Kusel",
+      "population": 5183
+    },
+    {
+      "name": "Hollfeld",
+      "population": 5180
+    },
+    {
+      "name": "Allersberg",
+      "population": 5176
+    },
+    {
+      "name": "Schwarzenbach am Wald",
+      "population": 5169
+    },
+    {
+      "name": "Wirges",
+      "population": 5169
+    },
+    {
+      "name": "Cochem",
+      "population": 5162
+    },
+    {
+      "name": "Neudenau",
+      "population": 5157
+    },
+    {
+      "name": "Kastellaun",
+      "population": 5155
+    },
+    {
+      "name": "Hartenstein",
+      "population": 5146
+    },
+    {
+      "name": "Munderkingen",
+      "population": 5142
+    },
+    {
+      "name": "Röbel/Müritz",
+      "population": 5136
+    },
+    {
+      "name": "Lenzkirch",
+      "population": 5114
+    },
+    {
+      "name": "Ronneburg",
+      "population": 5100
+    },
+    {
+      "name": "Oettingen in Bayern",
+      "population": 5093
+    },
+    {
+      "name": "Uebigau",
+      "population": 5092
+    },
+    {
+      "name": "Bredstedt",
+      "population": 5089
+    },
+    {
+      "name": "Hofheim in Unterfranken",
+      "population": 5079
+    },
+    {
+      "name": "Todtnau",
+      "population": 5077
+    },
+    {
+      "name": "Hitzacker (Elbe)",
+      "population": 5069
+    },
+    {
+      "name": "Vacha",
+      "population": 5055
+    },
+    {
+      "name": "Wittenburg",
+      "population": 5055
+    },
+    {
+      "name": "Oppenau",
+      "population": 5050
+    },
+    {
+      "name": "Dippoldiswalde",
+      "population": 5039
+    },
+    {
+      "name": "Naumburg",
+      "population": 5026
+    },
+    {
+      "name": "Forchtenberg",
+      "population": 5004
+    },
+    {
+      "name": "Bad Münstereifel",
+      "population": 5000
+    },
+    {
+      "name": "Bogen",
+      "population": 5000
+    },
+    {
+      "name": "Hilter am Teutoburger Wald",
+      "population": 5000
+    },
+    {
+      "name": "Neustadt-Glewe",
+      "population": 5000
+    },
+    {
+      "name": "Oebisfelde",
+      "population": 5000
+    },
+    {
+      "name": "Reichertshofen",
+      "population": 5000
+    },
+    {
+      "name": "Worbis",
+      "population": 5000
+    }
+  ],
+  "AT": [
+    {
+      "name": "Wien",
+      "population": 2042036
+    },
+    {
+      "name": "Graz",
+      "population": 331359
+    },
+    {
+      "name": "Linz",
+      "population": 207812
+    },
+    {
+      "name": "Salzburg",
+      "population": 152083
+    },
+    {
+      "name": "Innsbruck",
+      "population": 130585
+    },
+    {
+      "name": "Klagenfurt",
+      "population": 100316
+    },
+    {
+      "name": "Villach",
+      "population": 61221
+    },
+    {
+      "name": "Wels",
+      "population": 59853
+    },
+    {
+      "name": "St. Pölten",
+      "population": 59767
+    },
+    {
+      "name": "Dornbirn",
+      "population": 51222
+    },
+    {
+      "name": "Wiener Neustadt",
+      "population": 38481
+    },
+    {
+      "name": "Steyr",
+      "population": 38344
+    },
+    {
+      "name": "Feldkirch",
+      "population": 35793
+    },
+    {
+      "name": "Bregenz",
+      "population": 29620
+    },
+    {
+      "name": "Klosterneuburg",
+      "population": 26816
+    },
+    {
+      "name": "Krems an der Donau",
+      "population": 25500
+    },
+    {
+      "name": "Wolfsberg",
+      "population": 25045
+    },
+    {
+      "name": "Baden",
+      "population": 25000
+    },
+    {
+      "name": "Lustenau",
+      "population": 24688
+    },
+    {
+      "name": "Leoben",
+      "population": 24645
+    },
+    {
+      "name": "Leonding",
+      "population": 24416
+    },
+    {
+      "name": "Kapfenberg",
+      "population": 23004
+    },
+    {
+      "name": "Hallein",
+      "population": 20768
+    },
+    {
+      "name": "Mödling",
+      "population": 20619
+    },
+    {
+      "name": "Kufstein",
+      "population": 19223
+    },
+    {
+      "name": "Traiskirchen",
+      "population": 18000
+    },
+    {
+      "name": "Ansfelden",
+      "population": 17748
+    },
+    {
+      "name": "Saalfelden am Steinernen Meer",
+      "population": 17299
+    },
+    {
+      "name": "Stockerau",
+      "population": 16858
+    },
+    {
+      "name": "Hohenems",
+      "population": 16720
+    },
+    {
+      "name": "Braunau am Inn",
+      "population": 16380
+    },
+    {
+      "name": "Telfs",
+      "population": 15920
+    },
+    {
+      "name": "Spittal an der Drau",
+      "population": 15549
+    },
+    {
+      "name": "Bludenz",
+      "population": 15029
+    },
+    {
+      "name": "Ternitz",
+      "population": 14823
+    },
+    {
+      "name": "Feldkirchen",
+      "population": 14434
+    },
+    {
+      "name": "Hall in Tirol",
+      "population": 14418
+    },
+    {
+      "name": "Bad Ischl",
+      "population": 14088
+    },
+    {
+      "name": "Amstetten",
+      "population": 13878
+    },
+    {
+      "name": "Wörgl",
+      "population": 13811
+    },
+    {
+      "name": "Feldbach",
+      "population": 13369
+    },
+    {
+      "name": "Gmunden",
+      "population": 13104
+    },
+    {
+      "name": "Schwaz",
+      "population": 13058
+    },
+    {
+      "name": "Gratwein-Straßengel",
+      "population": 13000
+    },
+    {
+      "name": "Marchtrenk",
+      "population": 12951
+    },
+    {
+      "name": "Knittelfeld",
+      "population": 12574
+    },
+    {
+      "name": "Tulln an der Donau",
+      "population": 12357
+    },
+    {
+      "name": "Sankt Veit an der Glan",
+      "population": 12255
+    },
+    {
+      "name": "Rankweil",
+      "population": 12150
+    },
+    {
+      "name": "Lienz",
+      "population": 12077
+    },
+    {
+      "name": "Götzis",
+      "population": 12041
+    },
+    {
+      "name": "Vöcklabruck",
+      "population": 11972
+    },
+    {
+      "name": "Seekirchen am Wallersee",
+      "population": 11708
+    },
+    {
+      "name": "Gänserndorf",
+      "population": 11404
+    },
+    {
+      "name": "Ried im Innkreis",
+      "population": 11404
+    },
+    {
+      "name": "Bad Vöslau",
+      "population": 11190
+    },
+    {
+      "name": "Gleisdorf",
+      "population": 11072
+    },
+    {
+      "name": "Zwettl",
+      "population": 10908
+    },
+    {
+      "name": "Mistelbach",
+      "population": 10643
+    },
+    {
+      "name": "Traun",
+      "population": 10627
+    },
+    {
+      "name": "Sankt Johann im Pongau",
+      "population": 10566
+    },
+    {
+      "name": "Imst",
+      "population": 10504
+    },
+    {
+      "name": "Lauterach",
+      "population": 10433
+    },
+    {
+      "name": "Zell am See",
+      "population": 10131
+    },
+    {
+      "name": "Neunkirchen",
+      "population": 9974
+    },
+    {
+      "name": "St. Johann in Tirol",
+      "population": 9891
+    },
+    {
+      "name": "Bruck an der Mur",
+      "population": 9748
+    },
+    {
+      "name": "Purkersdorf",
+      "population": 9684
+    },
+    {
+      "name": "Laakirchen",
+      "population": 9600
+    },
+    {
+      "name": "Judenburg",
+      "population": 9514
+    },
+    {
+      "name": "Eisenstadt",
+      "population": 9243
+    },
+    {
+      "name": "Ebreichsdorf",
+      "population": 9194
+    },
+    {
+      "name": "Velden",
+      "population": 9127
+    },
+    {
+      "name": "Attnang-Puchheim",
+      "population": 8839
+    },
+    {
+      "name": "Weiz",
+      "population": 8799
+    },
+    {
+      "name": "Berndorf",
+      "population": 8698
+    },
+    {
+      "name": "Neusiedl am See",
+      "population": 8585
+    },
+    {
+      "name": "Kitzbühel",
+      "population": 8574
+    },
+    {
+      "name": "Groß-Enzersdorf",
+      "population": 8532
+    },
+    {
+      "name": "Perg",
+      "population": 8479
+    },
+    {
+      "name": "Trofaiach",
+      "population": 8385
+    },
+    {
+      "name": "Enns",
+      "population": 8046
+    },
+    {
+      "name": "Deutschlandsberg",
+      "population": 7983
+    },
+    {
+      "name": "Deutsch-Wagram",
+      "population": 7830
+    },
+    {
+      "name": "Wattens",
+      "population": 7503
+    },
+    {
+      "name": "Ferlach",
+      "population": 7450
+    },
+    {
+      "name": "Freistadt",
+      "population": 7445
+    },
+    {
+      "name": "Landeck",
+      "population": 7336
+    },
+    {
+      "name": "Zeltweg",
+      "population": 7327
+    },
+    {
+      "name": "Mattersburg",
+      "population": 7177
+    },
+    {
+      "name": "Bischofshofen",
+      "population": 7134
+    },
+    {
+      "name": "Jenbach",
+      "population": 7021
+    },
+    {
+      "name": "Strasshof an der Nordbahn",
+      "population": 6993
+    },
+    {
+      "name": "Mürzzuschlag",
+      "population": 6842
+    },
+    {
+      "name": "Liezen",
+      "population": 6803
+    },
+    {
+      "name": "Bad Hofgastein",
+      "population": 6726
+    },
+    {
+      "name": "Hainburg an der Donau",
+      "population": 6725
+    },
+    {
+      "name": "Frohnleiten",
+      "population": 6655
+    },
+    {
+      "name": "Horn",
+      "population": 6632
+    },
+    {
+      "name": "Pressbaum",
+      "population": 6568
+    },
+    {
+      "name": "Schladming",
+      "population": 6538
+    },
+    {
+      "name": "Wilhelmsburg",
+      "population": 6489
+    },
+    {
+      "name": "Oberwart/Felsőőr",
+      "population": 6442
+    },
+    {
+      "name": "Seeboden",
+      "population": 6325
+    },
+    {
+      "name": "Purgstall",
+      "population": 6154
+    },
+    {
+      "name": "Gloggnitz",
+      "population": 6062
+    },
+    {
+      "name": "Hollabrunn",
+      "population": 6005
+    },
+    {
+      "name": "Gallneukirchen",
+      "population": 5915
+    },
+    {
+      "name": "Ybbs an der Donau",
+      "population": 5777
+    },
+    {
+      "name": "Reutte",
+      "population": 5719
+    },
+    {
+      "name": "Oberndorf bei Salzburg",
+      "population": 5578
+    },
+    {
+      "name": "Kindberg",
+      "population": 5546
+    },
+    {
+      "name": "Waidhofen an der Thaya",
+      "population": 5459
+    },
+    {
+      "name": "Hopfgarten im Brixental",
+      "population": 5365
+    },
+    {
+      "name": "Haag",
+      "population": 5299
+    },
+    {
+      "name": "Melk",
+      "population": 5296
+    },
+    {
+      "name": "Mattighofen",
+      "population": 5287
+    },
+    {
+      "name": "Pinkafeld",
+      "population": 5272
+    },
+    {
+      "name": "Rottenmann",
+      "population": 5111
+    },
+    {
+      "name": "Gmünd",
+      "population": 5088
+    },
+    {
+      "name": "Rohrbach",
+      "population": 5075
+    },
+    {
+      "name": "Steyregg",
+      "population": 5039
+    }
+  ]
+}

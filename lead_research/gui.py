@@ -6,6 +6,7 @@ import threading
 from pathlib import Path
 from typing import Mapping
 
+from .locations import DEFAULT_COUNTRIES
 from .pipeline import DEFAULT_WORKERS, DiscoveryConfig, LeadStats, run_discovery
 from .search import SearchProviderError, combined_provider
 from .suppression import SuppressionList
@@ -69,6 +70,15 @@ def parse_positive_int(value: str | bool | None, default: int) -> int:
     return parsed if parsed > 0 else default
 
 
+def selected_countries(values: Mapping[str, str | bool]) -> tuple[str, ...]:
+    codes: list[str] = []
+    if bool(values.get("country_de", True)):
+        codes.append("DE")
+    if bool(values.get("country_at", False)):
+        codes.append("AT")
+    return tuple(codes) if codes else DEFAULT_COUNTRIES
+
+
 def run_gui_discovery(
     values: Mapping[str, str | bool],
     events: "queue.Queue[tuple]",
@@ -100,6 +110,7 @@ def run_gui_discovery(
     config = DiscoveryConfig(
         category=category,
         location=location,
+        countries=selected_countries(values),
         limit=limit,
         max_pages_per_site=int(DEFAULT_MAX_PAGES),
         delay=float(DEFAULT_DELAY),
@@ -152,6 +163,8 @@ def run_gui() -> int:
             self.zenrows_key = tk.StringVar(value=os.environ.get("ZENROWS_API_KEY", ""))
             self.use_osm = tk.BooleanVar(value=True)
             self.use_duckduckgo = tk.BooleanVar(value=True)
+            self.country_de = tk.BooleanVar(value=True)
+            self.country_at = tk.BooleanVar(value=False)
             self.status_text = tk.StringVar(value="Bereit.")
             self.lead_count_text = tk.StringVar(value="Gefundene Leads: 0")
             self.stats_text = tk.StringVar(value="Statistik: noch keine Suche gestartet.")
@@ -177,8 +190,14 @@ def run_gui() -> int:
             ttk.Label(outer, text="Ort optional").grid(row=2, column=0, sticky="w", pady=4)
             ttk.Entry(outer, textvariable=self.location).grid(row=2, column=1, columnspan=2, sticky="ew", pady=4)
 
+            countries_frame = ttk.Frame(outer)
+            countries_frame.grid(row=3, column=0, columnspan=3, sticky="w", pady=4)
+            ttk.Label(countries_frame, text="Laender").grid(row=0, column=0, sticky="w", padx=(0, 8))
+            ttk.Checkbutton(countries_frame, text="Deutschland", variable=self.country_de).grid(row=0, column=1, padx=(0, 12))
+            ttk.Checkbutton(countries_frame, text="Oesterreich", variable=self.country_at).grid(row=0, column=2)
+
             limits_frame = ttk.Frame(outer)
-            limits_frame.grid(row=3, column=0, columnspan=3, sticky="ew", pady=4)
+            limits_frame.grid(row=4, column=0, columnspan=3, sticky="ew", pady=4)
             ttk.Label(limits_frame, text="Max. Leads").grid(row=0, column=0, sticky="w")
             ttk.Entry(limits_frame, textvariable=self.max_leads, width=10).grid(row=0, column=1, padx=(4, 16))
             ttk.Label(limits_frame, text="Websites (max)").grid(row=0, column=2, sticky="w")
@@ -188,16 +207,16 @@ def run_gui() -> int:
             ttk.Checkbutton(limits_frame, text="OpenStreetMap", variable=self.use_osm).grid(row=0, column=6, padx=(0, 8))
             ttk.Checkbutton(limits_frame, text="DuckDuckGo", variable=self.use_duckduckgo).grid(row=0, column=7)
 
-            ttk.Label(outer, text="CSV-Ausgabe").grid(row=4, column=0, sticky="w", pady=4)
-            ttk.Entry(outer, textvariable=self.output).grid(row=4, column=1, sticky="ew", pady=4)
-            ttk.Button(outer, text="Auswaehlen", command=self._choose_output).grid(row=4, column=2, padx=(8, 0), pady=4)
+            ttk.Label(outer, text="CSV-Ausgabe").grid(row=5, column=0, sticky="w", pady=4)
+            ttk.Entry(outer, textvariable=self.output).grid(row=5, column=1, sticky="ew", pady=4)
+            ttk.Button(outer, text="Auswaehlen", command=self._choose_output).grid(row=5, column=2, padx=(8, 0), pady=4)
 
-            ttk.Label(outer, text="Opt-out Liste").grid(row=5, column=0, sticky="w", pady=4)
-            ttk.Entry(outer, textvariable=self.suppression_file).grid(row=5, column=1, sticky="ew", pady=4)
-            ttk.Button(outer, text="Auswaehlen", command=self._choose_suppression).grid(row=5, column=2, padx=(8, 0), pady=4)
+            ttk.Label(outer, text="Opt-out Liste").grid(row=6, column=0, sticky="w", pady=4)
+            ttk.Entry(outer, textvariable=self.suppression_file).grid(row=6, column=1, sticky="ew", pady=4)
+            ttk.Button(outer, text="Auswaehlen", command=self._choose_suppression).grid(row=6, column=2, padx=(8, 0), pady=4)
 
             keys_frame = ttk.Frame(outer)
-            keys_frame.grid(row=6, column=0, columnspan=3, sticky="ew", pady=4)
+            keys_frame.grid(row=7, column=0, columnspan=3, sticky="ew", pady=4)
             keys_frame.columnconfigure(1, weight=1)
             keys_frame.columnconfigure(3, weight=1)
             ttk.Label(keys_frame, text="SerpAPI Key").grid(row=0, column=0, sticky="w", padx=(0, 4))
@@ -207,22 +226,23 @@ def run_gui() -> int:
 
             source_text = (
                 "Vollautomatisch ohne API-Key: Capper kombiniert OpenStreetMap/Overpass, Nominatim "
-                "und DuckDuckGo. Mit SerpAPI- oder ZenRows-Key wird zusaetzlich Google genutzt. "
+                "und DuckDuckGo. Ohne Ort werden alle Staedte ab 5000 Einwohner in den gewaehlten "
+                "Laendern per OSM abgedeckt. Mit SerpAPI- oder ZenRows-Key wird zusaetzlich Google genutzt. "
                 "Gefundene Websites werden parallel nach oeffentlichen B2B-Kontakten durchsucht; "
                 "doppelte E-Mails werden automatisch entfernt."
             )
-            ttk.Label(outer, text=source_text, wraplength=760).grid(row=7, column=0, columnspan=3, sticky="ew", pady=(10, 8))
+            ttk.Label(outer, text=source_text, wraplength=760).grid(row=8, column=0, columnspan=3, sticky="ew", pady=(10, 8))
 
             self.start_button = ttk.Button(outer, text="Leads suchen", command=self._start)
-            self.start_button.grid(row=8, column=0, columnspan=3, sticky="ew", pady=(4, 10))
+            self.start_button.grid(row=9, column=0, columnspan=3, sticky="ew", pady=(4, 10))
 
             self.progress = ttk.Progressbar(outer, variable=self.progress_value, maximum=1)
-            self.progress.grid(row=9, column=0, columnspan=3, sticky="ew")
-            ttk.Label(outer, textvariable=self.status_text).grid(row=10, column=0, columnspan=2, sticky="w", pady=(4, 0))
-            ttk.Label(outer, textvariable=self.lead_count_text).grid(row=10, column=2, sticky="e", pady=(4, 0))
-            ttk.Label(outer, textvariable=self.stats_text).grid(row=11, column=0, columnspan=3, sticky="w", pady=(2, 0))
+            self.progress.grid(row=10, column=0, columnspan=3, sticky="ew")
+            ttk.Label(outer, textvariable=self.status_text).grid(row=11, column=0, columnspan=2, sticky="w", pady=(4, 0))
+            ttk.Label(outer, textvariable=self.lead_count_text).grid(row=11, column=2, sticky="e", pady=(4, 0))
+            ttk.Label(outer, textvariable=self.stats_text).grid(row=12, column=0, columnspan=3, sticky="w", pady=(2, 0))
             ttk.Label(outer, textvariable=self.current_page_text, foreground="#555").grid(
-                row=12, column=0, columnspan=3, sticky="w", pady=(0, 6)
+                row=13, column=0, columnspan=3, sticky="w", pady=(0, 6)
             )
 
             columns = ("company", "email", "website", "status")
@@ -235,12 +255,12 @@ def run_gui() -> int:
             self.lead_table.column("email", width=180)
             self.lead_table.column("website", width=260)
             self.lead_table.column("status", width=110)
-            self.lead_table.grid(row=13, column=0, columnspan=3, sticky="nsew", pady=(8, 8))
+            self.lead_table.grid(row=14, column=0, columnspan=3, sticky="nsew", pady=(8, 8))
 
             self.log = scrolledtext.ScrolledText(outer, height=8, state="disabled")
-            self.log.grid(row=14, column=0, columnspan=3, sticky="nsew")
-            outer.rowconfigure(13, weight=1)
+            self.log.grid(row=15, column=0, columnspan=3, sticky="nsew")
             outer.rowconfigure(14, weight=1)
+            outer.rowconfigure(15, weight=1)
 
         def _choose_output(self) -> None:
             selected = filedialog.asksaveasfilename(
@@ -272,6 +292,8 @@ def run_gui() -> int:
                 "zenrows_key": self.zenrows_key.get(),
                 "use_osm": self.use_osm.get(),
                 "use_duckduckgo": self.use_duckduckgo.get(),
+                "country_de": self.country_de.get(),
+                "country_at": self.country_at.get(),
             }
             try:
                 require_text(values, "category", "Kategorie")

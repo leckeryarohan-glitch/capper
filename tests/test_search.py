@@ -9,6 +9,7 @@ from unittest.mock import patch
 from lead_research.search import (
     CommonSourcesSearchProvider,
     MultiSourceProvider,
+    OsmSearchTarget,
     SearchProvider,
     SerpApiSearchProvider,
     build_overpass_query,
@@ -34,7 +35,7 @@ class RecordingProvider(SearchProvider):
     def __init__(self):
         self.calls: list[tuple[str, str, int]] = []
 
-    def search(self, category: str, location: str, limit: int) -> list[SearchResult]:
+    def search(self, category: str, location: str, limit: int, countries=()) -> list[SearchResult]:
         self.calls.append((category, location, limit))
         domain = category.split("site:", 1)[-1]
         return [SearchResult(title=domain, url=f"https://{domain}/kontakt")]
@@ -52,15 +53,26 @@ class SearchTests(unittest.TestCase):
         self.assertIn('nwr["tourism"="hotel"](area.searchArea);', query)
         self.assertIn("out tags center", query)
 
-    def test_osm_location_plan_uses_default_cities_without_location(self) -> None:
+    def test_build_overpass_query_scopes_to_country(self) -> None:
+        query = build_overpass_query("hotel", "", 10, country_code="DE")
+
+        self.assertIn('area["ISO3166-1"="DE"]', query)
+        self.assertIn('nwr["tourism"="hotel"](area.searchArea);', query)
+
+    def test_osm_location_plan_uses_selected_countries_without_location(self) -> None:
+        locations = osm_location_plan("", ("DE", "AT"))
+
+        self.assertEqual(len(locations), 2)
+        self.assertEqual(locations[0], OsmSearchTarget(label="Deutschland", country_code="DE"))
+        self.assertEqual(locations[1], OsmSearchTarget(label="Österreich", country_code="AT"))
+
+    def test_osm_location_plan_defaults_to_germany(self) -> None:
         locations = osm_location_plan("")
 
-        self.assertIn("Berlin", locations)
-        self.assertIn("Hamburg", locations)
-        self.assertGreater(len(locations), 3)
+        self.assertEqual(locations, (OsmSearchTarget(label="Deutschland", country_code="DE"),))
 
     def test_osm_location_plan_uses_given_location(self) -> None:
-        self.assertEqual(osm_location_plan("Bremen"), ("Bremen",))
+        self.assertEqual(osm_location_plan("Bremen"), (OsmSearchTarget(label="Bremen"),))
 
     def test_osm_elements_to_results_extracts_websites(self) -> None:
         results = osm_elements_to_results(
@@ -176,7 +188,7 @@ class SearchTests(unittest.TestCase):
             def __init__(self, results):
                 self._results = results
 
-            def search(self, category, location, limit):
+            def search(self, category, location, limit, countries=()):
                 return self._results
 
         provider_a = StaticProvider([SearchResult(title="A", url="https://a.example/")])
@@ -240,12 +252,11 @@ class SearchTests(unittest.TestCase):
         captured: list[tuple[str, str]] = []
 
         def fake_read_json(request, timeout=20):
-            api_params = urllib.parse.parse_qs(urllib.parse.urlparse(request.full_url).query)
-            google_url = api_params.get("url", [""])[0]
-            google_params = urllib.parse.parse_qs(urllib.parse.urlparse(google_url).query)
-            query = google_params.get("q", [""])[0]
-            start = google_params.get("start", ["0"])[0]
-            captured.append((query, start))
+            path = urllib.parse.urlparse(request.full_url).path
+            query_text = urllib.parse.unquote(path.rsplit("/", 1)[-1])
+            params = urllib.parse.parse_qs(urllib.parse.urlparse(request.full_url).query)
+            start = params.get("start", ["0"])[0]
+            captured.append((query_text, start))
             if start != "0":
                 return {"organic_results": []}
             idx = len(captured)
@@ -291,10 +302,10 @@ class SearchTests(unittest.TestCase):
         single = expand_queries("hotel", "Berlin")
         self.assertEqual(len(single), 1)
 
-        many = expand_queries("hotel", "")
+        many = expand_queries("hotel", "", ("DE",))
         self.assertGreater(len(many), 5)
+        self.assertTrue(any("Deutschland" in q for q in many))
         self.assertTrue(any("Berlin" in q for q in many))
-        self.assertTrue(any("Hamburg" in q for q in many))
 
     def test_is_valid_lead_url_rejects_relative_and_redirects(self) -> None:
         self.assertTrue(is_valid_lead_url("https://example.test/kontakt"))
