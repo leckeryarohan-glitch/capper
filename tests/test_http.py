@@ -12,6 +12,10 @@ class HttpTests(unittest.TestCase):
         context = ssl_context()
         self.assertIsInstance(context, ssl.SSLContext)
 
+    def test_format_request_error_explains_auth_failures(self) -> None:
+        message = format_request_error(urllib.error.HTTPError("https://example.test/", 401, "Unauthorized", {}, None))
+        self.assertIn("API-Key ungueltig", message)
+
     def test_format_request_error_explains_ssl_failures(self) -> None:
         message = format_request_error(
             urllib.error.URLError(ssl.SSLError("certificate verify failed"))

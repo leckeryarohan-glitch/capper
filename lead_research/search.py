@@ -393,6 +393,12 @@ class ZenRowsSearchProvider(SearchProvider):
                 except SearchProviderError as exc:
                     request_failures += 1
                     self._report(f"ZenRows: Anfrage fehlgeschlagen fuer '{query_text}' (Start {start}): {exc}")
+                    if "API-Key ungueltig" in str(exc) or "HTTP Error 401" in str(exc) or "HTTP Error 403" in str(exc):
+                        self._report(
+                            "ZenRows: Suche abgebrochen. Bitte den API-Key im ZenRows-Dashboard pruefen "
+                            "(https://app.zenrows.com) und im Feld 'ZenRows Key' neu eintragen."
+                        )
+                        return results
                     break
                 if not page_results:
                     break
@@ -1062,7 +1068,12 @@ def auto_provider() -> SearchProvider:
     return combined_provider()
 
 
-def combined_provider(use_osm: bool = True, use_duckduckgo: bool = True) -> SearchProvider:
+def combined_provider(
+    use_osm: bool = True,
+    use_duckduckgo: bool = True,
+    serpapi_key: str | None = None,
+    zenrows_key: str | None = None,
+) -> SearchProvider:
     """Combine the selected no-key and key-based sources for maximum coverage."""
     providers: list[SearchProvider] = []
     if use_osm:
@@ -1075,11 +1086,22 @@ def combined_provider(use_osm: bool = True, use_duckduckgo: bool = True) -> Sear
         providers.append(BraveSearchProvider())
     if os.getenv("BING_SEARCH_API_KEY"):
         providers.append(BingSearchProvider())
-    if os.getenv("SERPAPI_API_KEY"):
-        providers.append(SerpApiSearchProvider())
-    if os.getenv("ZENROWS_API_KEY"):
-        providers.append(ZenRowsSearchProvider())
+
+    resolved_serpapi = _resolve_api_key(serpapi_key, "SERPAPI_API_KEY")
+    if resolved_serpapi:
+        providers.append(SerpApiSearchProvider(api_key=resolved_serpapi))
+
+    resolved_zenrows = _resolve_api_key(zenrows_key, "ZENROWS_API_KEY")
+    if resolved_zenrows:
+        providers.append(ZenRowsSearchProvider(api_key=resolved_zenrows))
+
     return MultiSourceProvider(providers)
+
+
+def _resolve_api_key(explicit_key: str | None, env_name: str) -> str:
+    if explicit_key is not None:
+        return explicit_key.strip()
+    return os.getenv(env_name, "").strip()
 
 
 def api_provider() -> SearchProvider:
@@ -1125,7 +1147,9 @@ def _read_json_with_retry(
         except SearchProviderError as exc:
             last_error = exc
             message = str(exc)
-            retryable = "HTTP Error" in message and any(
+            retryable = "HTTP Error" in message and not any(
+                token in message for token in ("HTTP Error 401", "HTTP Error 403", "API-Key ungueltig")
+            ) and any(
                 f"HTTP Error {code}:" in message for code in (408, 425, 429, 500, 502, 503, 504)
             )
             if retryable and attempt + 1 < retries:
@@ -1141,6 +1165,8 @@ def _read_text(request: urllib.request.Request, timeout: int = 20) -> str:
     try:
         with urlopen(request, timeout=timeout) as response:
             return read_response_text(response)
+    except urllib.error.HTTPError as exc:
+        raise SearchProviderError(format_request_error(exc)) from exc
     except OSError as exc:
         raise SearchProviderError(f"Search provider request failed: {format_request_error(exc)}") from exc
 
@@ -1149,6 +1175,8 @@ def _read_json(request: urllib.request.Request, timeout: int = 20) -> dict:
     try:
         with urlopen(request, timeout=timeout) as response:
             payload = read_response_text(response)
+    except urllib.error.HTTPError as exc:
+        raise SearchProviderError(format_request_error(exc)) from exc
     except OSError as exc:
         raise SearchProviderError(f"Search provider request failed: {format_request_error(exc)}") from exc
 
