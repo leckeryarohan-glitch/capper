@@ -41,8 +41,10 @@ def write_csv(leads: list[Lead], path: Path) -> None:
 class StreamingCsvWriter:
     """Writes leads to CSV incrementally so large runs persist as they progress."""
 
-    def __init__(self, path: Path, *, append: bool = False):
+    def __init__(self, path: Path, *, append: bool = False, flush_every: int = 8):
         self.path = path
+        self.flush_every = max(1, flush_every)
+        self._pending_flush = 0
         self.path.parent.mkdir(parents=True, exist_ok=True)
         file_exists = self.path.exists() and self.path.stat().st_size > 0
         mode = "a" if append and file_exists else "w"
@@ -54,10 +56,15 @@ class StreamingCsvWriter:
 
     def write(self, lead: Lead) -> None:
         self._writer.writerow(lead_to_row(lead))
-        self._file.flush()
+        self._pending_flush += 1
+        if self._pending_flush >= self.flush_every:
+            self._file.flush()
+            self._pending_flush = 0
 
     def close(self) -> None:
         if not self._file.closed:
+            if self._pending_flush:
+                self._file.flush()
             self._file.close()
 
     def __enter__(self) -> "StreamingCsvWriter":

@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import asdict
 from pathlib import Path
 from typing import Iterable
 
+from .checkpoint import lead_from_dict, lead_to_dict
+from .checkpoint import lead_from_dict, lead_to_dict
 from .crawl import CrawlConfig, LeadCrawler
 from .export import write_csv, write_json
-from .models import ConsentStatus, Lead, dedupe_leads
+from .models import Lead, dedupe_leads
 from .search import SearchProvider
 from .suppression import SuppressionList
 
@@ -111,16 +112,3 @@ def save_checkpoint(path: Path | None, completed_queries: set[QueryKey], leads: 
         "leads": [lead_to_dict(lead) for lead in leads],
     }
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def lead_to_dict(lead: Lead) -> dict:
-    item = asdict(lead)
-    item["consent_status"] = lead.consent_status.value
-    return item
-
-
-def lead_from_dict(item: dict) -> Lead:
-    restored = dict(item)
-    restored["consent_status"] = ConsentStatus(restored.get("consent_status", ConsentStatus.BUSINESS_PUBLIC))
-    restored["notes"] = list(restored.get("notes", []))
-    return Lead(**restored)

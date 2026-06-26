@@ -64,7 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--workers",
         type=int,
         default=DEFAULT_WORKERS,
-        help="Number of websites to crawl in parallel.",
+        help="Number of websites to crawl in parallel (default scales with CPU cores, I/O-bound).",
     )
     discover.add_argument(
         "--max-leads",

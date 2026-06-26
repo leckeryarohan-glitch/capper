@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -18,6 +19,7 @@ from .checkpoint import (
     update_search_results,
     validate_checkpoint_config,
 )
+from .concurrency import CHECKPOINT_SAVE_INTERVAL, AsyncCheckpointWriter, recommended_workers
 from .crawl import CrawlConfig, LeadCrawler
 from .export import StreamingCsvWriter, write_json
 from .extract import normalized_host
@@ -27,7 +29,8 @@ from .search import SearchProvider, ZenRowsResumeState, find_zenrows_provider, i
 from .suppression import SuppressionList
 
 
-DEFAULT_WORKERS = 12
+DEFAULT_WORKERS = recommended_workers()
+_crawl_local = threading.local()
 
 
 @dataclass
@@ -150,7 +153,11 @@ def run_discovery(
         emit=emit,
     )
     stats.websites_total = len(search_results)
-    emit("status", f"{stats.websites_total} Websites gefunden. Starte Crawling mit {max(1, config.workers)} Threads ...")
+    worker_count = recommended_workers(config.workers)
+    emit(
+        "status",
+        f"{stats.websites_total} Websites gefunden. Starte Crawling mit {worker_count} parallelen Threads ...",
+    )
     emit("total", stats.websites_total)
 
     dedup = LeadDeduplicator(by=config.dedupe_by)
@@ -187,6 +194,9 @@ def run_discovery(
         collected.extend(checkpoint_state.lead_objects())
 
     page_lock = threading.Lock()
+    state_lock = threading.Lock()
+    sites_since_checkpoint = 0
+    checkpoint_writer = AsyncCheckpointWriter()
 
     def on_page(url: str) -> None:
         with page_lock:
@@ -194,15 +204,22 @@ def run_discovery(
             count = stats.pages_fetched
         emit("page", url, count)
 
-    crawler = LeadCrawler(
-        CrawlConfig(
-            max_pages_per_site=config.max_pages_per_site,
-            delay_seconds=config.delay,
-            include_personal=config.include_personal,
-            respect_robots=config.respect_robots,
-        ),
-        on_page=on_page,
+    crawl_config = CrawlConfig(
+        max_pages_per_site=config.max_pages_per_site,
+        delay_seconds=config.delay,
+        include_personal=config.include_personal,
+        respect_robots=config.respect_robots,
     )
+
+    def thread_crawler() -> LeadCrawler:
+        crawler = getattr(_crawl_local, "crawler", None)
+        if crawler is None:
+            crawler = LeadCrawler(crawl_config, on_page=on_page)
+            _crawl_local.crawler = crawler
+        return crawler
+
+    def crawl_site(result: SearchResult) -> tuple[SearchResult, list[Lead]]:
+        return result, thread_crawler().crawl_result(result, config.category)
 
     def store_lead(lead: Lead) -> None:
         if suppression.is_suppressed(lead):
@@ -227,34 +244,41 @@ def run_discovery(
         append_lead(checkpoint_state, lead)
         emit("lead", lead, stats)
 
+    def maybe_save_checkpoint(force: bool = False) -> None:
+        nonlocal sites_since_checkpoint
+        if not force and sites_since_checkpoint < CHECKPOINT_SAVE_INTERVAL:
+            return
+        sites_since_checkpoint = 0
+        checkpoint_writer.submit(checkpoint, checkpoint_state)
+
     try:
-        workers = max(1, config.workers)
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = {
-                executor.submit(crawler.crawl_result, result, config.category): result
-                for result in pending_results
-            }
-            for future in as_completed(futures):
-                result = futures[future]
+        with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="capper-crawl") as executor:
+            futures = [executor.submit(crawl_site, result) for result in pending_results]
+            future_map = {future: result for future, result in zip(futures, pending_results, strict=False)}
+            for future in as_completed(future_map):
+                result = future_map[future]
                 try:
-                    site_leads = future.result()
+                    _, site_leads = future.result()
                 except Exception as exc:  # noqa: BLE001 - keep run alive on a single site failure
                     site_leads = []
                     emit("warning", f"Website-Fehler: {exc}")
-                stats.websites_done += 1
-                mark_url_crawled(checkpoint_state, result.url)
-                leads_before = stats.leads_found
-                for lead in site_leads:
-                    store_lead(lead)
-                new_leads = stats.leads_found - leads_before
+                with state_lock:
+                    stats.websites_done += 1
+                    mark_url_crawled(checkpoint_state, result.url)
+                    leads_before = stats.leads_found
+                    for lead in site_leads:
+                        store_lead(lead)
+                    new_leads = stats.leads_found - leads_before
+                    sites_since_checkpoint += 1
                 emit("site_done", result.url, new_leads, stats)
                 emit("progress", stats)
-                save_discovery_checkpoint(checkpoint, checkpoint_state)
+                maybe_save_checkpoint()
                 if stats.leads_found >= config.max_leads:
                     for pending in futures:
                         pending.cancel()
                     break
     finally:
+        checkpoint_writer.close(checkpoint, checkpoint_state)
         if writer is not None:
             writer.close()
         else:
@@ -306,6 +330,7 @@ def _discover_websites(
             config.countries,
             resume_state=resume_state,
             on_plan_complete=persist_zenrows_progress,
+            parallel_workers=max(1, recommended_workers(config.workers) // 4),
         )
     else:
         if checkpoint_state.search_results and checkpoint_state.zenrows_completed_plans:

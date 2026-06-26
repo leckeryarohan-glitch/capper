@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from .batch import lead_from_dict, lead_to_dict
-from .models import Lead, SearchResult
+from .models import ConsentStatus, Lead, SearchResult
 
 
 CHECKPOINT_VERSION = 1
@@ -69,6 +68,19 @@ def validate_checkpoint_config(checkpoint: DiscoveryCheckpoint, expected: dict[s
         )
 
 
+def lead_to_dict(lead: Lead) -> dict:
+    item = asdict(lead)
+    item["consent_status"] = lead.consent_status.value
+    return item
+
+
+def lead_from_dict(item: dict) -> Lead:
+    restored = dict(item)
+    restored["consent_status"] = ConsentStatus(restored.get("consent_status", ConsentStatus.BUSINESS_PUBLIC))
+    restored["notes"] = list(restored.get("notes", []))
+    return Lead(**restored)
+
+
 def search_result_to_dict(result: SearchResult) -> dict[str, str]:
     return {"title": result.title, "url": result.url, "snippet": result.snippet}
 
@@ -122,16 +134,23 @@ def load_discovery_checkpoint(path: Path | None) -> DiscoveryCheckpoint | None:
 def save_discovery_checkpoint(path: Path | None, checkpoint: DiscoveryCheckpoint) -> None:
     if path is None:
         return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
+    write_discovery_checkpoint_payload(path, checkpoint_to_payload(checkpoint))
+
+
+def checkpoint_to_payload(checkpoint: DiscoveryCheckpoint) -> dict[str, object]:
+    return {
         "version": checkpoint.version,
         "config": checkpoint.config,
         "search_complete": checkpoint.search_complete,
-        "search_results": checkpoint.search_results,
-        "zenrows_completed_plans": checkpoint.zenrows_completed_plans,
-        "crawled_urls": checkpoint.crawled_urls,
-        "leads": checkpoint.leads,
+        "search_results": list(checkpoint.search_results),
+        "zenrows_completed_plans": list(checkpoint.zenrows_completed_plans),
+        "crawled_urls": list(checkpoint.crawled_urls),
+        "leads": list(checkpoint.leads),
     }
+
+
+def write_discovery_checkpoint_payload(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(path)

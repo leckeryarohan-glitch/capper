@@ -5,6 +5,7 @@ import itertools
 import json
 import os
 import re
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -16,6 +17,7 @@ from pathlib import Path
 from typing import Callable
 
 from .http import format_request_error, read_response_text, urlopen
+from .concurrency import recommended_workers
 from .locations import (
     DEFAULT_COUNTRIES,
     SUPPORTED_COUNTRIES,
@@ -137,6 +139,7 @@ CATEGORY_SEARCH_VARIANTS: dict[str, tuple[str, ...]] = {
 }
 
 ZENROWS_MASS_MODE_LIMIT = 500
+ZENROWS_MAX_PARALLEL_REQUESTS = 6
 ZENROWS_DEEP_PAGINATION_START = 90
 ZENROWS_MEDIUM_PAGINATION_START = 40
 ZENROWS_LIGHT_PAGINATION_START = 10
@@ -400,18 +403,18 @@ class ZenRowsSearchProvider(SearchProvider):
         *,
         resume_state: ZenRowsResumeState | None = None,
         on_plan_complete: Callable[[ZenRowsResumeState], None] | None = None,
+        parallel_workers: int = 1,
     ) -> list[SearchResult]:
         if limit < 1:
             return []
         results: list[SearchResult] = list(resume_state.results) if resume_state else []
         seen: set[str] = set(resume_state.seen_urls) if resume_state else set()
         completed_plans: set[str] = set(resume_state.completed_plans) if resume_state else set()
-        request_failures = 0
         mass_mode = limit >= ZENROWS_MASS_MODE_LIMIT
         plans = zenrows_query_plans(category, location, countries, limit)
         max_start = zenrows_max_pagination_start(len(plans), mass_mode)
         page_delay = self.page_delay_seconds if limit > 10 else self.request_delay_seconds
-        progress_interval = 25 if mass_mode else 0
+        workers = zenrows_parallel_workers(parallel_workers, mass_mode, len(plans))
         remaining_plans = sum(
             1 for query_text, country_code in plans if zenrows_plan_key(query_text, country_code) not in completed_plans
         )
@@ -423,12 +426,28 @@ class ZenRowsSearchProvider(SearchProvider):
             )
         elif limit > 10:
             mode_hint = "Massenmodus — " if mass_mode else ""
+            parallel_hint = f", {workers} parallele Anfragen" if workers > 1 else ""
             self._report(
                 f"ZenRows: bis zu {limit} Websites — {mode_hint}"
-                f"{len(plans)} Suchanfragen, bis zu {max_start // 10 + 1} Seiten pro Anfrage "
-                "(kann mehrere Stunden dauern)."
+                f"{len(plans)} Suchanfragen{parallel_hint}, "
+                f"bis zu {max_start // 10 + 1} Seiten pro Anfrage."
             )
 
+        if workers > 1:
+            return self._search_plans_parallel(
+                plans=plans,
+                limit=limit,
+                max_start=max_start,
+                page_delay=page_delay,
+                results=results,
+                seen=seen,
+                completed_plans=completed_plans,
+                on_plan_complete=on_plan_complete,
+                parallel_workers=workers,
+            )
+
+        request_failures = 0
+        progress_interval = 25 if mass_mode else 0
         for plan_index, (query_text, country_code) in enumerate(plans):
             if len(results) >= limit:
                 break
@@ -438,64 +457,22 @@ class ZenRowsSearchProvider(SearchProvider):
             if progress_interval and plan_index > 0 and plan_index % progress_interval == 0:
                 self._report(f"ZenRows: {len(results)}/{limit} Websites — Anfrage {plan_index}/{len(plans)} ...")
 
-            locale_country, tld = ZENROWS_LOCALE.get(country_code, ZENROWS_LOCALE["DE"])
-            start = 0
-            while len(results) < limit and start <= max_start:
-                self._report(f"ZenRows (Stealth): '{query_text}' ab {start} ({country_code}) ...")
-                request = urllib.request.Request(
-                    build_zenrows_api_request_url(self.api_key, query_text, start, locale_country, tld),
-                    headers={"Accept": "application/json", "User-Agent": "capper-lead-research/0.1"},
+            plan_results, auth_error = self._execute_zenrows_plan(
+                query_text,
+                country_code,
+                max_start=max_start,
+                page_delay=page_delay,
+            )
+            if auth_error:
+                self._report(
+                    "ZenRows: Suche abgebrochen. Bitte den API-Key im ZenRows-Dashboard pruefen "
+                    "(https://app.zenrows.com) und im Feld 'ZenRows Key' neu eintragen."
                 )
-                try:
-                    page_results = zenrows_items_to_results(
-                        _read_json_with_retry(
-                            request,
-                            timeout=self.request_timeout_seconds,
-                            retries=3,
-                            backoff_seconds=3.0,
-                        )
-                    )
-                except SearchProviderError as exc:
-                    request_failures += 1
-                    self._report(f"ZenRows: Anfrage fehlgeschlagen fuer '{query_text}' (Start {start}): {exc}")
-                    if "API-Key ungueltig" in str(exc) or "HTTP Error 401" in str(exc) or "HTTP Error 403" in str(exc):
-                        self._report(
-                            "ZenRows: Suche abgebrochen. Bitte den API-Key im ZenRows-Dashboard pruefen "
-                            "(https://app.zenrows.com) und im Feld 'ZenRows Key' neu eintragen."
-                        )
-                        return results
-                    if mass_mode:
-                        break
-                    if results:
-                        self._report(f"ZenRows: {len(results)} Websites gefunden (teilweise, nach API-Fehler).")
-                        return results
-                    break
-                if not page_results:
-                    break
-                new_in_page = 0
-                for result in page_results:
-                    key = result.url.lower().rstrip("/")
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    new_in_page += 1
-                    results.append(result)
-                    if len(results) >= limit:
-                        self._report(f"ZenRows: {len(results)} Websites gefunden")
-                        if on_plan_complete:
-                            on_plan_complete(
-                                ZenRowsResumeState(
-                                    results=list(results),
-                                    seen_urls=set(seen),
-                                    completed_plans=set(completed_plans) | {plan_key},
-                                )
-                            )
-                        return results
-                start += 10
-                if new_in_page == 0:
-                    break
-                time.sleep(page_delay)
+                return results
+            if not plan_results and mass_mode:
+                request_failures += 1
 
+            limit_reached = self._merge_plan_results(plan_results, results, seen, limit)
             completed_plans.add(plan_key)
             if on_plan_complete:
                 on_plan_complete(
@@ -505,6 +482,9 @@ class ZenRowsSearchProvider(SearchProvider):
                         completed_plans=set(completed_plans),
                     )
                 )
+            if limit_reached:
+                self._report(f"ZenRows: {len(results)} Websites gefunden")
+                return results
 
         self._report(f"ZenRows: {len(results)} Websites gefunden")
         if not results and request_failures:
@@ -514,9 +494,146 @@ class ZenRowsSearchProvider(SearchProvider):
             )
         return results
 
+    def _merge_plan_results(
+        self,
+        plan_results: list[SearchResult],
+        results: list[SearchResult],
+        seen: set[str],
+        limit: int,
+    ) -> bool:
+        for result in plan_results:
+            key = result.url.lower().rstrip("/")
+            if key in seen:
+                continue
+            seen.add(key)
+            results.append(result)
+            if len(results) >= limit:
+                return True
+        return False
+
+    def _execute_zenrows_plan(
+        self,
+        query_text: str,
+        country_code: str,
+        *,
+        max_start: int,
+        page_delay: float,
+    ) -> tuple[list[SearchResult], bool]:
+        locale_country, tld = ZENROWS_LOCALE.get(country_code, ZENROWS_LOCALE["DE"])
+        plan_results: list[SearchResult] = []
+        start = 0
+        while start <= max_start:
+            request = urllib.request.Request(
+                build_zenrows_api_request_url(self.api_key, query_text, start, locale_country, tld),
+                headers={"Accept": "application/json", "User-Agent": "capper-lead-research/0.1"},
+            )
+            try:
+                page_results = zenrows_items_to_results(
+                    _read_json_with_retry(
+                        request,
+                        timeout=self.request_timeout_seconds,
+                        retries=3,
+                        backoff_seconds=3.0,
+                    )
+                )
+            except SearchProviderError as exc:
+                self._report(f"ZenRows: Anfrage fehlgeschlagen fuer '{query_text}' (Start {start}): {exc}")
+                auth_error = (
+                    "API-Key ungueltig" in str(exc)
+                    or "HTTP Error 401" in str(exc)
+                    or "HTTP Error 403" in str(exc)
+                )
+                return plan_results, auth_error
+            if not page_results:
+                break
+            plan_results.extend(page_results)
+            start += 10
+            if start <= max_start:
+                time.sleep(page_delay)
+        return plan_results, False
+
+    def _search_plans_parallel(
+        self,
+        *,
+        plans: list[tuple[str, str]],
+        limit: int,
+        max_start: int,
+        page_delay: float,
+        results: list[SearchResult],
+        seen: set[str],
+        completed_plans: set[str],
+        on_plan_complete: Callable[[ZenRowsResumeState], None] | None,
+        parallel_workers: int,
+    ) -> list[SearchResult]:
+        pending = [
+            (zenrows_plan_key(query_text, country_code), query_text, country_code)
+            for query_text, country_code in plans
+            if zenrows_plan_key(query_text, country_code) not in completed_plans
+        ]
+        state_lock = threading.Lock()
+        stop = threading.Event()
+        completed_count = 0
+
+        def run_plan(plan_key: str, query_text: str, country_code: str) -> tuple[str, list[SearchResult], bool]:
+            if stop.is_set():
+                return plan_key, [], False
+            self._report(f"ZenRows (Stealth): '{query_text}' ({country_code}) ...")
+            return plan_key, *self._execute_zenrows_plan(
+                query_text,
+                country_code,
+                max_start=max_start,
+                page_delay=page_delay,
+            )
+
+        with ThreadPoolExecutor(max_workers=parallel_workers, thread_name_prefix="capper-zenrows") as executor:
+            futures = [
+                executor.submit(run_plan, plan_key, query_text, country_code)
+                for plan_key, query_text, country_code in pending
+            ]
+            for future in as_completed(futures):
+                if stop.is_set():
+                    break
+                plan_key, plan_results, auth_error = future.result()
+                if auth_error:
+                    stop.set()
+                    self._report(
+                        "ZenRows: Suche abgebrochen. Bitte den API-Key im ZenRows-Dashboard pruefen "
+                        "(https://app.zenrows.com) und im Feld 'ZenRows Key' neu eintragen."
+                    )
+                    break
+                with state_lock:
+                    limit_reached = self._merge_plan_results(plan_results, results, seen, limit)
+                    completed_plans.add(plan_key)
+                    completed_count += 1
+                    if on_plan_complete:
+                        on_plan_complete(
+                            ZenRowsResumeState(
+                                results=list(results),
+                                seen_urls=set(seen),
+                                completed_plans=set(completed_plans),
+                            )
+                        )
+                    if completed_count % 25 == 0:
+                        self._report(
+                            f"ZenRows: {len(results)}/{limit} Websites — "
+                            f"{completed_count}/{len(pending)} Anfragen erledigt ..."
+                        )
+                if limit_reached:
+                    stop.set()
+                    break
+
+        self._report(f"ZenRows: {len(results)} Websites gefunden")
+        return results
+
 
 def zenrows_plan_key(query_text: str, country_code: str) -> str:
     return f"{country_code}\t{query_text}"
+
+
+def zenrows_parallel_workers(requested: int, mass_mode: bool, plan_count: int) -> int:
+    if not mass_mode or plan_count <= 30 or requested <= 1:
+        return 1
+    return max(1, min(ZENROWS_MAX_PARALLEL_REQUESTS, requested))
 
 
 def find_zenrows_provider(provider: SearchProvider) -> ZenRowsSearchProvider | None:
