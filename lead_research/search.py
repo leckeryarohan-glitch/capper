@@ -15,6 +15,7 @@ from math import ceil
 from pathlib import Path
 from typing import Callable
 
+from .http import format_request_error, read_response_text, urlopen
 from .locations import (
     DEFAULT_COUNTRIES,
     SUPPORTED_COUNTRIES,
@@ -1138,20 +1139,18 @@ def _read_json_with_retry(
 
 def _read_text(request: urllib.request.Request, timeout: int = 20) -> str:
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            raw = response.read(2_000_000)
-            charset = response.headers.get_content_charset() or "utf-8"
-            return raw.decode(charset, errors="replace")
+        with urlopen(request, timeout=timeout) as response:
+            return read_response_text(response)
     except OSError as exc:
-        raise SearchProviderError(f"Search provider request failed: {exc}") from exc
+        raise SearchProviderError(f"Search provider request failed: {format_request_error(exc)}") from exc
 
 
 def _read_json(request: urllib.request.Request, timeout: int = 20) -> dict:
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            payload = response.read().decode("utf-8", errors="replace")
+        with urlopen(request, timeout=timeout) as response:
+            payload = read_response_text(response)
     except OSError as exc:
-        raise SearchProviderError(f"Search provider request failed: {exc}") from exc
+        raise SearchProviderError(f"Search provider request failed: {format_request_error(exc)}") from exc
 
     try:
         return json.loads(payload)

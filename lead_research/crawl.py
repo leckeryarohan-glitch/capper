@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from .extract import extract_emails, extract_phone, normalized_host, parse_page, strip_fragment
+from .http import read_response_text, urlopen
 from .models import Lead, SearchResult, classify_email
 
 
@@ -159,13 +160,12 @@ def fetch_url(url: str) -> tuple[str, str] | None:
                 "Accept": "text/html,application/xhtml+xml",
             },
         )
-        with urllib.request.urlopen(request, timeout=15) as response:
+        with urlopen(request, timeout=15) as response:
             content_type = response.headers.get("Content-Type", "")
             if "text/html" not in content_type and "application/xhtml+xml" not in content_type:
                 return None
-            raw = response.read(1_000_000)
-            charset = response.headers.get_content_charset() or "utf-8"
-            return raw.decode(charset, errors="replace"), response.geturl()
+            html_text = read_response_text(response, max_bytes=1_000_000)
+            return html_text, response.geturl()
     except Exception:  # noqa: BLE001 - one unreachable/invalid URL must not abort a crawl
         return None
 
