@@ -291,6 +291,31 @@ class SearchTests(unittest.TestCase):
         self.assertEqual(len(results), 4)
         self.assertGreater(len({q for q, _ in captured}), 1)
 
+    def test_combined_provider_uses_explicit_zenrows_key(self) -> None:
+        with patch.dict("os.environ", {"ZENROWS_API_KEY": "env-key"}, clear=False):
+            provider = combined_provider(use_osm=False, use_duckduckgo=False, zenrows_key="gui-key")
+
+        labels = [source_label(sub) for sub in provider.providers]
+        self.assertEqual(labels, ["ZenRows"])
+        self.assertEqual(provider.providers[0].api_key, "gui-key")
+
+    def test_combined_provider_ignores_env_when_gui_key_empty(self) -> None:
+        with patch.dict("os.environ", {"ZENROWS_API_KEY": "env-key"}, clear=False):
+            provider = combined_provider(use_osm=True, use_duckduckgo=False, zenrows_key="")
+
+        labels = [source_label(sub) for sub in provider.providers]
+        self.assertEqual(labels, ["OpenStreetMap"])
+
+    def test_zenrows_stops_on_unauthorized(self) -> None:
+        def fake_read_json_with_retry(request, timeout=60, retries=4, backoff_seconds=2.0):
+            raise SearchProviderError("HTTP Error 401: ZenRows API-Key ungueltig oder kein Zugriff")
+
+        provider = ZenRowsSearchProvider(api_key="bad-key")
+        with patch("lead_research.search._read_json_with_retry", side_effect=fake_read_json_with_retry):
+            results = provider.search("hotel", "", 10)
+
+        self.assertEqual(results, [])
+
     def test_combined_provider_respects_source_toggles(self) -> None:
         with patch.dict("os.environ", {}, clear=True):
             only_ddg = combined_provider(use_osm=False, use_duckduckgo=True)

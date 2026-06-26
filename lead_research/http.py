@@ -39,7 +39,14 @@ def read_response_text(
 
 def format_request_error(exc: BaseException) -> str:
     if isinstance(exc, urllib.error.HTTPError):
-        return f"HTTP Error {exc.code}: {exc.reason}"
+        detail = _read_http_error_body(exc)
+        if exc.code in {401, 403}:
+            return (
+                f"HTTP Error {exc.code}: ZenRows API-Key ungueltig oder kein Zugriff"
+                + (f" ({detail})" if detail else "")
+            )
+        suffix = f" ({detail})" if detail else ""
+        return f"HTTP Error {exc.code}: {exc.reason}{suffix}"
     if isinstance(exc, urllib.error.URLError):
         reason = exc.reason
         if isinstance(reason, ssl.SSLError):
@@ -50,3 +57,14 @@ def format_request_error(exc: BaseException) -> str:
             )
         return str(reason)
     return str(exc)
+
+
+def is_auth_http_error(exc: BaseException) -> bool:
+    return isinstance(exc, urllib.error.HTTPError) and exc.code in {401, 403}
+
+
+def _read_http_error_body(exc: urllib.error.HTTPError) -> str:
+    try:
+        return exc.read().decode("utf-8", errors="replace").strip()[:300]
+    except Exception:  # noqa: BLE001
+        return ""
