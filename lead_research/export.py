@@ -41,13 +41,16 @@ def write_csv(leads: list[Lead], path: Path) -> None:
 class StreamingCsvWriter:
     """Writes leads to CSV incrementally so large runs persist as they progress."""
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, *, append: bool = False):
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._file = self.path.open("w", encoding="utf-8", newline="")
+        file_exists = self.path.exists() and self.path.stat().st_size > 0
+        mode = "a" if append and file_exists else "w"
+        self._file = self.path.open(mode, encoding="utf-8", newline="")
         self._writer = csv.DictWriter(self._file, fieldnames=CSV_FIELDS)
-        self._writer.writeheader()
-        self._file.flush()
+        if mode == "w":
+            self._writer.writeheader()
+            self._file.flush()
 
     def write(self, lead: Lead) -> None:
         self._writer.writerow(lead_to_row(lead))

@@ -13,6 +13,7 @@ from .suppression import SuppressionList
 
 
 DEFAULT_OUTPUT = "leads.csv"
+DEFAULT_CHECKPOINT = "capper-checkpoint.json"
 DEFAULT_LIMIT = "5000"
 DEFAULT_MAX_PAGES = "5"
 DEFAULT_DELAY = "0.3"
@@ -52,6 +53,11 @@ def build_simple_gui_argv(values: Mapping[str, str | bool]) -> list[str]:
     if suppression_file and Path(suppression_file).exists():
         argv.extend(["--suppression-file", suppression_file])
 
+    checkpoint = str(values.get("checkpoint", DEFAULT_CHECKPOINT)).strip() or DEFAULT_CHECKPOINT
+    argv.extend(["--checkpoint", checkpoint])
+    if bool(values.get("resume", False)):
+        argv.append("--resume")
+
     return argv
 
 
@@ -90,6 +96,8 @@ def run_gui_discovery(
     max_leads = parse_positive_int(values.get("max_leads"), int(DEFAULT_MAX_LEADS))
     limit = parse_positive_int(values.get("limit"), int(DEFAULT_LIMIT))
     workers = parse_positive_int(values.get("workers"), DEFAULT_WORKERS)
+    checkpoint = Path(str(values.get("checkpoint", DEFAULT_CHECKPOINT)).strip() or DEFAULT_CHECKPOINT)
+    resume = bool(values.get("resume", False))
 
     serpapi_key = str(values.get("serpapi_key", "")).strip()
     zenrows_key = str(values.get("zenrows_key", "")).strip()
@@ -131,6 +139,8 @@ def run_gui_discovery(
         suppression=SuppressionList(suppression_path),
         output=output,
         on_event=lambda *event: events.put(event),
+        checkpoint=checkpoint,
+        resume=resume,
     )
     return 0
 
@@ -169,6 +179,8 @@ def run_gui() -> int:
             self.use_duckduckgo = tk.BooleanVar(value=True)
             self.country_de = tk.BooleanVar(value=True)
             self.country_at = tk.BooleanVar(value=False)
+            self.checkpoint = tk.StringVar(value=DEFAULT_CHECKPOINT)
+            self.resume = tk.BooleanVar(value=False)
             self.status_text = tk.StringVar(value="Bereit.")
             self.lead_count_text = tk.StringVar(value="Gefundene Leads: 0")
             self.stats_text = tk.StringVar(value="Statistik: noch keine Suche gestartet.")
@@ -215,12 +227,23 @@ def run_gui() -> int:
             ttk.Entry(outer, textvariable=self.output).grid(row=5, column=1, sticky="ew", pady=4)
             ttk.Button(outer, text="Auswaehlen", command=self._choose_output).grid(row=5, column=2, padx=(8, 0), pady=4)
 
-            ttk.Label(outer, text="Opt-out Liste").grid(row=6, column=0, sticky="w", pady=4)
-            ttk.Entry(outer, textvariable=self.suppression_file).grid(row=6, column=1, sticky="ew", pady=4)
-            ttk.Button(outer, text="Auswaehlen", command=self._choose_suppression).grid(row=6, column=2, padx=(8, 0), pady=4)
+            checkpoint_frame = ttk.Frame(outer)
+            checkpoint_frame.grid(row=6, column=0, columnspan=3, sticky="ew", pady=4)
+            checkpoint_frame.columnconfigure(1, weight=1)
+            ttk.Label(checkpoint_frame, text="Checkpoint").grid(row=0, column=0, sticky="w", padx=(0, 8))
+            ttk.Entry(checkpoint_frame, textvariable=self.checkpoint).grid(row=0, column=1, sticky="ew")
+            ttk.Checkbutton(
+                checkpoint_frame,
+                text="Fortsetzen",
+                variable=self.resume,
+            ).grid(row=0, column=2, padx=(12, 0))
+
+            ttk.Label(outer, text="Opt-out Liste").grid(row=7, column=0, sticky="w", pady=4)
+            ttk.Entry(outer, textvariable=self.suppression_file).grid(row=7, column=1, sticky="ew", pady=4)
+            ttk.Button(outer, text="Auswaehlen", command=self._choose_suppression).grid(row=7, column=2, padx=(8, 0), pady=4)
 
             keys_frame = ttk.Frame(outer)
-            keys_frame.grid(row=7, column=0, columnspan=3, sticky="ew", pady=4)
+            keys_frame.grid(row=8, column=0, columnspan=3, sticky="ew", pady=4)
             keys_frame.columnconfigure(1, weight=1)
             keys_frame.columnconfigure(3, weight=1)
             ttk.Label(keys_frame, text="SerpAPI Key").grid(row=0, column=0, sticky="w", padx=(0, 4))
@@ -236,18 +259,18 @@ def run_gui() -> int:
                 "Gefundene Websites werden parallel nach oeffentlichen B2B-Kontakten durchsucht; "
                 "doppelte E-Mails werden automatisch entfernt."
             )
-            ttk.Label(outer, text=source_text, wraplength=760).grid(row=8, column=0, columnspan=3, sticky="ew", pady=(10, 8))
+            ttk.Label(outer, text=source_text, wraplength=760).grid(row=9, column=0, columnspan=3, sticky="ew", pady=(10, 8))
 
             self.start_button = ttk.Button(outer, text="Leads suchen", command=self._start)
-            self.start_button.grid(row=9, column=0, columnspan=3, sticky="ew", pady=(4, 10))
+            self.start_button.grid(row=10, column=0, columnspan=3, sticky="ew", pady=(4, 10))
 
             self.progress = ttk.Progressbar(outer, variable=self.progress_value, maximum=1)
-            self.progress.grid(row=10, column=0, columnspan=3, sticky="ew")
-            ttk.Label(outer, textvariable=self.status_text).grid(row=11, column=0, columnspan=2, sticky="w", pady=(4, 0))
-            ttk.Label(outer, textvariable=self.lead_count_text).grid(row=11, column=2, sticky="e", pady=(4, 0))
-            ttk.Label(outer, textvariable=self.stats_text).grid(row=12, column=0, columnspan=3, sticky="w", pady=(2, 0))
+            self.progress.grid(row=11, column=0, columnspan=3, sticky="ew")
+            ttk.Label(outer, textvariable=self.status_text).grid(row=12, column=0, columnspan=2, sticky="w", pady=(4, 0))
+            ttk.Label(outer, textvariable=self.lead_count_text).grid(row=12, column=2, sticky="e", pady=(4, 0))
+            ttk.Label(outer, textvariable=self.stats_text).grid(row=13, column=0, columnspan=3, sticky="w", pady=(2, 0))
             ttk.Label(outer, textvariable=self.current_page_text, foreground="#555").grid(
-                row=13, column=0, columnspan=3, sticky="w", pady=(0, 6)
+                row=14, column=0, columnspan=3, sticky="w", pady=(0, 6)
             )
 
             columns = ("company", "email", "website", "status")
@@ -260,12 +283,12 @@ def run_gui() -> int:
             self.lead_table.column("email", width=180)
             self.lead_table.column("website", width=260)
             self.lead_table.column("status", width=110)
-            self.lead_table.grid(row=14, column=0, columnspan=3, sticky="nsew", pady=(8, 8))
+            self.lead_table.grid(row=15, column=0, columnspan=3, sticky="nsew", pady=(8, 8))
 
             self.log = scrolledtext.ScrolledText(outer, height=8, state="disabled")
-            self.log.grid(row=15, column=0, columnspan=3, sticky="nsew")
-            outer.rowconfigure(14, weight=1)
+            self.log.grid(row=16, column=0, columnspan=3, sticky="nsew")
             outer.rowconfigure(15, weight=1)
+            outer.rowconfigure(16, weight=1)
 
         def _choose_output(self) -> None:
             selected = filedialog.asksaveasfilename(
@@ -299,6 +322,8 @@ def run_gui() -> int:
                 "use_duckduckgo": self.use_duckduckgo.get(),
                 "country_de": self.country_de.get(),
                 "country_at": self.country_at.get(),
+                "checkpoint": self.checkpoint.get(),
+                "resume": self.resume.get(),
             }
             try:
                 require_text(values, "category", "Kategorie")

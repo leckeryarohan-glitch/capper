@@ -99,6 +99,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path("leads.csv"),
         help="Output file path (.csv or .json).",
     )
+    discover.add_argument(
+        "--checkpoint",
+        type=Path,
+        default=Path("capper-checkpoint.json"),
+        help="Checkpoint file to resume long discover runs (search + crawl).",
+    )
+    discover.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume from --checkpoint instead of starting over.",
+    )
 
     batch = subparsers.add_parser(
         "batch",
@@ -238,9 +249,12 @@ def run_discover(args: argparse.Namespace) -> int:
         suppression=SuppressionList(args.suppression_file),
         output=args.output,
         on_event=report,
+        checkpoint=args.checkpoint,
+        resume=args.resume,
     )
 
     print(f"Discovered {stats.leads_found} reviewable lead(s). Wrote {args.output}.")
+    print(f"Checkpoint: {args.checkpoint}")
     print(
         f"Statistics: {stats.websites_done}/{stats.websites_total} websites, "
         f"{stats.pages_fetched} pages, {stats.unique_domains} domains, "

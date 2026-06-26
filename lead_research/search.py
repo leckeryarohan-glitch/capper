@@ -370,6 +370,13 @@ def serpapi_items_to_results(data: dict) -> list[SearchResult]:
     ]
 
 
+@dataclass
+class ZenRowsResumeState:
+    results: list[SearchResult]
+    seen_urls: set[str]
+    completed_plans: set[str]
+
+
 class ZenRowsSearchProvider(SearchProvider):
     """Google SERP via ZenRows Universal API with Adaptive Stealth (mode=auto) + autoparse."""
 
@@ -390,19 +397,31 @@ class ZenRowsSearchProvider(SearchProvider):
         location: str,
         limit: int,
         countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+        *,
+        resume_state: ZenRowsResumeState | None = None,
+        on_plan_complete: Callable[[ZenRowsResumeState], None] | None = None,
     ) -> list[SearchResult]:
         if limit < 1:
             return []
-        results: list[SearchResult] = []
-        seen: set[str] = set()
+        results: list[SearchResult] = list(resume_state.results) if resume_state else []
+        seen: set[str] = set(resume_state.seen_urls) if resume_state else set()
+        completed_plans: set[str] = set(resume_state.completed_plans) if resume_state else set()
         request_failures = 0
         mass_mode = limit >= ZENROWS_MASS_MODE_LIMIT
         plans = zenrows_query_plans(category, location, countries, limit)
         max_start = zenrows_max_pagination_start(len(plans), mass_mode)
         page_delay = self.page_delay_seconds if limit > 10 else self.request_delay_seconds
         progress_interval = 25 if mass_mode else 0
+        remaining_plans = sum(
+            1 for query_text, country_code in plans if zenrows_plan_key(query_text, country_code) not in completed_plans
+        )
 
-        if limit > 10:
+        if resume_state and results:
+            self._report(
+                f"ZenRows: Fortsetzung — {len(results)} Websites, "
+                f"{len(completed_plans)} erledigte Anfragen, {remaining_plans} offen."
+            )
+        elif limit > 10:
             mode_hint = "Massenmodus — " if mass_mode else ""
             self._report(
                 f"ZenRows: bis zu {limit} Websites — {mode_hint}"
@@ -413,6 +432,9 @@ class ZenRowsSearchProvider(SearchProvider):
         for plan_index, (query_text, country_code) in enumerate(plans):
             if len(results) >= limit:
                 break
+            plan_key = zenrows_plan_key(query_text, country_code)
+            if plan_key in completed_plans:
+                continue
             if progress_interval and plan_index > 0 and plan_index % progress_interval == 0:
                 self._report(f"ZenRows: {len(results)}/{limit} Websites — Anfrage {plan_index}/{len(plans)} ...")
 
@@ -460,11 +482,29 @@ class ZenRowsSearchProvider(SearchProvider):
                     results.append(result)
                     if len(results) >= limit:
                         self._report(f"ZenRows: {len(results)} Websites gefunden")
+                        if on_plan_complete:
+                            on_plan_complete(
+                                ZenRowsResumeState(
+                                    results=list(results),
+                                    seen_urls=set(seen),
+                                    completed_plans=set(completed_plans) | {plan_key},
+                                )
+                            )
                         return results
                 start += 10
                 if new_in_page == 0:
                     break
                 time.sleep(page_delay)
+
+            completed_plans.add(plan_key)
+            if on_plan_complete:
+                on_plan_complete(
+                    ZenRowsResumeState(
+                        results=list(results),
+                        seen_urls=set(seen),
+                        completed_plans=set(completed_plans),
+                    )
+                )
 
         self._report(f"ZenRows: {len(results)} Websites gefunden")
         if not results and request_failures:
@@ -473,6 +513,31 @@ class ZenRowsSearchProvider(SearchProvider):
                 "Pruefe API-Key/Guthaben oder aktiviere zusaetzlich OpenStreetMap."
             )
         return results
+
+
+def zenrows_plan_key(query_text: str, country_code: str) -> str:
+    return f"{country_code}\t{query_text}"
+
+
+def find_zenrows_provider(provider: SearchProvider) -> ZenRowsSearchProvider | None:
+    if isinstance(provider, ZenRowsSearchProvider):
+        return provider
+    if isinstance(provider, MultiSourceProvider):
+        for sub_provider in provider.providers:
+            found = find_zenrows_provider(sub_provider)
+            if found is not None:
+                return found
+    if isinstance(provider, CommonSourcesSearchProvider):
+        return find_zenrows_provider(provider.provider)
+    return None
+
+
+def is_zenrows_only_provider(provider: SearchProvider) -> bool:
+    if isinstance(provider, ZenRowsSearchProvider):
+        return True
+    if isinstance(provider, MultiSourceProvider):
+        return len(provider.providers) == 1 and isinstance(provider.providers[0], ZenRowsSearchProvider)
+    return False
 
 
 def build_google_search_url(query_text: str, start: int, locale_country: str, tld: str = "") -> str:
