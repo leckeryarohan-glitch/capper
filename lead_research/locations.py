@@ -5,6 +5,8 @@ import urllib.request
 from functools import lru_cache
 from pathlib import Path
 
+from .http import format_request_error, read_response_text, urlopen
+
 MIN_CITY_POPULATION = 5000
 
 SUPPORTED_COUNTRIES: dict[str, str] = {
@@ -89,10 +91,10 @@ def _fetch_cities_from_overpass(country_code: str) -> list[dict[str, object]]:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=120) as response:
-                payload = json.loads(response.read().decode("utf-8", errors="replace"))
+            with urlopen(request, timeout=120) as response:
+                payload = json.loads(read_response_text(response))
         except OSError as exc:
-            failures.append(f"{endpoint}: {exc}")
+            failures.append(f"{endpoint}: {format_request_error(exc)}")
             continue
 
         best: dict[str, int] = {}

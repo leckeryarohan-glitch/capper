@@ -15,6 +15,7 @@ from math import ceil
 from pathlib import Path
 from typing import Callable
 
+from .http import format_request_error, read_response_text, urlopen
 from .locations import (
     DEFAULT_COUNTRIES,
     SUPPORTED_COUNTRIES,
@@ -107,7 +108,8 @@ OVERPASS_ENDPOINTS = (
 
 NOMINATIM_ENDPOINT = "https://nominatim.openstreetmap.org/search"
 
-# Minimum number of OSM websites to request per city when no location is given,
+# Fewer city queries for paid SERP APIs to reduce rate limits and cost.
+ZENROWS_CITIES_PER_COUNTRY = 12
 # so multi-city runs are not throttled to a tiny share each.
 OSM_MIN_PER_LOCATION = 100
 
@@ -344,6 +346,7 @@ class ZenRowsSearchProvider(SearchProvider):
     """Google SERP scraping via the ZenRows Search Results API."""
 
     serp_endpoint = "https://serp.api.zenrows.com/v1/targets/google/search"
+    request_delay_seconds = 0.4
 
     def __init__(self, api_key: str | None = None):
         self.api_key = api_key or os.getenv("ZENROWS_API_KEY")
@@ -361,8 +364,9 @@ class ZenRowsSearchProvider(SearchProvider):
             return []
         results: list[SearchResult] = []
         seen: set[str] = set()
+        request_failures = 0
 
-        for query_text, country_code in expand_query_plans(category, location, countries):
+        for query_text, country_code in zenrows_query_plans(category, location, countries):
             if len(results) >= limit:
                 break
             locale_country, tld = ZENROWS_LOCALE.get(country_code, ZENROWS_LOCALE["DE"])
@@ -383,8 +387,12 @@ class ZenRowsSearchProvider(SearchProvider):
                     headers={"Accept": "application/json", "User-Agent": "capper-lead-research/0.1"},
                 )
                 try:
-                    page_results = zenrows_items_to_results(_read_json(request, timeout=60))
-                except SearchProviderError:
+                    page_results = zenrows_items_to_results(
+                        _read_json_with_retry(request, timeout=60, retries=4, backoff_seconds=2.0)
+                    )
+                except SearchProviderError as exc:
+                    request_failures += 1
+                    self._report(f"ZenRows: Anfrage fehlgeschlagen fuer '{query_text}' (Start {start}): {exc}")
                     break
                 if not page_results:
                     break
@@ -402,9 +410,35 @@ class ZenRowsSearchProvider(SearchProvider):
                 start += 10
                 if new_in_page == 0:
                     break
+                time.sleep(self.request_delay_seconds)
 
         self._report(f"ZenRows: {len(results)} Websites gefunden")
+        if not results and request_failures:
+            self._report(
+                "ZenRows: keine Ergebnisse nach API-Fehlern. "
+                "Pruefe API-Key/Guthaben oder aktiviere zusaetzlich OpenStreetMap."
+            )
         return results
+
+
+def zenrows_query_plans(
+    category: str,
+    location: str,
+    countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+) -> list[tuple[str, str]]:
+    if location.strip():
+        country_code = countries[0] if countries else "DE"
+        return [(build_query(category, location), country_code)]
+    plans: list[tuple[str, str]] = []
+    for country_code in countries:
+        if country_code in SUPPORTED_COUNTRIES:
+            plans.append((build_query(category, country_label(country_code)), country_code))
+    for city_name, country_code in top_cities_for_web_search(
+        countries,
+        per_country=ZENROWS_CITIES_PER_COUNTRY,
+    ):
+        plans.append((build_query(category, city_name), country_code))
+    return plans
 
 
 def zenrows_items_to_results(data: dict) -> list[SearchResult]:
@@ -1074,22 +1108,49 @@ def with_source_profile(provider: SearchProvider, source_profile: str) -> Search
     raise SearchProviderError(f"Unsupported source profile: {source_profile}")
 
 
+def _transient_http_status(status_code: int) -> bool:
+    return status_code in {408, 425, 429, 500, 502, 503, 504}
+
+
+def _read_json_with_retry(
+    request: urllib.request.Request,
+    timeout: int = 20,
+    retries: int = 4,
+    backoff_seconds: float = 2.0,
+) -> dict:
+    last_error: SearchProviderError | None = None
+    for attempt in range(retries):
+        try:
+            return _read_json(request, timeout=timeout)
+        except SearchProviderError as exc:
+            last_error = exc
+            message = str(exc)
+            retryable = "HTTP Error" in message and any(
+                f"HTTP Error {code}:" in message for code in (408, 425, 429, 500, 502, 503, 504)
+            )
+            if retryable and attempt + 1 < retries:
+                time.sleep(backoff_seconds * (attempt + 1))
+                continue
+            raise
+    if last_error is not None:
+        raise last_error
+    raise SearchProviderError("Search provider request failed after retries.")
+
+
 def _read_text(request: urllib.request.Request, timeout: int = 20) -> str:
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            raw = response.read(2_000_000)
-            charset = response.headers.get_content_charset() or "utf-8"
-            return raw.decode(charset, errors="replace")
+        with urlopen(request, timeout=timeout) as response:
+            return read_response_text(response)
     except OSError as exc:
-        raise SearchProviderError(f"Search provider request failed: {exc}") from exc
+        raise SearchProviderError(f"Search provider request failed: {format_request_error(exc)}") from exc
 
 
 def _read_json(request: urllib.request.Request, timeout: int = 20) -> dict:
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            payload = response.read().decode("utf-8", errors="replace")
+        with urlopen(request, timeout=timeout) as response:
+            payload = read_response_text(response)
     except OSError as exc:
-        raise SearchProviderError(f"Search provider request failed: {exc}") from exc
+        raise SearchProviderError(f"Search provider request failed: {format_request_error(exc)}") from exc
 
     try:
         return json.loads(payload)
