@@ -343,10 +343,11 @@ def serpapi_items_to_results(data: dict) -> list[SearchResult]:
 
 
 class ZenRowsSearchProvider(SearchProvider):
-    """Google SERP scraping via ZenRows with Adaptive Stealth Mode (mode=auto)."""
+    """Google SERP via ZenRows Universal API with Adaptive Stealth (mode=auto) + autoparse."""
 
-    serp_endpoint = "https://serp.api.zenrows.com/v1/targets/google/search"
+    universal_endpoint = "https://api.zenrows.com/v1/"
     stealth_mode = "auto"
+    request_timeout_seconds = 120
     request_delay_seconds = 0.4
 
     def __init__(self, api_key: str | None = None):
@@ -374,27 +375,38 @@ class ZenRowsSearchProvider(SearchProvider):
             start = 0
             while len(results) < limit and start <= 80:
                 self._report(f"ZenRows (Stealth): '{query_text}' ab {start} ({country_code}) ...")
-                encoded_query = urllib.parse.quote(query_text)
+                google_url = build_google_search_url(query_text, start, locale_country, tld)
                 params = urllib.parse.urlencode(
                     {
+                        "url": google_url,
                         "apikey": self.api_key,
-                        "country": locale_country,
-                        "tld": tld,
-                        "start": str(start),
                         "mode": self.stealth_mode,
+                        "autoparse": "true",
+                        "proxy_country": locale_country,
                     }
                 )
                 request = urllib.request.Request(
-                    f"{self.serp_endpoint}/{encoded_query}?{params}",
+                    f"{self.universal_endpoint}?{params}",
                     headers={"Accept": "application/json", "User-Agent": "capper-lead-research/0.1"},
                 )
                 try:
                     page_results = zenrows_items_to_results(
-                        _read_json_with_retry(request, timeout=60, retries=4, backoff_seconds=2.0)
+                        _read_json_with_retry(
+                            request,
+                            timeout=self.request_timeout_seconds,
+                            retries=3,
+                            backoff_seconds=3.0,
+                        )
                     )
                 except SearchProviderError as exc:
                     request_failures += 1
                     self._report(f"ZenRows: Anfrage fehlgeschlagen fuer '{query_text}' (Start {start}): {exc}")
+                    if "API-Key ungueltig" in str(exc) or "HTTP Error 401" in str(exc) or "HTTP Error 403" in str(exc):
+                        self._report(
+                            "ZenRows: Suche abgebrochen. Bitte den API-Key im ZenRows-Dashboard pruefen "
+                            "(https://app.zenrows.com) und im Feld 'ZenRows Key' neu eintragen."
+                        )
+                        return results
                     break
                 if not page_results:
                     break
@@ -421,6 +433,20 @@ class ZenRowsSearchProvider(SearchProvider):
                 "Pruefe API-Key/Guthaben oder aktiviere zusaetzlich OpenStreetMap."
             )
         return results
+
+
+def build_google_search_url(query_text: str, start: int, locale_country: str, tld: str = "") -> str:
+    """Build a Google search URL for ZenRows Universal API (same pattern as ZenRows docs)."""
+    del tld  # locale is controlled via hl/gl and proxy_country, not the host TLD
+    return "https://www.google.com/search?" + urllib.parse.urlencode(
+        {
+            "q": query_text,
+            "num": 10,
+            "start": start,
+            "hl": locale_country,
+            "gl": locale_country,
+        }
+    )
 
 
 def zenrows_query_plans(
@@ -1064,7 +1090,12 @@ def auto_provider() -> SearchProvider:
     return combined_provider()
 
 
-def combined_provider(use_osm: bool = True, use_duckduckgo: bool = True) -> SearchProvider:
+def combined_provider(
+    use_osm: bool = True,
+    use_duckduckgo: bool = True,
+    serpapi_key: str | None = None,
+    zenrows_key: str | None = None,
+) -> SearchProvider:
     """Combine the selected no-key and key-based sources for maximum coverage."""
     providers: list[SearchProvider] = []
     if use_osm:
@@ -1077,11 +1108,22 @@ def combined_provider(use_osm: bool = True, use_duckduckgo: bool = True) -> Sear
         providers.append(BraveSearchProvider())
     if os.getenv("BING_SEARCH_API_KEY"):
         providers.append(BingSearchProvider())
-    if os.getenv("SERPAPI_API_KEY"):
-        providers.append(SerpApiSearchProvider())
-    if os.getenv("ZENROWS_API_KEY"):
-        providers.append(ZenRowsSearchProvider())
+
+    resolved_serpapi = _resolve_api_key(serpapi_key, "SERPAPI_API_KEY")
+    if resolved_serpapi:
+        providers.append(SerpApiSearchProvider(api_key=resolved_serpapi))
+
+    resolved_zenrows = _resolve_api_key(zenrows_key, "ZENROWS_API_KEY")
+    if resolved_zenrows:
+        providers.append(ZenRowsSearchProvider(api_key=resolved_zenrows))
+
     return MultiSourceProvider(providers)
+
+
+def _resolve_api_key(explicit_key: str | None, env_name: str) -> str:
+    if explicit_key is not None:
+        return explicit_key.strip()
+    return os.getenv(env_name, "").strip()
 
 
 def api_provider() -> SearchProvider:
@@ -1114,6 +1156,15 @@ def _transient_http_status(status_code: int) -> bool:
     return status_code in {408, 425, 429, 500, 502, 503, 504}
 
 
+def _is_retryable_search_error(message: str) -> bool:
+    lowered = message.casefold()
+    if any(token in lowered for token in ("timed out", "timeout", "temporarily unavailable")):
+        return True
+    if "HTTP Error" not in message:
+        return False
+    return any(f"HTTP Error {code}:" in message for code in (408, 425, 429, 500, 502, 503, 504))
+
+
 def _read_json_with_retry(
     request: urllib.request.Request,
     timeout: int = 20,
@@ -1126,11 +1177,7 @@ def _read_json_with_retry(
             return _read_json(request, timeout=timeout)
         except SearchProviderError as exc:
             last_error = exc
-            message = str(exc)
-            retryable = "HTTP Error" in message and any(
-                f"HTTP Error {code}:" in message for code in (408, 425, 429, 500, 502, 503, 504)
-            )
-            if retryable and attempt + 1 < retries:
+            if _is_retryable_search_error(str(exc)) and attempt + 1 < retries:
                 time.sleep(backoff_seconds * (attempt + 1))
                 continue
             raise

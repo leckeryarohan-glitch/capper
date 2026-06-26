@@ -158,8 +158,9 @@ python3 -m lead_research discover \
 If you have a SerpAPI or ZenRows key, paste it into the `SerpAPI Key` or
 `ZenRows Key` field in the GUI. Capper then adds Google results via that service
 to the combined `all` search (OpenStreetMap, Nominatim, DuckDuckGo). ZenRows
-uses the dedicated Google Search Results API (`serp.api.zenrows.com`) with
-**Adaptive Stealth Mode** (`mode=auto`), not the legacy Universal Scraper endpoint. You can also set them as environment variables,
+uses the ZenRows Universal API (`api.zenrows.com/v1/`) with
+**Adaptive Stealth Mode** (`mode=auto`) and `autoparse=true` — the same pattern as
+the official ZenRows Google search snippet. You can also set them as environment variables,
 and from the CLI use them directly or as part of `--provider all`:
 
 ```bash

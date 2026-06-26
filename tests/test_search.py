@@ -15,6 +15,7 @@ from lead_research.search import (
     SerpApiSearchProvider,
     ZenRowsSearchProvider,
     _read_json_with_retry,
+    build_google_search_url,
     build_overpass_query,
     combined_provider,
     decode_duckduckgo_href,
@@ -268,10 +269,62 @@ class SearchTests(unittest.TestCase):
         self.assertEqual(data["organic_results"][0]["link"], "https://ok.example/")
         self.assertEqual(attempts["count"], 3)
 
+    def test_read_json_with_retry_retries_timeouts(self) -> None:
+        attempts = {"count": 0}
+
+        def fake_read_json(request, timeout=20):
+            attempts["count"] += 1
+            if attempts["count"] < 2:
+                raise SearchProviderError("Search provider request failed: The read operation timed out")
+            return {"organic_results": []}
+
+        request = urllib.request.Request("https://example.test/")
+        with patch("lead_research.search._read_json", side_effect=fake_read_json), patch(
+            "lead_research.search.time.sleep"
+        ):
+            _read_json_with_retry(request, retries=3)
+
+        self.assertEqual(attempts["count"], 2)
+
+    def test_combined_provider_uses_explicit_zenrows_key_from_gui(self) -> None:
+        with patch.dict("os.environ", {"ZENROWS_API_KEY": "env-key"}, clear=False):
+            provider = combined_provider(use_osm=False, use_duckduckgo=False, zenrows_key="gui-key")
+
+        labels = [source_label(sub) for sub in provider.providers]
+        self.assertEqual(labels, ["ZenRows"])
+        self.assertEqual(provider.providers[0].api_key, "gui-key")
+
+    def test_build_google_search_url_localizes_domain(self) -> None:
+        url = build_google_search_url("hotel berlin", 0, "de", ".de")
+        self.assertIn("www.google.com/search", url)
+        self.assertIn("hl=de", url)
+        self.assertIn("gl=de", url)
+        self.assertIn("q=hotel+berlin", url)
+
+    def test_zenrows_uses_universal_api_with_stealth_and_autoparse(self) -> None:
+        captured_urls: list[str] = []
+
+        def fake_read_json_with_retry(request, timeout=120, retries=3, backoff_seconds=3.0, **kwargs):
+            captured_urls.append(request.full_url)
+            return {"organic_results": [{"title": "Hotel", "link": "https://hotel.example/"}]}
+
+        provider = ZenRowsSearchProvider(api_key="zr-key")
+        with patch("lead_research.search._read_json_with_retry", side_effect=fake_read_json_with_retry), patch(
+            "lead_research.search.time.sleep"
+        ):
+            results = provider.search("hotel", "Berlin", 1)
+
+        self.assertEqual(len(results), 1)
+        self.assertIn("api.zenrows.com/v1/", captured_urls[0])
+        self.assertIn("mode=auto", captured_urls[0])
+        self.assertIn("autoparse=true", captured_urls[0])
+        self.assertIn("proxy_country=de", captured_urls[0])
+        self.assertIn("www.google.com%2Fsearch", captured_urls[0])
+
     def test_zenrows_uses_adaptive_stealth_mode(self) -> None:
         captured_urls: list[str] = []
 
-        def fake_read_json_with_retry(request, timeout=60, retries=4, backoff_seconds=2.0, **kwargs):
+        def fake_read_json_with_retry(request, timeout=120, retries=3, backoff_seconds=3.0, **kwargs):
             captured_urls.append(request.full_url)
             return {"organic_results": [{"title": "Hotel", "link": "https://hotel.example/"}]}
 
@@ -287,11 +340,12 @@ class SearchTests(unittest.TestCase):
     def test_zenrows_search_pages_and_expands(self) -> None:
         captured: list[tuple[str, str]] = []
 
-        def fake_read_json(request, timeout=20, **kwargs):
-            path = urllib.parse.urlparse(request.full_url).path
-            query_text = urllib.parse.unquote(path.rsplit("/", 1)[-1])
+        def fake_read_json_with_retry(request, timeout=120, retries=3, backoff_seconds=3.0, **kwargs):
             params = urllib.parse.parse_qs(urllib.parse.urlparse(request.full_url).query)
-            start = params.get("start", ["0"])[0]
+            google_url = params.get("url", [""])[0]
+            google_params = urllib.parse.parse_qs(urllib.parse.urlparse(google_url).query)
+            query_text = google_params.get("q", [""])[0]
+            start = google_params.get("start", ["0"])[0]
             captured.append((query_text, start))
             if start != "0":
                 return {"organic_results": []}
@@ -299,7 +353,7 @@ class SearchTests(unittest.TestCase):
             return {"organic_results": [{"title": str(idx), "link": f"https://zr{idx}.example/"}]}
 
         provider = ZenRowsSearchProvider(api_key="zr-key")
-        with patch("lead_research.search._read_json_with_retry", side_effect=fake_read_json), patch(
+        with patch("lead_research.search._read_json_with_retry", side_effect=fake_read_json_with_retry), patch(
             "lead_research.search.time.sleep"
         ):
             results = provider.search("hotel", "", 4)

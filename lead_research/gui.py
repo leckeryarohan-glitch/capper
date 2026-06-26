@@ -92,20 +92,20 @@ def run_gui_discovery(
     workers = parse_positive_int(values.get("workers"), DEFAULT_WORKERS)
 
     serpapi_key = str(values.get("serpapi_key", "")).strip()
-    if serpapi_key:
-        os.environ["SERPAPI_API_KEY"] = serpapi_key
-
     zenrows_key = str(values.get("zenrows_key", "")).strip()
-    if zenrows_key:
-        os.environ["ZENROWS_API_KEY"] = zenrows_key
 
     use_osm = bool(values.get("use_osm", True))
     use_duckduckgo = bool(values.get("use_duckduckgo", True))
-    provider = combined_provider(use_osm=use_osm, use_duckduckgo=use_duckduckgo)
+    provider = combined_provider(
+        use_osm=use_osm,
+        use_duckduckgo=use_duckduckgo,
+        serpapi_key=serpapi_key,
+        zenrows_key=zenrows_key,
+    )
     if not getattr(provider, "providers", None):
         raise SearchProviderError(
             "Keine Suchquelle ausgewaehlt. Aktiviere OpenStreetMap oder DuckDuckGo "
-            "oder hinterlege einen API-Key."
+            "oder trage einen SerpAPI-/ZenRows-Key ein."
         )
     if not use_osm and not use_duckduckgo and not serpapi_key and not zenrows_key:
         raise SearchProviderError(
