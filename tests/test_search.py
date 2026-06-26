@@ -17,7 +17,9 @@ from lead_research.search import (
     _read_json_with_retry,
     build_google_search_url,
     build_overpass_query,
+    build_query,
     build_zenrows_api_request_url,
+    category_search_variants,
     combined_provider,
     decode_duckduckgo_href,
     duckduckgo_links_from_html,
@@ -31,7 +33,9 @@ from lead_research.search import (
     osm_selectors_for_category,
     serpapi_items_to_results,
     source_label,
+    zenrows_cities_budget,
     zenrows_items_to_results,
+    zenrows_query_plans,
 )
 
 
@@ -371,6 +375,59 @@ class SearchTests(unittest.TestCase):
 
         self.assertEqual(len(results), 4)
         self.assertGreater(len({q for q, _ in captured}), 1)
+
+    def test_category_search_variants_expands_logistik(self) -> None:
+        variants = category_search_variants("logistik")
+        self.assertIn("logistik", variants)
+        self.assertIn("spedition", variants)
+        self.assertGreater(len(variants), 3)
+
+    def test_zenrows_cities_budget_scales_with_limit(self) -> None:
+        self.assertEqual(zenrows_cities_budget(50), 12)
+        self.assertEqual(zenrows_cities_budget(500), 200)
+        self.assertIsNone(zenrows_cities_budget(5000))
+
+    def test_zenrows_query_plans_uses_many_cities_for_high_limit(self) -> None:
+        small = zenrows_query_plans("logistik", "", ("DE",), limit=50)
+        large = zenrows_query_plans("logistik", "", ("DE",), limit=5000)
+        self.assertGreater(len(large), len(small))
+        self.assertGreater(len(large), 500)
+
+    def test_build_query_broad_mode_omits_contact_terms(self) -> None:
+        narrow = build_query("logistik", "Berlin")
+        broad = build_query("logistik", "Berlin", broad=True)
+        self.assertIn("Kontakt", narrow)
+        self.assertNotIn("Kontakt", broad)
+        self.assertIn("logistik", broad)
+        self.assertIn("Berlin", broad)
+
+    def test_zenrows_mass_mode_continues_after_transient_error(self) -> None:
+        calls = {"count": 0}
+
+        def fake_read_json_with_retry(request, timeout=120, retries=3, backoff_seconds=3.0, **kwargs):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise SearchProviderError("Search provider request failed: timed out")
+            params = urllib.parse.parse_qs(urllib.parse.urlparse(request.full_url).query)
+            google_url = params.get("url", [""])[0]
+            google_params = urllib.parse.parse_qs(urllib.parse.urlparse(google_url).query)
+            start = google_params.get("start", ["0"])[0]
+            if start != "0":
+                return {"organic_results": []}
+            idx = calls["count"]
+            return {"organic_results": [{"title": str(idx), "link": f"https://zr{idx}.example/"}]}
+
+        provider = ZenRowsSearchProvider(api_key="zr-key")
+        with patch("lead_research.search._read_json_with_retry", side_effect=fake_read_json_with_retry), patch(
+            "lead_research.search.time.sleep"
+        ), patch(
+            "lead_research.search.zenrows_query_plans",
+            return_value=[("logistik Berlin", "DE"), ("logistik Hamburg", "DE")],
+        ):
+            results = provider.search("logistik", "", 500)
+
+        self.assertEqual(len(results), 1)
+        self.assertGreaterEqual(calls["count"], 2)
 
     def test_combined_provider_respects_source_toggles(self) -> None:
         with patch.dict("os.environ", {}, clear=True):
