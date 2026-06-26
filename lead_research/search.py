@@ -343,9 +343,10 @@ def serpapi_items_to_results(data: dict) -> list[SearchResult]:
 
 
 class ZenRowsSearchProvider(SearchProvider):
-    """Google SERP scraping via the ZenRows Search Results API."""
+    """Google SERP scraping via ZenRows with Adaptive Stealth Mode (mode=auto)."""
 
     serp_endpoint = "https://serp.api.zenrows.com/v1/targets/google/search"
+    stealth_mode = "auto"
     request_delay_seconds = 0.4
 
     def __init__(self, api_key: str | None = None):
@@ -372,7 +373,7 @@ class ZenRowsSearchProvider(SearchProvider):
             locale_country, tld = ZENROWS_LOCALE.get(country_code, ZENROWS_LOCALE["DE"])
             start = 0
             while len(results) < limit and start <= 80:
-                self._report(f"ZenRows: '{query_text}' ab {start} ({country_code}) ...")
+                self._report(f"ZenRows (Stealth): '{query_text}' ab {start} ({country_code}) ...")
                 encoded_query = urllib.parse.quote(query_text)
                 params = urllib.parse.urlencode(
                     {
@@ -380,6 +381,7 @@ class ZenRowsSearchProvider(SearchProvider):
                         "country": locale_country,
                         "tld": tld,
                         "start": str(start),
+                        "mode": self.stealth_mode,
                     }
                 )
                 request = urllib.request.Request(

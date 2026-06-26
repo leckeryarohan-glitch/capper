@@ -231,7 +231,8 @@ def run_gui() -> int:
             source_text = (
                 "Vollautomatisch ohne API-Key: Capper kombiniert OpenStreetMap/Overpass, Nominatim "
                 "und DuckDuckGo. Ohne Ort werden alle Staedte ab 5000 Einwohner in den gewaehlten "
-                "Laendern per OSM abgedeckt. Mit SerpAPI- oder ZenRows-Key wird zusaetzlich Google genutzt. "
+                "Laendern per OSM abgedeckt. Mit SerpAPI- oder ZenRows-Key (Adaptive Stealth) "
+                "wird zusaetzlich Google genutzt. "
                 "Gefundene Websites werden parallel nach oeffentlichen B2B-Kontakten durchsucht; "
                 "doppelte E-Mails werden automatisch entfernt."
             )
