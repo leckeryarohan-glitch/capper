@@ -11,7 +11,10 @@ from lead_research.search import (
     MultiSourceProvider,
     OsmSearchTarget,
     SearchProvider,
+    SearchProviderError,
     SerpApiSearchProvider,
+    ZenRowsSearchProvider,
+    _read_json_with_retry,
     build_overpass_query,
     combined_provider,
     decode_duckduckgo_href,
@@ -28,7 +31,6 @@ from lead_research.search import (
     source_label,
     zenrows_items_to_results,
 )
-from lead_research.search import ZenRowsSearchProvider
 
 
 class RecordingProvider(SearchProvider):
@@ -248,10 +250,28 @@ class SearchTests(unittest.TestCase):
         urls = sorted(r.url for r in results)
         self.assertEqual(urls, ["https://good.example/", "https://second.example/"])
 
+    def test_read_json_with_retry_retries_transient_http_errors(self) -> None:
+        attempts = {"count": 0}
+
+        def fake_read_json(request, timeout=20):
+            attempts["count"] += 1
+            if attempts["count"] < 3:
+                raise SearchProviderError("Search provider request failed: HTTP Error 502: Bad Gateway")
+            return {"organic_results": [{"title": "OK", "link": "https://ok.example/"}]}
+
+        request = urllib.request.Request("https://example.test/")
+        with patch("lead_research.search._read_json", side_effect=fake_read_json), patch(
+            "lead_research.search.time.sleep"
+        ):
+            data = _read_json_with_retry(request, retries=4)
+
+        self.assertEqual(data["organic_results"][0]["link"], "https://ok.example/")
+        self.assertEqual(attempts["count"], 3)
+
     def test_zenrows_search_pages_and_expands(self) -> None:
         captured: list[tuple[str, str]] = []
 
-        def fake_read_json(request, timeout=20):
+        def fake_read_json(request, timeout=20, **kwargs):
             path = urllib.parse.urlparse(request.full_url).path
             query_text = urllib.parse.unquote(path.rsplit("/", 1)[-1])
             params = urllib.parse.parse_qs(urllib.parse.urlparse(request.full_url).query)
@@ -263,7 +283,9 @@ class SearchTests(unittest.TestCase):
             return {"organic_results": [{"title": str(idx), "link": f"https://zr{idx}.example/"}]}
 
         provider = ZenRowsSearchProvider(api_key="zr-key")
-        with patch("lead_research.search._read_json", side_effect=fake_read_json):
+        with patch("lead_research.search._read_json_with_retry", side_effect=fake_read_json), patch(
+            "lead_research.search.time.sleep"
+        ):
             results = provider.search("hotel", "", 4)
 
         self.assertEqual(len(results), 4)

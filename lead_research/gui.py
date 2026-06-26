@@ -107,6 +107,10 @@ def run_gui_discovery(
             "Keine Suchquelle ausgewaehlt. Aktiviere OpenStreetMap oder DuckDuckGo "
             "oder hinterlege einen API-Key."
         )
+    if not use_osm and not use_duckduckgo and not serpapi_key and not zenrows_key:
+        raise SearchProviderError(
+            "Ohne OpenStreetMap/DuckDuckGo wird mindestens ein API-Key benoetigt."
+        )
     config = DiscoveryConfig(
         category=category,
         location=location,
