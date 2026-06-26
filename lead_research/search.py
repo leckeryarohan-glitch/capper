@@ -20,6 +20,7 @@ from .locations import (
     DEFAULT_COUNTRIES,
     SUPPORTED_COUNTRIES,
     ZENROWS_LOCALE,
+    cities_for_mass_web_search,
     country_label,
     top_cities_for_web_search,
 )
@@ -108,10 +109,37 @@ OVERPASS_ENDPOINTS = (
 
 NOMINATIM_ENDPOINT = "https://nominatim.openstreetmap.org/search"
 
-# Fewer city queries for paid SERP APIs to reduce rate limits and cost.
+# Fewer city queries for small paid SERP runs to reduce rate limits and cost.
 ZENROWS_CITIES_PER_COUNTRY = 12
 # so multi-city runs are not throttled to a tiny share each.
 OSM_MIN_PER_LOCATION = 100
+
+# Synonyms broaden discovery for categories where one keyword misses many businesses.
+CATEGORY_SEARCH_VARIANTS: dict[str, tuple[str, ...]] = {
+    "logistik": ("logistik", "spedition", "transport", "lager", "fracht", "kurier"),
+    "spedition": ("spedition", "logistik", "transport", "fracht"),
+    "transport": ("transport", "spedition", "logistik", "fracht"),
+    "lager": ("lager", "logistik", "spedition", "warehouse"),
+    "hotel": ("hotel", "gasthof", "pension"),
+    "restaurant": ("restaurant", "gaststätte", "gasthaus"),
+    "handwerk": ("handwerk", "handwerker", "meisterbetrieb"),
+    "it": ("it", "software", "edv"),
+    "software": ("software", "it", "edv"),
+    "elektriker": ("elektriker", "elektro", "elektroinstallation"),
+    "immobilien": ("immobilien", "immobilienmakler", "makler"),
+    "makler": ("makler", "immobilienmakler", "immobilien"),
+    "bau": ("bau", "bauunternehmen", "baufirma"),
+    "kfz": ("kfz", "autowerkstatt", "werkstatt"),
+    "werkstatt": ("werkstatt", "kfz", "autowerkstatt"),
+    "friseur": ("friseur", "friseursalon", "haarsalon"),
+    "fitness": ("fitness", "fitnessstudio", "fitnesscenter"),
+    "supermarkt": ("supermarkt", "lebensmittel", "markt"),
+}
+
+ZENROWS_MASS_MODE_LIMIT = 500
+ZENROWS_DEEP_PAGINATION_START = 90
+ZENROWS_MEDIUM_PAGINATION_START = 40
+ZENROWS_LIGHT_PAGINATION_START = 10
 
 
 class SearchProviderError(RuntimeError):
@@ -368,74 +396,75 @@ class ZenRowsSearchProvider(SearchProvider):
         results: list[SearchResult] = []
         seen: set[str] = set()
         request_failures = 0
-        country_plans = zenrows_country_plans(category, location, countries)
-        city_plans = zenrows_city_plans(category, countries) if not location.strip() else []
+        mass_mode = limit >= ZENROWS_MASS_MODE_LIMIT
+        plans = zenrows_query_plans(category, location, countries, limit)
+        max_start = zenrows_max_pagination_start(len(plans), mass_mode)
         page_delay = self.page_delay_seconds if limit > 10 else self.request_delay_seconds
+        progress_interval = 25 if mass_mode else 0
 
         if limit > 10:
+            mode_hint = "Massenmodus — " if mass_mode else ""
             self._report(
-                f"ZenRows: bis zu {limit} Websites — mehrere Google-Seiten, "
-                "das kann einige Minuten dauern (Stealth Mode)."
+                f"ZenRows: bis zu {limit} Websites — {mode_hint}"
+                f"{len(plans)} Suchanfragen, bis zu {max_start // 10 + 1} Seiten pro Anfrage "
+                "(kann mehrere Stunden dauern)."
             )
 
-        for phase_index, plans in enumerate((country_plans, city_plans)):
-            if len(results) >= limit or not plans:
-                continue
-            if phase_index == 1 and results:
-                self._report(
-                    f"ZenRows: {len(results)}/{limit} Websites — erweitere Suche auf weitere Staedte ..."
-                )
+        for plan_index, (query_text, country_code) in enumerate(plans):
+            if len(results) >= limit:
+                break
+            if progress_interval and plan_index > 0 and plan_index % progress_interval == 0:
+                self._report(f"ZenRows: {len(results)}/{limit} Websites — Anfrage {plan_index}/{len(plans)} ...")
 
-            for query_text, country_code in plans:
-                if len(results) >= limit:
-                    break
-                locale_country, tld = ZENROWS_LOCALE.get(country_code, ZENROWS_LOCALE["DE"])
-                start = 0
-                while len(results) < limit and start <= 80:
-                    self._report(f"ZenRows (Stealth): '{query_text}' ab {start} ({country_code}) ...")
-                    request = urllib.request.Request(
-                        build_zenrows_api_request_url(self.api_key, query_text, start, locale_country, tld),
-                        headers={"Accept": "application/json", "User-Agent": "capper-lead-research/0.1"},
-                    )
-                    try:
-                        page_results = zenrows_items_to_results(
-                            _read_json_with_retry(
-                                request,
-                                timeout=self.request_timeout_seconds,
-                                retries=3,
-                                backoff_seconds=3.0,
-                            )
+            locale_country, tld = ZENROWS_LOCALE.get(country_code, ZENROWS_LOCALE["DE"])
+            start = 0
+            while len(results) < limit and start <= max_start:
+                self._report(f"ZenRows (Stealth): '{query_text}' ab {start} ({country_code}) ...")
+                request = urllib.request.Request(
+                    build_zenrows_api_request_url(self.api_key, query_text, start, locale_country, tld),
+                    headers={"Accept": "application/json", "User-Agent": "capper-lead-research/0.1"},
+                )
+                try:
+                    page_results = zenrows_items_to_results(
+                        _read_json_with_retry(
+                            request,
+                            timeout=self.request_timeout_seconds,
+                            retries=3,
+                            backoff_seconds=3.0,
                         )
-                    except SearchProviderError as exc:
-                        request_failures += 1
-                        self._report(f"ZenRows: Anfrage fehlgeschlagen fuer '{query_text}' (Start {start}): {exc}")
-                        if "API-Key ungueltig" in str(exc) or "HTTP Error 401" in str(exc) or "HTTP Error 403" in str(exc):
-                            self._report(
-                                "ZenRows: Suche abgebrochen. Bitte den API-Key im ZenRows-Dashboard pruefen "
-                                "(https://app.zenrows.com) und im Feld 'ZenRows Key' neu eintragen."
-                            )
-                            return results
-                        if results:
-                            self._report(f"ZenRows: {len(results)} Websites gefunden (teilweise, nach API-Fehler).")
-                            return results
+                    )
+                except SearchProviderError as exc:
+                    request_failures += 1
+                    self._report(f"ZenRows: Anfrage fehlgeschlagen fuer '{query_text}' (Start {start}): {exc}")
+                    if "API-Key ungueltig" in str(exc) or "HTTP Error 401" in str(exc) or "HTTP Error 403" in str(exc):
+                        self._report(
+                            "ZenRows: Suche abgebrochen. Bitte den API-Key im ZenRows-Dashboard pruefen "
+                            "(https://app.zenrows.com) und im Feld 'ZenRows Key' neu eintragen."
+                        )
+                        return results
+                    if mass_mode:
                         break
-                    if not page_results:
-                        break
-                    new_in_page = 0
-                    for result in page_results:
-                        key = result.url.lower().rstrip("/")
-                        if key in seen:
-                            continue
-                        seen.add(key)
-                        new_in_page += 1
-                        results.append(result)
-                        if len(results) >= limit:
-                            self._report(f"ZenRows: {len(results)} Websites gefunden")
-                            return results
-                    start += 10
-                    if new_in_page == 0:
-                        break
-                    time.sleep(page_delay)
+                    if results:
+                        self._report(f"ZenRows: {len(results)} Websites gefunden (teilweise, nach API-Fehler).")
+                        return results
+                    break
+                if not page_results:
+                    break
+                new_in_page = 0
+                for result in page_results:
+                    key = result.url.lower().rstrip("/")
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    new_in_page += 1
+                    results.append(result)
+                    if len(results) >= limit:
+                        self._report(f"ZenRows: {len(results)} Websites gefunden")
+                        return results
+                start += 10
+                if new_in_page == 0:
+                    break
+                time.sleep(page_delay)
 
         self._report(f"ZenRows: {len(results)} Websites gefunden")
         if not results and request_failures:
@@ -481,43 +510,124 @@ def build_zenrows_api_request_url(
     return f"{ZenRowsSearchProvider.universal_endpoint}?{params}&url={encoded_target}"
 
 
+def category_search_variants(category: str) -> tuple[str, ...]:
+    normalized = category.strip().casefold()
+    for keyword, variants in CATEGORY_SEARCH_VARIANTS.items():
+        if keyword in normalized:
+            return variants
+    return (category.strip(),) if category.strip() else ()
+
+
+def zenrows_cities_budget(limit: int) -> int | None:
+    """How many cities per country to query. None means all cached cities (1600+ for DE)."""
+    if limit >= 3000:
+        return None
+    if limit >= 1000:
+        return 800
+    if limit >= 500:
+        return 200
+    if limit >= 100:
+        return 40
+    return ZENROWS_CITIES_PER_COUNTRY
+
+
+def zenrows_max_pagination_start(num_plans: int, mass_mode: bool) -> int:
+    """Balance depth per query vs. number of locations in the run."""
+    if not mass_mode:
+        return ZENROWS_DEEP_PAGINATION_START
+    if num_plans <= 30:
+        return ZENROWS_DEEP_PAGINATION_START
+    if num_plans <= 150:
+        return ZENROWS_MEDIUM_PAGINATION_START
+    return ZENROWS_LIGHT_PAGINATION_START
+
+
 def zenrows_country_plans(
     category: str,
     location: str,
     countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+    *,
+    broad: bool = False,
 ) -> list[tuple[str, str]]:
     if location.strip():
         country_code = countries[0] if countries else "DE"
-        return [(build_query(category, location), country_code)]
-    return [
-        (build_query(category, country_label(code)), code)
-        for code in countries
-        if code in SUPPORTED_COUNTRIES
-    ]
+        return [
+            (build_query(variant, location, broad=broad), country_code)
+            for variant in category_search_variants(category)
+        ]
+    plans: list[tuple[str, str]] = []
+    for code in countries:
+        if code not in SUPPORTED_COUNTRIES:
+            continue
+        label = country_label(code)
+        for variant in category_search_variants(category):
+            plans.append((build_query(variant, label, broad=broad), code))
+    return plans
 
 
 def zenrows_city_plans(
     category: str,
     countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+    *,
+    limit: int = 50,
+    broad: bool = False,
 ) -> list[tuple[str, str]]:
-    return [
-        (build_query(category, city_name), country_code)
-        for city_name, country_code in top_cities_for_web_search(
-            countries,
-            per_country=ZENROWS_CITIES_PER_COUNTRY,
-        )
-    ]
+    city_budget = zenrows_cities_budget(limit)
+    if city_budget is None:
+        cities = cities_for_mass_web_search(countries)
+    else:
+        cities = top_cities_for_web_search(countries, per_country=city_budget)
+
+    variants = category_search_variants(category)
+    # With hundreds of cities, use the primary term first to limit API volume.
+    city_variants = variants if len(cities) <= 60 else (variants[0],)
+    plans: list[tuple[str, str]] = []
+    for city_name, country_code in cities:
+        for variant in city_variants:
+            plans.append((build_query(variant, city_name, broad=broad), country_code))
+    return plans
+
+
+def zenrows_synonym_city_plans(
+    category: str,
+    countries: tuple[str, ...],
+    *,
+    limit: int,
+    broad: bool = False,
+) -> list[tuple[str, str]]:
+    """Extra city queries with synonym terms when the primary sweep is not enough."""
+    variants = category_search_variants(category)
+    if len(variants) <= 1:
+        return []
+
+    city_budget = zenrows_cities_budget(limit)
+    if city_budget is None:
+        cities = cities_for_mass_web_search(countries)[:120]
+    else:
+        cities = top_cities_for_web_search(countries, per_country=min(city_budget, 80))
+
+    plans: list[tuple[str, str]] = []
+    for city_name, country_code in cities:
+        for variant in variants[1:]:
+            plans.append((build_query(variant, city_name, broad=broad), country_code))
+    return plans
 
 
 def zenrows_query_plans(
     category: str,
     location: str,
     countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+    limit: int = 50,
 ) -> list[tuple[str, str]]:
-    """Country plans first, then city fallbacks when no explicit location is set."""
-    plans = zenrows_country_plans(category, location, countries)
-    if not location.strip():
-        plans += zenrows_city_plans(category, countries)
+    """Country plans first, then city sweep; synonym pass for large limits without location."""
+    broad = limit >= ZENROWS_MASS_MODE_LIMIT
+    if location.strip():
+        return zenrows_country_plans(category, location, countries, broad=broad)
+
+    plans = zenrows_country_plans(category, location, countries, broad=broad)
+    plans += zenrows_city_plans(category, countries, limit=limit, broad=broad)
+    if limit >= 1000:
+        plans += zenrows_synonym_city_plans(category, countries, limit=limit, broad=broad)
     return plans
 
 
@@ -1066,7 +1176,12 @@ class CommonSourcesSearchProvider(SearchProvider):
         return results
 
 
-def build_query(category: str, location: str) -> str:
+def build_query(category: str, location: str, *, broad: bool = False) -> str:
+    if broad:
+        parts = [category]
+        if location:
+            parts.append(location)
+        return " ".join(part for part in parts if part).strip()
     parts = [category, "Unternehmen", "Kontakt", "E-Mail"]
     if location:
         parts.insert(1, location)

@@ -159,5 +159,25 @@ def top_cities_for_web_search(countries: tuple[str, ...], per_country: int = WEB
     return pairs
 
 
+def cities_for_mass_web_search(
+    countries: tuple[str, ...],
+    *,
+    per_country: int | None = None,
+) -> list[tuple[str, str]]:
+    """Return all or capped (city_name, country_code) pairs for large ZenRows runs."""
+    pairs: list[tuple[str, str]] = []
+    for country_code in countries:
+        if country_code not in SUPPORTED_COUNTRIES:
+            continue
+        cities = cities_for_country(country_code)
+        if per_country is not None:
+            cities = cities[: max(per_country, 0)]
+        for city in cities:
+            name = str(city.get("name", "")).strip()
+            if name:
+                pairs.append((name, country_code))
+    return pairs
+
+
 def country_label(country_code: str) -> str:
     return SUPPORTED_COUNTRIES.get(country_code.upper(), country_code)
