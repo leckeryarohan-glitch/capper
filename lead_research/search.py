@@ -343,9 +343,9 @@ def serpapi_items_to_results(data: dict) -> list[SearchResult]:
 
 
 class ZenRowsSearchProvider(SearchProvider):
-    """Google SERP scraping via ZenRows with Adaptive Stealth Mode (mode=auto)."""
+    """Google SERP via ZenRows Universal API with Adaptive Stealth (mode=auto) + autoparse."""
 
-    serp_endpoint = "https://serp.api.zenrows.com/v1/targets/google/search"
+    universal_endpoint = "https://api.zenrows.com/v1/"
     stealth_mode = "auto"
     request_timeout_seconds = 120
     request_delay_seconds = 0.4
@@ -375,18 +375,18 @@ class ZenRowsSearchProvider(SearchProvider):
             start = 0
             while len(results) < limit and start <= 80:
                 self._report(f"ZenRows (Stealth): '{query_text}' ab {start} ({country_code}) ...")
-                encoded_query = urllib.parse.quote(query_text)
+                google_url = build_google_search_url(query_text, start, locale_country, tld)
                 params = urllib.parse.urlencode(
                     {
+                        "url": google_url,
                         "apikey": self.api_key,
-                        "country": locale_country,
-                        "tld": tld,
-                        "start": str(start),
                         "mode": self.stealth_mode,
+                        "autoparse": "true",
+                        "proxy_country": locale_country,
                     }
                 )
                 request = urllib.request.Request(
-                    f"{self.serp_endpoint}/{encoded_query}?{params}",
+                    f"{self.universal_endpoint}?{params}",
                     headers={"Accept": "application/json", "User-Agent": "capper-lead-research/0.1"},
                 )
                 try:
@@ -401,6 +401,12 @@ class ZenRowsSearchProvider(SearchProvider):
                 except SearchProviderError as exc:
                     request_failures += 1
                     self._report(f"ZenRows: Anfrage fehlgeschlagen fuer '{query_text}' (Start {start}): {exc}")
+                    if "API-Key ungueltig" in str(exc) or "HTTP Error 401" in str(exc) or "HTTP Error 403" in str(exc):
+                        self._report(
+                            "ZenRows: Suche abgebrochen. Bitte den API-Key im ZenRows-Dashboard pruefen "
+                            "(https://app.zenrows.com) und im Feld 'ZenRows Key' neu eintragen."
+                        )
+                        return results
                     break
                 if not page_results:
                     break
@@ -427,6 +433,20 @@ class ZenRowsSearchProvider(SearchProvider):
                 "Pruefe API-Key/Guthaben oder aktiviere zusaetzlich OpenStreetMap."
             )
         return results
+
+
+def build_google_search_url(query_text: str, start: int, locale_country: str, tld: str = "") -> str:
+    """Build a Google search URL for ZenRows Universal API (same pattern as ZenRows docs)."""
+    del tld  # locale is controlled via hl/gl and proxy_country, not the host TLD
+    return "https://www.google.com/search?" + urllib.parse.urlencode(
+        {
+            "q": query_text,
+            "num": 10,
+            "start": start,
+            "hl": locale_country,
+            "gl": locale_country,
+        }
+    )
 
 
 def zenrows_query_plans(
