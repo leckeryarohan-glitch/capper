@@ -268,10 +268,35 @@ class SearchTests(unittest.TestCase):
         self.assertEqual(data["organic_results"][0]["link"], "https://ok.example/")
         self.assertEqual(attempts["count"], 3)
 
+    def test_read_json_with_retry_retries_timeouts(self) -> None:
+        attempts = {"count": 0}
+
+        def fake_read_json(request, timeout=20):
+            attempts["count"] += 1
+            if attempts["count"] < 2:
+                raise SearchProviderError("Search provider request failed: The read operation timed out")
+            return {"organic_results": []}
+
+        request = urllib.request.Request("https://example.test/")
+        with patch("lead_research.search._read_json", side_effect=fake_read_json), patch(
+            "lead_research.search.time.sleep"
+        ):
+            _read_json_with_retry(request, retries=3)
+
+        self.assertEqual(attempts["count"], 2)
+
+    def test_combined_provider_uses_explicit_zenrows_key_from_gui(self) -> None:
+        with patch.dict("os.environ", {"ZENROWS_API_KEY": "env-key"}, clear=False):
+            provider = combined_provider(use_osm=False, use_duckduckgo=False, zenrows_key="gui-key")
+
+        labels = [source_label(sub) for sub in provider.providers]
+        self.assertEqual(labels, ["ZenRows"])
+        self.assertEqual(provider.providers[0].api_key, "gui-key")
+
     def test_zenrows_uses_adaptive_stealth_mode(self) -> None:
         captured_urls: list[str] = []
 
-        def fake_read_json_with_retry(request, timeout=60, retries=4, backoff_seconds=2.0, **kwargs):
+        def fake_read_json_with_retry(request, timeout=120, retries=3, backoff_seconds=3.0, **kwargs):
             captured_urls.append(request.full_url)
             return {"organic_results": [{"title": "Hotel", "link": "https://hotel.example/"}]}
 
