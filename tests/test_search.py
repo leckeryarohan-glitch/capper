@@ -17,6 +17,7 @@ from lead_research.search import (
     _read_json_with_retry,
     build_google_search_url,
     build_overpass_query,
+    build_zenrows_api_request_url,
     combined_provider,
     decode_duckduckgo_href,
     duckduckgo_links_from_html,
@@ -293,6 +294,16 @@ class SearchTests(unittest.TestCase):
         labels = [source_label(sub) for sub in provider.providers]
         self.assertEqual(labels, ["ZenRows"])
         self.assertEqual(provider.providers[0].api_key, "gui-key")
+
+    def test_build_zenrows_api_request_url_encodes_google_target(self) -> None:
+        request_url = build_zenrows_api_request_url("zr-key", "hotel berlin", 0, "de", ".de")
+
+        self.assertIn("api.zenrows.com/v1/", request_url)
+        self.assertIn("mode=auto", request_url)
+        self.assertIn("autoparse=true", request_url)
+        self.assertIn("url=https%3A%2F%2Fwww.google.com%2Fsearch%3F", request_url)
+        self.assertIn("%26num%3D10", request_url)
+        self.assertNotIn("url=https://www.google.com/search?", request_url)
 
     def test_build_google_search_url_localizes_domain(self) -> None:
         url = build_google_search_url("hotel berlin", 0, "de", ".de")

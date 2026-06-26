@@ -347,8 +347,9 @@ class ZenRowsSearchProvider(SearchProvider):
 
     universal_endpoint = "https://api.zenrows.com/v1/"
     stealth_mode = "auto"
-    request_timeout_seconds = 120
+    request_timeout_seconds = 180
     request_delay_seconds = 0.4
+    page_delay_seconds = 1.5
 
     def __init__(self, api_key: str | None = None):
         self.api_key = api_key or os.getenv("ZENROWS_API_KEY")
@@ -367,64 +368,74 @@ class ZenRowsSearchProvider(SearchProvider):
         results: list[SearchResult] = []
         seen: set[str] = set()
         request_failures = 0
+        country_plans = zenrows_country_plans(category, location, countries)
+        city_plans = zenrows_city_plans(category, countries) if not location.strip() else []
+        page_delay = self.page_delay_seconds if limit > 10 else self.request_delay_seconds
 
-        for query_text, country_code in zenrows_query_plans(category, location, countries):
-            if len(results) >= limit:
-                break
-            locale_country, tld = ZENROWS_LOCALE.get(country_code, ZENROWS_LOCALE["DE"])
-            start = 0
-            while len(results) < limit and start <= 80:
-                self._report(f"ZenRows (Stealth): '{query_text}' ab {start} ({country_code}) ...")
-                google_url = build_google_search_url(query_text, start, locale_country, tld)
-                params = urllib.parse.urlencode(
-                    {
-                        "url": google_url,
-                        "apikey": self.api_key,
-                        "mode": self.stealth_mode,
-                        "autoparse": "true",
-                        "proxy_country": locale_country,
-                    }
+        if limit > 10:
+            self._report(
+                f"ZenRows: bis zu {limit} Websites — mehrere Google-Seiten, "
+                "das kann einige Minuten dauern (Stealth Mode)."
+            )
+
+        for phase_index, plans in enumerate((country_plans, city_plans)):
+            if len(results) >= limit or not plans:
+                continue
+            if phase_index == 1 and results:
+                self._report(
+                    f"ZenRows: {len(results)}/{limit} Websites — erweitere Suche auf weitere Staedte ..."
                 )
-                request = urllib.request.Request(
-                    f"{self.universal_endpoint}?{params}",
-                    headers={"Accept": "application/json", "User-Agent": "capper-lead-research/0.1"},
-                )
-                try:
-                    page_results = zenrows_items_to_results(
-                        _read_json_with_retry(
-                            request,
-                            timeout=self.request_timeout_seconds,
-                            retries=3,
-                            backoff_seconds=3.0,
-                        )
+
+            for query_text, country_code in plans:
+                if len(results) >= limit:
+                    break
+                locale_country, tld = ZENROWS_LOCALE.get(country_code, ZENROWS_LOCALE["DE"])
+                start = 0
+                while len(results) < limit and start <= 80:
+                    self._report(f"ZenRows (Stealth): '{query_text}' ab {start} ({country_code}) ...")
+                    request = urllib.request.Request(
+                        build_zenrows_api_request_url(self.api_key, query_text, start, locale_country, tld),
+                        headers={"Accept": "application/json", "User-Agent": "capper-lead-research/0.1"},
                     )
-                except SearchProviderError as exc:
-                    request_failures += 1
-                    self._report(f"ZenRows: Anfrage fehlgeschlagen fuer '{query_text}' (Start {start}): {exc}")
-                    if "API-Key ungueltig" in str(exc) or "HTTP Error 401" in str(exc) or "HTTP Error 403" in str(exc):
-                        self._report(
-                            "ZenRows: Suche abgebrochen. Bitte den API-Key im ZenRows-Dashboard pruefen "
-                            "(https://app.zenrows.com) und im Feld 'ZenRows Key' neu eintragen."
+                    try:
+                        page_results = zenrows_items_to_results(
+                            _read_json_with_retry(
+                                request,
+                                timeout=self.request_timeout_seconds,
+                                retries=3,
+                                backoff_seconds=3.0,
+                            )
                         )
-                        return results
-                    break
-                if not page_results:
-                    break
-                new_in_page = 0
-                for result in page_results:
-                    key = result.url.lower().rstrip("/")
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    new_in_page += 1
-                    results.append(result)
-                    if len(results) >= limit:
-                        self._report(f"ZenRows: {len(results)} Websites gefunden")
-                        return results
-                start += 10
-                if new_in_page == 0:
-                    break
-                time.sleep(self.request_delay_seconds)
+                    except SearchProviderError as exc:
+                        request_failures += 1
+                        self._report(f"ZenRows: Anfrage fehlgeschlagen fuer '{query_text}' (Start {start}): {exc}")
+                        if "API-Key ungueltig" in str(exc) or "HTTP Error 401" in str(exc) or "HTTP Error 403" in str(exc):
+                            self._report(
+                                "ZenRows: Suche abgebrochen. Bitte den API-Key im ZenRows-Dashboard pruefen "
+                                "(https://app.zenrows.com) und im Feld 'ZenRows Key' neu eintragen."
+                            )
+                            return results
+                        if results:
+                            self._report(f"ZenRows: {len(results)} Websites gefunden (teilweise, nach API-Fehler).")
+                            return results
+                        break
+                    if not page_results:
+                        break
+                    new_in_page = 0
+                    for result in page_results:
+                        key = result.url.lower().rstrip("/")
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        new_in_page += 1
+                        results.append(result)
+                        if len(results) >= limit:
+                            self._report(f"ZenRows: {len(results)} Websites gefunden")
+                            return results
+                    start += 10
+                    if new_in_page == 0:
+                        break
+                    time.sleep(page_delay)
 
         self._report(f"ZenRows: {len(results)} Websites gefunden")
         if not results and request_failures:
@@ -449,7 +460,28 @@ def build_google_search_url(query_text: str, start: int, locale_country: str, tl
     )
 
 
-def zenrows_query_plans(
+def build_zenrows_api_request_url(
+    api_key: str,
+    query_text: str,
+    start: int,
+    locale_country: str,
+    tld: str = "",
+) -> str:
+    """Build a ZenRows Universal API URL with a fully URL-encoded Google target."""
+    google_url = build_google_search_url(query_text, start, locale_country, tld)
+    encoded_target = urllib.parse.quote(google_url, safe="")
+    params = urllib.parse.urlencode(
+        {
+            "apikey": api_key,
+            "mode": ZenRowsSearchProvider.stealth_mode,
+            "autoparse": "true",
+            "proxy_country": locale_country,
+        }
+    )
+    return f"{ZenRowsSearchProvider.universal_endpoint}?{params}&url={encoded_target}"
+
+
+def zenrows_country_plans(
     category: str,
     location: str,
     countries: tuple[str, ...] = DEFAULT_COUNTRIES,
@@ -457,15 +489,35 @@ def zenrows_query_plans(
     if location.strip():
         country_code = countries[0] if countries else "DE"
         return [(build_query(category, location), country_code)]
-    plans: list[tuple[str, str]] = []
-    for country_code in countries:
-        if country_code in SUPPORTED_COUNTRIES:
-            plans.append((build_query(category, country_label(country_code)), country_code))
-    for city_name, country_code in top_cities_for_web_search(
-        countries,
-        per_country=ZENROWS_CITIES_PER_COUNTRY,
-    ):
-        plans.append((build_query(category, city_name), country_code))
+    return [
+        (build_query(category, country_label(code)), code)
+        for code in countries
+        if code in SUPPORTED_COUNTRIES
+    ]
+
+
+def zenrows_city_plans(
+    category: str,
+    countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+) -> list[tuple[str, str]]:
+    return [
+        (build_query(category, city_name), country_code)
+        for city_name, country_code in top_cities_for_web_search(
+            countries,
+            per_country=ZENROWS_CITIES_PER_COUNTRY,
+        )
+    ]
+
+
+def zenrows_query_plans(
+    category: str,
+    location: str,
+    countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+) -> list[tuple[str, str]]:
+    """Country plans first, then city fallbacks when no explicit location is set."""
+    plans = zenrows_country_plans(category, location, countries)
+    if not location.strip():
+        plans += zenrows_city_plans(category, countries)
     return plans
 
 
