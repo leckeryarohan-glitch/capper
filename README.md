@@ -134,11 +134,11 @@ websites to inspect (`Websites (max)`) and how many to crawl in parallel
 (`Threads`). Website crawling still respects `robots.txt` and personal-looking
 emails are excluded by default.
 
-If no location is entered, Capper searches a default set of large German cities
-in smaller Overpass requests instead of running one global query, and now
-collects up to ~100 businesses per city (raise `Websites (max)` for more).
-Entering a specific city, for example `Berlin`, usually produces faster and more
-targeted results.
+If no location is entered, Capper searches the selected countries via
+OpenStreetMap (Deutschland and/or Oesterreich in the GUI, or `--countries DE,AT`
+on the CLI). OSM coverage includes all cities with at least 5000 inhabitants in
+those countries, not just major cities. Entering a specific city, for example
+`Berlin`, usually produces faster and more targeted results.
 
 Use the `OpenStreetMap` and `DuckDuckGo` checkboxes to choose which no-key
 sources are used for the search. Disabling a source skips it entirely.
@@ -157,9 +157,10 @@ python3 -m lead_research discover \
 
 If you have a SerpAPI or ZenRows key, paste it into the `SerpAPI Key` or
 `ZenRows Key` field in the GUI. Capper then adds Google results via that service
-to the combined `all` search (OpenStreetMap, Nominatim, DuckDuckGo). You can also
-set them as environment variables, and from the CLI use them directly or as part
-of `--provider all`:
+to the combined `all` search (OpenStreetMap, Nominatim, DuckDuckGo). ZenRows
+uses the dedicated Google Search Results API (`serp.api.zenrows.com`), not the
+legacy Universal Scraper endpoint. You can also set them as environment variables,
+and from the CLI use them directly or as part of `--provider all`:
 
 ```bash
 export SERPAPI_API_KEY="your-serpapi-key"

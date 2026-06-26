@@ -13,7 +13,7 @@ from lead_research.models import Lead, SearchResult
 class FakeProvider:
     providers = ["osm"]
 
-    def search(self, category: str, location: str, limit: int) -> list[SearchResult]:
+    def search(self, category: str, location: str, limit: int, countries=()) -> list[SearchResult]:
         return [SearchResult(title="Hotel Beispiel", url="https://hotel.example")]
 
 

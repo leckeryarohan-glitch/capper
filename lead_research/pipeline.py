@@ -11,6 +11,7 @@ from .crawl import CrawlConfig, LeadCrawler
 from .export import StreamingCsvWriter, write_json
 from .extract import normalized_host
 from .models import ConsentStatus, Lead, LeadDeduplicator
+from .locations import DEFAULT_COUNTRIES
 from .search import SearchProvider
 from .suppression import SuppressionList
 
@@ -64,6 +65,7 @@ class LeadStats:
 class DiscoveryConfig:
     category: str
     location: str = ""
+    countries: tuple[str, ...] = DEFAULT_COUNTRIES
     limit: int = 50
     max_pages_per_site: int = 3
     delay: float = 1.0
@@ -99,7 +101,12 @@ def run_discovery(
 
     scope = f" in {config.location}" if config.location.strip() else ""
     emit("status", f"Suche Quellen fuer '{config.category}'{scope} (max. {config.limit} Websites) ...")
-    search_results = provider.search(config.category, config.location, config.limit)
+    search_results = provider.search(
+        config.category,
+        config.location,
+        config.limit,
+        config.countries,
+    )
     stats.websites_total = len(search_results)
     emit("status", f"{stats.websites_total} Websites gefunden. Starte Crawling mit {max(1, config.workers)} Threads ...")
     emit("total", stats.websites_total)

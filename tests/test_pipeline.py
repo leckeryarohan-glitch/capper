@@ -46,7 +46,7 @@ class FakeProvider:
     def __init__(self, results):
         self._results = results
 
-    def search(self, category, location, limit):
+    def search(self, category, location, limit, countries=()):
         return self._results
 
 
