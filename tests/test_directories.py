@@ -201,6 +201,42 @@ class DirectoryParserTests(unittest.TestCase):
         )
         self.assertEqual(listings[0], ("Demo Hotel Berlin", "https://www.manta.com/c/m1demo/demo-hotel-berlin"))
 
+    def test_parse_pitchbook_listing_and_detail(self) -> None:
+        from lead_research.directories import (
+            parse_pitchbook_detail_name,
+            parse_pitchbook_detail_website,
+            parse_pitchbook_listing_html,
+        )
+
+        listings = parse_pitchbook_listing_html(
+            '<a href="/profiles/company/531082-81">Demo Hotel</a>'
+        )
+        self.assertEqual(listings[0][1], "https://pitchbook.com/profiles/company/531082-81")
+        website = parse_pitchbook_detail_website(
+            'Website <a href="http://www.demo-hotel.example">Link</a>'
+        )
+        self.assertEqual(website, "http://www.demo-hotel.example")
+        name = parse_pitchbook_detail_name("<title>Demo Hotel 2026 Company Profile: Valuation</title>")
+        self.assertEqual(name, "Demo Hotel")
+
+    def test_parse_indeed_listing_and_detail(self) -> None:
+        from lead_research.directories import (
+            parse_indeed_detail_name,
+            parse_indeed_detail_website,
+            parse_indeed_listing_html,
+        )
+
+        listings = parse_indeed_listing_html(
+            '<a href="/cmp/demo-hotel-berlin/faq">Demo Hotel</a>'
+        )
+        self.assertEqual(listings[0][1], "https://de.indeed.com/cmp/demo-hotel-berlin")
+        website = parse_indeed_detail_website(
+            'Besuche uns unter https://www.demo-hotel.example/jobs und mehr.'
+        )
+        self.assertEqual(website, "https://www.demo-hotel.example/jobs")
+        name = parse_indeed_detail_name("<title>Beruf und Karriere bei Demo Hotel | Indeed.de</title>")
+        self.assertEqual(name, "Demo Hotel")
+
     def test_fetch_directory_html_requires_zenrows_by_default(self) -> None:
         configure_directory_fetch(DirectoryFetchConfig())
         with self.assertRaisesRegex(Exception, "ZenRows"):
