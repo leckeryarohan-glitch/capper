@@ -1432,12 +1432,17 @@ class DirectorySearchProvider(SearchProvider):
         fetch_mode = "ZenRows" if self.zenrows_api_key else "Direct"
         max_workers = 2 if self.zenrows_api_key else len(active_scrapers)
 
-        for plan_location in locations:
+        for plan_index, plan_location in enumerate(locations, start=1):
             if len(results) >= limit:
                 break
+            location_hint = (
+                f" ({plan_index}/{len(locations)})"
+                if len(locations) > 1
+                else ""
+            )
             self._report(
                 f"Branchenverzeichnisse ({fetch_mode}, {len(active_scrapers)} Quellen): "
-                f"{category} in {plan_location} ..."
+                f"{category} in {plan_location}{location_hint} ..."
             )
 
             def run_scraper(scraper_item: tuple[str, object]) -> tuple[str, list]:

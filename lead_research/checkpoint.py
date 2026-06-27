@@ -4,7 +4,7 @@ import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from .models import ConsentStatus, Lead, SearchResult
+from .models import ConsentStatus, Lead, SearchResult, search_result_crawl_key
 
 
 CHECKPOINT_VERSION = 1
@@ -82,7 +82,18 @@ def lead_from_dict(item: dict) -> Lead:
 
 
 def search_result_to_dict(result: SearchResult) -> dict[str, str]:
-    return {"title": result.title, "url": result.url, "snippet": result.snippet}
+    payload = {
+        "title": result.title,
+        "url": result.url,
+        "snippet": result.snippet,
+    }
+    if result.directory_email:
+        payload["directory_email"] = result.directory_email
+    if result.directory_phone:
+        payload["directory_phone"] = result.directory_phone
+    if result.directory_source_url:
+        payload["directory_source_url"] = result.directory_source_url
+    return payload
 
 
 def search_result_from_dict(item: dict[str, str]) -> SearchResult:
@@ -90,6 +101,9 @@ def search_result_from_dict(item: dict[str, str]) -> SearchResult:
         title=item.get("title", ""),
         url=item.get("url", ""),
         snippet=item.get("snippet", ""),
+        directory_email=item.get("directory_email", ""),
+        directory_phone=item.get("directory_phone", ""),
+        directory_source_url=item.get("directory_source_url", ""),
     )
 
 
@@ -164,6 +178,12 @@ def mark_url_crawled(checkpoint: DiscoveryCheckpoint, url: str) -> None:
     normalized = url.lower().rstrip("/")
     if normalized not in checkpoint.crawled_url_set:
         checkpoint.crawled_urls.append(url)
+
+
+def mark_result_crawled(checkpoint: DiscoveryCheckpoint, result: SearchResult) -> None:
+    key = search_result_crawl_key(result)
+    if key not in checkpoint.crawled_url_set:
+        checkpoint.crawled_urls.append(key)
 
 
 def update_search_results(checkpoint: DiscoveryCheckpoint, results: list[SearchResult]) -> None:
