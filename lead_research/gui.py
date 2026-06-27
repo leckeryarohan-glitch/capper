@@ -6,6 +6,7 @@ import threading
 from pathlib import Path
 from typing import Mapping
 
+from .concurrency import recommended_workers
 from .locations import DEFAULT_COUNTRIES
 from .pipeline import DEFAULT_WORKERS, DiscoveryConfig, LeadStats, run_discovery
 from .search import SearchProviderError, combined_provider
@@ -18,7 +19,7 @@ DEFAULT_LIMIT = "5000"
 DEFAULT_MAX_PAGES = "5"
 DEFAULT_DELAY = "0.3"
 DEFAULT_MAX_LEADS = "20000"
-DEFAULT_WORKERS_TEXT = str(DEFAULT_WORKERS)
+DEFAULT_WORKERS_TEXT = str(recommended_workers())
 DEFAULT_PROVIDER = "all"
 
 
@@ -220,6 +221,11 @@ def run_gui() -> int:
             ttk.Entry(limits_frame, textvariable=self.limit, width=10).grid(row=0, column=3, padx=(4, 16))
             ttk.Label(limits_frame, text="Threads").grid(row=0, column=4, sticky="w")
             ttk.Entry(limits_frame, textvariable=self.workers, width=6).grid(row=0, column=5, padx=(4, 16))
+            ttk.Label(
+                limits_frame,
+                text="(Crawling; mehr = schneller, Standard auto)",
+                foreground="#555",
+            ).grid(row=1, column=4, columnspan=4, sticky="w", pady=(2, 0))
             ttk.Checkbutton(limits_frame, text="OpenStreetMap", variable=self.use_osm).grid(row=0, column=6, padx=(0, 8))
             ttk.Checkbutton(limits_frame, text="DuckDuckGo", variable=self.use_duckduckgo).grid(row=0, column=7)
 

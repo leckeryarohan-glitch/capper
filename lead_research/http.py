@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import http.client
 import ssl
+import threading
 import urllib.error
 import urllib.request
 from typing import IO
+
+_thread_local = threading.local()
 
 
 def ssl_context() -> ssl.SSLContext:
@@ -16,11 +19,20 @@ def ssl_context() -> ssl.SSLContext:
         return ssl.create_default_context()
 
 
+def thread_opener() -> urllib.request.OpenerDirector:
+    opener = getattr(_thread_local, "opener", None)
+    if opener is None:
+        https_handler = urllib.request.HTTPSHandler(context=ssl_context())
+        opener = urllib.request.build_opener(https_handler)
+        _thread_local.opener = opener
+    return opener
+
+
 def urlopen(
     request: urllib.request.Request,
     timeout: float | None = None,
 ) -> http.client.HTTPResponse:
-    return urllib.request.urlopen(request, timeout=timeout, context=ssl_context())
+    return thread_opener().open(request, timeout=timeout)  # type: ignore[return-value]
 
 
 def read_response_text(
