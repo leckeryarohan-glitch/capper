@@ -293,11 +293,16 @@ class SearchTests(unittest.TestCase):
 
     def test_combined_provider_uses_explicit_zenrows_key_from_gui(self) -> None:
         with patch.dict("os.environ", {"ZENROWS_API_KEY": "env-key"}, clear=False):
-            provider = combined_provider(use_osm=False, use_duckduckgo=False, zenrows_key="gui-key")
+            provider = combined_provider(
+                use_osm=False,
+                use_duckduckgo=False,
+                use_directories=False,
+                zenrows_key="gui-key",
+            )
 
         labels = [source_label(sub) for sub in provider.providers]
-        self.assertEqual(labels, ["ZenRows"])
-        self.assertEqual(provider.providers[0].api_key, "gui-key")
+        self.assertEqual(labels, ["Branchenverzeichnisse", "ZenRows"])
+        self.assertEqual(provider.providers[1].api_key, "gui-key")
 
     def test_build_zenrows_api_request_url_encodes_google_target(self) -> None:
         request_url = build_zenrows_api_request_url("zr-key", "hotel berlin", 0, "de", ".de")
@@ -431,12 +436,19 @@ class SearchTests(unittest.TestCase):
 
     def test_combined_provider_respects_source_toggles(self) -> None:
         with patch.dict("os.environ", {}, clear=True):
-            only_ddg = combined_provider(use_osm=False, use_duckduckgo=True)
-            only_osm = combined_provider(use_osm=True, use_duckduckgo=False)
-            none_selected = combined_provider(use_osm=False, use_duckduckgo=False)
+            only_ddg = combined_provider(use_osm=False, use_duckduckgo=True, use_directories=False)
+            only_osm = combined_provider(use_osm=True, use_duckduckgo=False, use_directories=False)
+            only_directories = combined_provider(
+                use_osm=False,
+                use_duckduckgo=False,
+                use_directories=True,
+                zenrows_key="test-key",
+            )
+            none_selected = combined_provider(use_osm=False, use_duckduckgo=False, use_directories=False)
 
         self.assertEqual([source_label(p) for p in only_ddg.providers], ["DuckDuckGo"])
         self.assertEqual([source_label(p) for p in only_osm.providers], ["OpenStreetMap"])
+        self.assertEqual([source_label(p) for p in only_directories.providers], ["Branchenverzeichnisse"])
         self.assertEqual(none_selected.providers, [])
 
     def test_overpass_query_without_location_requests_many_results(self) -> None:
