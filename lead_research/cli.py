@@ -32,7 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     discover.add_argument(
         "--provider",
-        choices=["all", "auto", "osm", "duckduckgo", "google", "brave", "bing", "serpapi", "zenrows", "file"],
+        choices=["all", "auto", "osm", "duckduckgo", "directories", "google", "brave", "bing", "serpapi", "zenrows", "file"],
         default="file",
         help="Search provider. API providers require their matching environment variable.",
     )
@@ -128,7 +128,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     batch.add_argument(
         "--provider",
-        choices=["all", "auto", "osm", "duckduckgo", "google", "brave", "bing", "serpapi", "zenrows", "file"],
+        choices=["all", "auto", "osm", "duckduckgo", "directories", "google", "brave", "bing", "serpapi", "zenrows", "file"],
         default="brave",
         help="Search provider. Use official APIs for high-volume runs.",
     )
