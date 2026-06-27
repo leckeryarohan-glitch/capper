@@ -92,6 +92,23 @@ class CrawlTests(unittest.TestCase):
         self.assertGreaterEqual(DEFAULT_SITE_TIMEOUT_SECONDS, 20.0)
         self.assertLessEqual(DEFAULT_SITE_TIMEOUT_SECONDS, 60.0)
 
+    def test_crawler_collects_multiple_emails_across_pages(self) -> None:
+        def fake_fetch(url: str, **kwargs):
+            if "/kontakt" in url:
+                return "<html><body>kontakt@multi.example</body></html>", url
+            if "multi.example" in url:
+                return "<html><body>sales@multi.example</body></html>", url
+            return None
+
+        crawler = LeadCrawler(CrawlConfig(max_pages_per_site=5, delay_seconds=0.0, respect_robots=False))
+        with patch("lead_research.crawl.fetch_url", side_effect=fake_fetch), patch(
+            "lead_research.crawl.time.sleep"
+        ):
+            leads = crawler.crawl_result(SearchResult(title="Multi", url="https://multi.example/"), "hotel")
+
+        emails = sorted(lead.email for lead in leads)
+        self.assertEqual(emails, ["kontakt@multi.example", "sales@multi.example"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -21,7 +21,7 @@ DEFAULT_SITE_TIMEOUT_SECONDS = 40.0
 DEFAULT_READ_TIMEOUT_SECONDS = 15.0
 
 # German businesses are legally required to publish an Impressum with contact
-# details. For mass runs we only fall back to the most common paths.
+# details, so try these common paths even when they are not linked.
 CONTACT_PATH_GUESSES = (
     "/impressum",
     "/impressum/",
@@ -33,10 +33,11 @@ CONTACT_PATH_GUESSES = (
     "/legal-notice",
 )
 
-FALLBACK_CONTACT_PATHS = ("/impressum", "/kontakt", "/contact")
 
-
-def guessed_contact_urls(start_url: str, paths: tuple[str, ...] = FALLBACK_CONTACT_PATHS) -> list[str]:
+def guessed_contact_urls(
+    start_url: str,
+    paths: tuple[str, ...] = CONTACT_PATH_GUESSES,
+) -> list[str]:
     parsed = urllib.parse.urlparse(start_url)
     if not parsed.scheme or not parsed.netloc:
         return []
@@ -83,6 +84,9 @@ class LeadCrawler:
 
         deadline = time.monotonic() + max(self.config.site_timeout_seconds, 1.0)
         queue = [start_url]
+        for guessed in guessed_contact_urls(start_url):
+            if guessed not in queue:
+                queue.append(guessed)
         visited: set[str] = set()
         seen_emails: set[str] = set()
         leads: list[Lead] = []
@@ -90,8 +94,7 @@ class LeadCrawler:
         phone = ""
         fetched = 0
         attempts = 0
-        fallback_paths_added = False
-        max_attempts = self.config.max_pages_per_site + len(FALLBACK_CONTACT_PATHS) + 2
+        max_attempts = self.config.max_pages_per_site + len(CONTACT_PATH_GUESSES) + 2
 
         while queue and fetched < self.config.max_pages_per_site and attempts < max_attempts:
             if time.monotonic() >= deadline:
@@ -115,11 +118,6 @@ class LeadCrawler:
                 deadline=deadline,
             )
             if response is None:
-                if not fallback_paths_added and url == start_url:
-                    for guessed in guessed_contact_urls(start_url):
-                        if guessed not in visited and guessed not in queue:
-                            queue.append(guessed)
-                    fallback_paths_added = True
                 continue
             fetched += 1
 
@@ -150,18 +148,9 @@ class LeadCrawler:
                 if self.on_lead:
                     self.on_lead(lead)
 
-            if leads:
-                break
-
             for offset, link in enumerate(contact_links):
                 if link not in visited and link not in queue:
                     queue.insert(offset, link)
-
-            if not fallback_paths_added and url == start_url:
-                for guessed in guessed_contact_urls(start_url):
-                    if guessed not in visited and guessed not in queue:
-                        queue.append(guessed)
-                fallback_paths_added = True
 
             if self.config.delay_seconds > 0 and time.monotonic() < deadline:
                 remaining = min(self.config.delay_seconds, deadline - time.monotonic())
