@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Iterable
 
 from .checkpoint import lead_from_dict, lead_to_dict
-from .checkpoint import lead_from_dict, lead_to_dict
 from .crawl import CrawlConfig, LeadCrawler
 from .export import write_csv, write_json
 from .models import Lead, dedupe_leads

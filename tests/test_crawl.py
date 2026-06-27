@@ -1,10 +1,18 @@
 from __future__ import annotations
 
 import threading
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from unittest.mock import patch
 
-from lead_research.crawl import CrawlConfig, LeadCrawler, fetch_url, guessed_contact_urls
+from lead_research.crawl import (
+    CrawlConfig,
+    LeadCrawler,
+    DEFAULT_SITE_TIMEOUT_SECONDS,
+    fetch_url,
+    guessed_contact_urls,
+)
 from lead_research.models import SearchResult
 
 
@@ -55,6 +63,34 @@ class CrawlTests(unittest.TestCase):
             server.server_close()
 
         self.assertEqual([lead.email for lead in leads], ["info@spedition-beispiel.test"])
+
+    def test_crawl_respects_site_timeout(self) -> None:
+        def slow_fetch(*args, **kwargs):
+            time.sleep(5)
+            return None
+
+        crawler = LeadCrawler(
+            CrawlConfig(
+                max_pages_per_site=3,
+                delay_seconds=0.0,
+                respect_robots=False,
+                site_timeout_seconds=0.3,
+                request_timeout_seconds=0.2,
+            )
+        )
+        started = time.monotonic()
+        with patch("lead_research.crawl.fetch_url", side_effect=slow_fetch), patch(
+            "lead_research.crawl.time.sleep"
+        ):
+            leads = crawler.crawl_result(SearchResult(title="Slow", url="https://slow.example/"), "hotel")
+        elapsed = time.monotonic() - started
+
+        self.assertEqual(leads, [])
+        self.assertLess(elapsed, 2.0)
+
+    def test_default_site_timeout_is_reasonable(self) -> None:
+        self.assertGreaterEqual(DEFAULT_SITE_TIMEOUT_SECONDS, 20.0)
+        self.assertLessEqual(DEFAULT_SITE_TIMEOUT_SECONDS, 60.0)
 
 
 if __name__ == "__main__":
