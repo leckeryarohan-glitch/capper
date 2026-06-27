@@ -1536,6 +1536,8 @@ def combined_provider(
     use_osm: bool = True,
     use_duckduckgo: bool = True,
     use_directories: bool = True,
+    use_zenrows_google: bool = True,
+    use_serpapi: bool = True,
     serpapi_key: str | None = None,
     zenrows_key: str | None = None,
 ) -> SearchProvider:
@@ -1562,11 +1564,11 @@ def combined_provider(
         providers.append(BingSearchProvider())
 
     resolved_serpapi = _resolve_api_key(serpapi_key, "SERPAPI_API_KEY")
-    if resolved_serpapi:
+    if use_serpapi and resolved_serpapi:
         providers.append(SerpApiSearchProvider(api_key=resolved_serpapi))
 
     resolved_zenrows = _resolve_api_key(zenrows_key, "ZENROWS_API_KEY")
-    if resolved_zenrows:
+    if use_zenrows_google and resolved_zenrows:
         providers.append(ZenRowsSearchProvider(api_key=resolved_zenrows))
 
     return MultiSourceProvider(providers)

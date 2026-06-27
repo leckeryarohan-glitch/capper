@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from lead_research.gui import build_simple_gui_argv, run_gui_discovery
 from lead_research.models import Lead, SearchResult
+from lead_research.search import SearchProviderError
 
 
 class FakeProvider:
@@ -108,6 +109,56 @@ class GuiArgumentTests(unittest.TestCase):
         stats = finished[0][1]
         self.assertEqual(stats.leads_found, 1)
         self.assertEqual(stats.duplicates_skipped, 1)
+
+    def test_run_gui_discovery_passes_source_toggles(self) -> None:
+        events: "queue.Queue[tuple]" = queue.Queue()
+        captured: dict[str, object] = {}
+
+        def fake_combined_provider(**kwargs):
+            captured.update(kwargs)
+            return FakeProvider()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "leads.csv"
+            with patch("lead_research.gui.combined_provider", side_effect=fake_combined_provider), patch(
+                "lead_research.pipeline.LeadCrawler", FakeCrawler
+            ):
+                run_gui_discovery(
+                    {
+                        "category": "hotel",
+                        "output": str(output),
+                        "use_osm": False,
+                        "use_duckduckgo": True,
+                        "use_directories": True,
+                        "use_zenrows_google": False,
+                        "use_serpapi": False,
+                        "zenrows_key": "zr-key",
+                    },
+                    events,
+                )
+
+        self.assertFalse(captured["use_osm"])
+        self.assertTrue(captured["use_duckduckgo"])
+        self.assertTrue(captured["use_directories"])
+        self.assertFalse(captured["use_zenrows_google"])
+        self.assertFalse(captured["use_serpapi"])
+
+    def test_run_gui_discovery_requires_zenrows_key_for_directories(self) -> None:
+        events: "queue.Queue[tuple]" = queue.Queue()
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "leads.csv"
+            with self.assertRaises(SearchProviderError):
+                run_gui_discovery(
+                    {
+                        "category": "hotel",
+                        "output": str(output),
+                        "use_osm": True,
+                        "use_directories": True,
+                        "use_zenrows_google": False,
+                        "zenrows_key": "",
+                    },
+                    events,
+                )
 
 
 if __name__ == "__main__":
