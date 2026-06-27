@@ -15,8 +15,10 @@ class DirectoryRegistryTests(unittest.TestCase):
         self.assertIn("cylex", implemented_ids)
         self.assertIn("hotfrog", implemented_ids)
         self.assertIn("werkenntdenbesten", implemented_ids)
+        self.assertIn("goyellow", implemented_ids)
+        self.assertIn("yelp", implemented_ids)
         planned_ids = {spec.id for spec in registry if not spec.implemented}
-        self.assertIn("firmenverzeichnisse_yelp", planned_ids)
+        self.assertIn("firmenverzeichnisse_wlw", planned_ids)
 
     def test_get_directory_scrapers_respects_enabled_ids(self) -> None:
         scrapers = get_directory_scrapers({"gelbeseiten", "cylex"})

@@ -157,6 +157,50 @@ class DirectoryParserTests(unittest.TestCase):
         )
         self.assertEqual(websites, ["https://www.example-hotel.de/"])
 
+    def test_parse_goyellow_listing_html(self) -> None:
+        from lead_research.directories import parse_goyellow_listing_html
+
+        listings = parse_goyellow_listing_html(
+            '<div data-seourl="/home/hotel-demo-berlin--abc123.html"></div>'
+        )
+        self.assertEqual(listings[0][1], "https://www.goyellow.de/home/hotel-demo-berlin--abc123.html")
+
+    def test_parse_yelp_listing_and_detail(self) -> None:
+        from lead_research.directories import parse_yelp_detail_website, parse_yelp_listing_html
+
+        listings = parse_yelp_listing_html(
+            '<a href="/biz/demo-hotel-berlin?osq=hotel">Demo Hotel</a>'
+        )
+        self.assertEqual(listings[0][1], "https://www.yelp.de/biz/demo-hotel-berlin")
+        website = parse_yelp_detail_website(
+            '<a href="/biz_redir?url=http%3A%2F%2Fwww.demo-hotel.example&amp;cachebuster=1">Web</a>'
+        )
+        self.assertEqual(website, "http://www.demo-hotel.example")
+
+    def test_parse_kompass_listing_html(self) -> None:
+        from lead_research.directories import parse_kompass_listing_html
+
+        listings = parse_kompass_listing_html(
+            '<a href="/c/demo-gmbh/de123456/">Demo GmbH</a>'
+        )
+        self.assertEqual(listings[0][1], "https://de.kompass.com/c/demo-gmbh/de123456/")
+
+    def test_parse_europages_listing_html(self) -> None:
+        from lead_research.directories import parse_europages_listing_html
+
+        listings = parse_europages_listing_html(
+            '<div class="company-tile"><a href="/de/firma/demo-gmbh-1234567">Demo</a></div>'
+        )
+        self.assertEqual(listings[0][1], "https://www.europages.de/de/firma/demo-gmbh-1234567")
+
+    def test_parse_manta_listing_html(self) -> None:
+        from lead_research.directories import parse_manta_listing_html
+
+        listings = parse_manta_listing_html(
+            '<a href="/c/m1demo/demo-hotel-berlin">Demo Hotel Berlin</a>'
+        )
+        self.assertEqual(listings[0], ("Demo Hotel Berlin", "https://www.manta.com/c/m1demo/demo-hotel-berlin"))
+
     def test_fetch_directory_html_requires_zenrows_by_default(self) -> None:
         configure_directory_fetch(DirectoryFetchConfig())
         with self.assertRaisesRegex(Exception, "ZenRows"):
