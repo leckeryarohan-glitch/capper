@@ -15,6 +15,11 @@ from .models import Lead, SearchResult, classify_email
 
 USER_AGENT = "capper-lead-research/0.1 (+compliance-review)"
 
+DEFAULT_REQUEST_TIMEOUT_SECONDS = 10.0
+DEFAULT_ROBOTS_TIMEOUT_SECONDS = 6.0
+DEFAULT_SITE_TIMEOUT_SECONDS = 40.0
+DEFAULT_READ_TIMEOUT_SECONDS = 15.0
+
 # German businesses are legally required to publish an Impressum with contact
 # details, so try these common paths even when they are not linked.
 CONTACT_PATH_GUESSES = (
@@ -29,12 +34,22 @@ CONTACT_PATH_GUESSES = (
 )
 
 
-def guessed_contact_urls(start_url: str) -> list[str]:
+def guessed_contact_urls(
+    start_url: str,
+    paths: tuple[str, ...] = CONTACT_PATH_GUESSES,
+) -> list[str]:
     parsed = urllib.parse.urlparse(start_url)
     if not parsed.scheme or not parsed.netloc:
         return []
     base = f"{parsed.scheme}://{parsed.netloc}"
-    return [base + path for path in CONTACT_PATH_GUESSES]
+    urls: list[str] = []
+    seen: set[str] = set()
+    for path in paths:
+        url = base + path
+        if url not in seen:
+            seen.add(url)
+            urls.append(url)
+    return urls
 
 
 @dataclass(frozen=True)
@@ -43,6 +58,10 @@ class CrawlConfig:
     delay_seconds: float = 1.0
     include_personal: bool = False
     respect_robots: bool = True
+    request_timeout_seconds: float = DEFAULT_REQUEST_TIMEOUT_SECONDS
+    robots_timeout_seconds: float = DEFAULT_ROBOTS_TIMEOUT_SECONDS
+    site_timeout_seconds: float = DEFAULT_SITE_TIMEOUT_SECONDS
+    read_timeout_seconds: float = DEFAULT_READ_TIMEOUT_SECONDS
 
 
 class LeadCrawler:
@@ -63,6 +82,7 @@ class LeadCrawler:
         if not start_url:
             return []
 
+        deadline = time.monotonic() + max(self.config.site_timeout_seconds, 1.0)
         queue = [start_url]
         for guessed in guessed_contact_urls(start_url):
             if guessed not in queue:
@@ -77,15 +97,26 @@ class LeadCrawler:
         max_attempts = self.config.max_pages_per_site + len(CONTACT_PATH_GUESSES) + 2
 
         while queue and fetched < self.config.max_pages_per_site and attempts < max_attempts:
+            if time.monotonic() >= deadline:
+                break
+
             url = strip_fragment(queue.pop(0))
-            if url in visited or not self._allowed(url):
+            if url in visited:
+                continue
+            if not self._allowed(url, deadline):
+                visited.add(url)
                 continue
             visited.add(url)
             attempts += 1
             if self.on_page:
                 self.on_page(url)
 
-            response = fetch_url(url)
+            response = fetch_url(
+                url,
+                request_timeout=self.config.request_timeout_seconds,
+                read_timeout=self.config.read_timeout_seconds,
+                deadline=deadline,
+            )
             if response is None:
                 continue
             fetched += 1
@@ -121,14 +152,18 @@ class LeadCrawler:
                 if link not in visited and link not in queue:
                     queue.insert(offset, link)
 
-            if self.config.delay_seconds > 0:
-                time.sleep(self.config.delay_seconds)
+            if self.config.delay_seconds > 0 and time.monotonic() < deadline:
+                remaining = min(self.config.delay_seconds, deadline - time.monotonic())
+                if remaining > 0:
+                    time.sleep(remaining)
 
         return leads
 
-    def _allowed(self, url: str) -> bool:
+    def _allowed(self, url: str, deadline: float) -> bool:
         if not self.config.respect_robots:
             return True
+        if time.monotonic() >= deadline:
+            return False
 
         host = normalized_host(url)
         with self._robots_lock:
@@ -138,10 +173,10 @@ class LeadCrawler:
             parsed = urllib.parse.urlparse(url)
             robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
             parser.set_url(robots_url)
-            try:
-                parser.read()
-            except Exception:
+            robots_body = fetch_robots_txt(robots_url, self.config.robots_timeout_seconds, deadline)
+            if robots_body is None:
                 return True
+            parser.parse(robots_body.splitlines())
             with self._robots_lock:
                 self._robots_cache[host] = parser
 
@@ -151,7 +186,39 @@ class LeadCrawler:
             return True
 
 
-def fetch_url(url: str) -> tuple[str, str] | None:
+def fetch_robots_txt(robots_url: str, timeout: float, deadline: float | None = None) -> str | None:
+    if deadline is not None and time.monotonic() >= deadline:
+        return None
+    remaining = timeout
+    if deadline is not None:
+        remaining = min(timeout, max(0.5, deadline - time.monotonic()))
+    try:
+        request = urllib.request.Request(
+            robots_url,
+            headers={"User-Agent": USER_AGENT, "Accept": "text/plain"},
+        )
+        with urlopen(request, timeout=remaining) as response:
+            return read_response_text(
+                response,
+                max_bytes=250_000,
+                max_seconds=min(timeout, remaining),
+            )
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def fetch_url(
+    url: str,
+    *,
+    request_timeout: float = DEFAULT_REQUEST_TIMEOUT_SECONDS,
+    read_timeout: float = DEFAULT_READ_TIMEOUT_SECONDS,
+    deadline: float | None = None,
+) -> tuple[str, str] | None:
+    if deadline is not None and time.monotonic() >= deadline:
+        return None
+    timeout = request_timeout
+    if deadline is not None:
+        timeout = min(request_timeout, max(0.5, deadline - time.monotonic()))
     try:
         request = urllib.request.Request(
             url,
@@ -160,11 +227,14 @@ def fetch_url(url: str) -> tuple[str, str] | None:
                 "Accept": "text/html,application/xhtml+xml",
             },
         )
-        with urlopen(request, timeout=15) as response:
+        with urlopen(request, timeout=timeout) as response:
             content_type = response.headers.get("Content-Type", "")
             if "text/html" not in content_type and "application/xhtml+xml" not in content_type:
                 return None
-            html_text = read_response_text(response, max_bytes=1_000_000)
+            read_budget = read_timeout
+            if deadline is not None:
+                read_budget = min(read_timeout, max(0.5, deadline - time.monotonic()))
+            html_text = read_response_text(response, max_bytes=1_000_000, max_seconds=read_budget)
             return html_text, response.geturl()
     except Exception:  # noqa: BLE001 - one unreachable/invalid URL must not abort a crawl
         return None

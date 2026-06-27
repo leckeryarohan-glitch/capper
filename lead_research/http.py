@@ -3,6 +3,7 @@ from __future__ import annotations
 import http.client
 import ssl
 import threading
+import time
 import urllib.error
 import urllib.request
 from typing import IO
@@ -40,8 +41,20 @@ def read_response_text(
     *,
     max_bytes: int = 2_000_000,
     default_charset: str = "utf-8",
+    max_seconds: float | None = None,
 ) -> str:
-    raw = response.read(max_bytes)
+    started = time.monotonic()
+    chunks: list[bytes] = []
+    total = 0
+    while total < max_bytes:
+        if max_seconds is not None and time.monotonic() - started > max_seconds:
+            raise TimeoutError("response read timed out")
+        chunk = response.read(min(65_536, max_bytes - total))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        total += len(chunk)
+    raw = b"".join(chunks)
     charset = default_charset
     get_charset = getattr(response, "headers", None)
     if get_charset is not None:

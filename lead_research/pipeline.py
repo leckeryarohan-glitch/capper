@@ -20,7 +20,7 @@ from .checkpoint import (
     validate_checkpoint_config,
 )
 from .concurrency import CHECKPOINT_SAVE_INTERVAL, AsyncCheckpointWriter, recommended_workers
-from .crawl import CrawlConfig, LeadCrawler
+from .crawl import CrawlConfig, DEFAULT_SITE_TIMEOUT_SECONDS, LeadCrawler
 from .export import StreamingCsvWriter, write_json
 from .extract import normalized_host
 from .models import ConsentStatus, Lead, LeadDeduplicator, SearchResult
@@ -31,6 +31,7 @@ from .suppression import SuppressionList
 
 DEFAULT_WORKERS = recommended_workers()
 _crawl_local = threading.local()
+FUTURE_RESULT_GRACE_SECONDS = 8
 
 
 @dataclass
@@ -209,6 +210,7 @@ def run_discovery(
         delay_seconds=config.delay,
         include_personal=config.include_personal,
         respect_robots=config.respect_robots,
+        site_timeout_seconds=DEFAULT_SITE_TIMEOUT_SECONDS,
     )
 
     def thread_crawler() -> LeadCrawler:
@@ -257,8 +259,12 @@ def run_discovery(
             future_map = {future: result for future, result in zip(futures, pending_results, strict=False)}
             for future in as_completed(future_map):
                 result = future_map[future]
+                site_timeout = crawl_config.site_timeout_seconds + FUTURE_RESULT_GRACE_SECONDS
                 try:
-                    _, site_leads = future.result()
+                    _, site_leads = future.result(timeout=site_timeout)
+                except TimeoutError:
+                    site_leads = []
+                    emit("warning", f"Website-Timeout (uebersprungen): {result.url}")
                 except Exception as exc:  # noqa: BLE001 - keep run alive on a single site failure
                     site_leads = []
                     emit("warning", f"Website-Fehler: {exc}")
