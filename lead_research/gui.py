@@ -231,29 +231,61 @@ def run_gui() -> int:
             self._poll_messages()
 
         def _build(self) -> None:
+            self.root.minsize(480, 420)
+            self.root.geometry("820x680")
+
             outer = ttk.Frame(self.root, padding=16)
             outer.grid(row=0, column=0, sticky="nsew")
             self.root.columnconfigure(0, weight=1)
             self.root.rowconfigure(0, weight=1)
-            outer.columnconfigure(1, weight=1)
+            outer.columnconfigure(0, weight=1)
+            outer.rowconfigure(2, weight=1)
+
+            self.start_button = ttk.Button(outer, text="Leads suchen", command=self._start)
+            self.start_button.grid(row=0, column=0, sticky="ew", pady=(0, 8))
 
             title = ttk.Label(outer, text="Welche Branche soll gesucht werden?", font=("", 14, "bold"))
-            title.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 12))
+            title.grid(row=1, column=0, sticky="w", pady=(0, 8))
 
-            ttk.Label(outer, text="Kategorie").grid(row=1, column=0, sticky="w", pady=4)
-            ttk.Entry(outer, textvariable=self.category).grid(row=1, column=1, columnspan=2, sticky="ew", pady=4)
+            scroll_container = ttk.Frame(outer)
+            scroll_container.grid(row=2, column=0, sticky="nsew")
+            scroll_container.columnconfigure(0, weight=1)
+            scroll_container.rowconfigure(0, weight=1)
 
-            ttk.Label(outer, text="Ort optional").grid(row=2, column=0, sticky="w", pady=4)
-            ttk.Entry(outer, textvariable=self.location).grid(row=2, column=1, columnspan=2, sticky="ew", pady=4)
+            main_canvas = tk.Canvas(scroll_container, highlightthickness=0)
+            main_scroll = ttk.Scrollbar(scroll_container, orient="vertical", command=main_canvas.yview)
+            content = ttk.Frame(main_canvas)
+            content.bind(
+                "<Configure>",
+                lambda _event: main_canvas.configure(scrollregion=main_canvas.bbox("all")),
+            )
+            content_window = main_canvas.create_window((0, 0), window=content, anchor="nw")
+            main_canvas.configure(yscrollcommand=main_scroll.set)
+            main_canvas.grid(row=0, column=0, sticky="nsew")
+            main_scroll.grid(row=0, column=1, sticky="ns")
 
-            countries_frame = ttk.Frame(outer)
-            countries_frame.grid(row=3, column=0, columnspan=3, sticky="w", pady=4)
+            def _resize_content(event: "tk.Event") -> None:
+                main_canvas.itemconfigure(content_window, width=event.width)
+
+            main_canvas.bind("<Configure>", _resize_content)
+            self._bind_canvas_scroll(main_canvas, scroll_container)
+
+            content.columnconfigure(1, weight=1)
+
+            ttk.Label(content, text="Kategorie").grid(row=0, column=0, sticky="w", pady=4)
+            ttk.Entry(content, textvariable=self.category).grid(row=0, column=1, columnspan=2, sticky="ew", pady=4)
+
+            ttk.Label(content, text="Ort optional").grid(row=1, column=0, sticky="w", pady=4)
+            ttk.Entry(content, textvariable=self.location).grid(row=1, column=1, columnspan=2, sticky="ew", pady=4)
+
+            countries_frame = ttk.Frame(content)
+            countries_frame.grid(row=2, column=0, columnspan=3, sticky="w", pady=4)
             ttk.Label(countries_frame, text="Laender").grid(row=0, column=0, sticky="w", padx=(0, 8))
             ttk.Checkbutton(countries_frame, text="Deutschland", variable=self.country_de).grid(row=0, column=1, padx=(0, 12))
             ttk.Checkbutton(countries_frame, text="Oesterreich", variable=self.country_at).grid(row=0, column=2)
 
-            limits_frame = ttk.Frame(outer)
-            limits_frame.grid(row=4, column=0, columnspan=3, sticky="ew", pady=4)
+            limits_frame = ttk.Frame(content)
+            limits_frame.grid(row=3, column=0, columnspan=3, sticky="ew", pady=4)
             ttk.Label(limits_frame, text="Max. Leads").grid(row=0, column=0, sticky="w")
             ttk.Entry(limits_frame, textvariable=self.max_leads, width=10).grid(row=0, column=1, padx=(4, 16))
             ttk.Label(limits_frame, text="Websites (max)").grid(row=0, column=2, sticky="w")
@@ -266,12 +298,12 @@ def run_gui() -> int:
                 foreground="#555",
             ).grid(row=1, column=0, columnspan=6, sticky="w", pady=(2, 0))
 
-            ttk.Label(outer, text="CSV-Ausgabe").grid(row=5, column=0, sticky="w", pady=4)
-            ttk.Entry(outer, textvariable=self.output).grid(row=5, column=1, sticky="ew", pady=4)
-            ttk.Button(outer, text="Auswaehlen", command=self._choose_output).grid(row=5, column=2, padx=(8, 0), pady=4)
+            ttk.Label(content, text="CSV-Ausgabe").grid(row=4, column=0, sticky="w", pady=4)
+            ttk.Entry(content, textvariable=self.output).grid(row=4, column=1, sticky="ew", pady=4)
+            ttk.Button(content, text="Auswaehlen", command=self._choose_output).grid(row=4, column=2, padx=(8, 0), pady=4)
 
-            checkpoint_frame = ttk.Frame(outer)
-            checkpoint_frame.grid(row=6, column=0, columnspan=3, sticky="ew", pady=4)
+            checkpoint_frame = ttk.Frame(content)
+            checkpoint_frame.grid(row=5, column=0, columnspan=3, sticky="ew", pady=4)
             checkpoint_frame.columnconfigure(1, weight=1)
             ttk.Label(checkpoint_frame, text="Checkpoint").grid(row=0, column=0, sticky="w", padx=(0, 8))
             ttk.Entry(checkpoint_frame, textvariable=self.checkpoint).grid(row=0, column=1, sticky="ew")
@@ -281,12 +313,12 @@ def run_gui() -> int:
                 variable=self.resume,
             ).grid(row=0, column=2, padx=(12, 0))
 
-            ttk.Label(outer, text="Opt-out Liste").grid(row=7, column=0, sticky="w", pady=4)
-            ttk.Entry(outer, textvariable=self.suppression_file).grid(row=7, column=1, sticky="ew", pady=4)
-            ttk.Button(outer, text="Auswaehlen", command=self._choose_suppression).grid(row=7, column=2, padx=(8, 0), pady=4)
+            ttk.Label(content, text="Opt-out Liste").grid(row=6, column=0, sticky="w", pady=4)
+            ttk.Entry(content, textvariable=self.suppression_file).grid(row=6, column=1, sticky="ew", pady=4)
+            ttk.Button(content, text="Auswaehlen", command=self._choose_suppression).grid(row=6, column=2, padx=(8, 0), pady=4)
 
-            keys_frame = ttk.Frame(outer)
-            keys_frame.grid(row=8, column=0, columnspan=3, sticky="ew", pady=4)
+            keys_frame = ttk.Frame(content)
+            keys_frame.grid(row=7, column=0, columnspan=3, sticky="ew", pady=4)
             keys_frame.columnconfigure(1, weight=1)
             keys_frame.columnconfigure(3, weight=1)
             ttk.Label(keys_frame, text="SerpAPI Key").grid(row=0, column=0, sticky="w", padx=(0, 4))
@@ -294,8 +326,8 @@ def run_gui() -> int:
             ttk.Label(keys_frame, text="ZenRows Key").grid(row=0, column=2, sticky="w", padx=(0, 4))
             ttk.Entry(keys_frame, textvariable=self.zenrows_key, show="*").grid(row=0, column=3, sticky="ew")
 
-            sources_frame = ttk.LabelFrame(outer, text="Suchquellen", padding=8)
-            sources_frame.grid(row=9, column=0, columnspan=3, sticky="ew", pady=(8, 4))
+            sources_frame = ttk.LabelFrame(content, text="Suchquellen", padding=8)
+            sources_frame.grid(row=8, column=0, columnspan=3, sticky="ew", pady=(8, 4))
             sources_frame.columnconfigure(1, weight=1)
 
             free_sources = ttk.Frame(sources_frame)
@@ -325,22 +357,28 @@ def run_gui() -> int:
                 variable=self.use_serpapi,
             ).grid(row=2, column=0, sticky="w", pady=(4, 0))
 
-            directory_frame = ttk.LabelFrame(outer, text="Branchenquellen (ZenRows Universal API)", padding=8)
-            directory_frame.grid(row=10, column=0, columnspan=3, sticky="nsew", pady=(8, 4))
+            directory_frame = ttk.LabelFrame(content, text="Branchenquellen (ZenRows Universal API)", padding=8)
+            directory_frame.grid(row=9, column=0, columnspan=3, sticky="ew", pady=(8, 4))
             directory_frame.columnconfigure(0, weight=1)
             directory_frame.rowconfigure(0, weight=1)
 
-            directory_canvas = tk.Canvas(directory_frame, height=180, highlightthickness=0)
+            directory_canvas = tk.Canvas(directory_frame, height=120, highlightthickness=0)
             directory_scroll = ttk.Scrollbar(directory_frame, orient="vertical", command=directory_canvas.yview)
             directory_inner = ttk.Frame(directory_canvas)
             directory_inner.bind(
                 "<Configure>",
                 lambda _event: directory_canvas.configure(scrollregion=directory_canvas.bbox("all")),
             )
-            directory_canvas.create_window((0, 0), window=directory_inner, anchor="nw")
+            directory_window = directory_canvas.create_window((0, 0), window=directory_inner, anchor="nw")
             directory_canvas.configure(yscrollcommand=directory_scroll.set)
             directory_canvas.grid(row=0, column=0, sticky="nsew")
             directory_scroll.grid(row=0, column=1, sticky="ns")
+
+            def _resize_directory(event: "tk.Event") -> None:
+                directory_canvas.itemconfigure(directory_window, width=event.width)
+
+            directory_canvas.bind("<Configure>", _resize_directory)
+            self._bind_canvas_scroll(directory_canvas, directory_frame)
 
             row_idx = 0
             for category, specs in directory_sources_by_category(build_directory_source_registry()).items():
@@ -370,7 +408,7 @@ def run_gui() -> int:
                         directory_inner,
                         text=f"Nicht verfuegbar (ZenRows/JS): {unavailable_text}",
                         foreground="#888",
-                        wraplength=700,
+                        wraplength=560,
                     ).grid(row=row_idx, column=0, sticky="w", padx=(12, 0), pady=(2, 0))
                     row_idx += 1
                 if planned_specs:
@@ -381,7 +419,7 @@ def run_gui() -> int:
                         directory_inner,
                         text=f"Geplant: {planned_text}",
                         foreground="#666",
-                        wraplength=700,
+                        wraplength=560,
                     ).grid(row=row_idx, column=0, sticky="w", padx=(12, 0), pady=(2, 0))
                     row_idx += 1
 
@@ -390,36 +428,62 @@ def run_gui() -> int:
                 "(Adaptive Stealth). Quellen ohne brauchbare Ergebnisse sind als 'Nicht verfuegbar' "
                 "markiert; weitere Kategorien werden schrittweise ergaenzt."
             )
-            ttk.Label(outer, text=source_text, wraplength=760).grid(row=11, column=0, columnspan=3, sticky="ew", pady=(10, 8))
-
-            self.start_button = ttk.Button(outer, text="Leads suchen", command=self._start)
-            self.start_button.grid(row=12, column=0, columnspan=3, sticky="ew", pady=(4, 10))
-
-            self.progress = ttk.Progressbar(outer, variable=self.progress_value, maximum=1)
-            self.progress.grid(row=13, column=0, columnspan=3, sticky="ew")
-            ttk.Label(outer, textvariable=self.status_text).grid(row=14, column=0, columnspan=2, sticky="w", pady=(4, 0))
-            ttk.Label(outer, textvariable=self.lead_count_text).grid(row=14, column=2, sticky="e", pady=(4, 0))
-            ttk.Label(outer, textvariable=self.stats_text).grid(row=15, column=0, columnspan=3, sticky="w", pady=(2, 0))
-            ttk.Label(outer, textvariable=self.current_page_text, foreground="#555").grid(
-                row=16, column=0, columnspan=3, sticky="w", pady=(0, 6)
-            )
+            ttk.Label(content, text=source_text, wraplength=560).grid(row=10, column=0, columnspan=3, sticky="ew", pady=(10, 8))
 
             columns = ("company", "email", "website", "status")
-            self.lead_table = ttk.Treeview(outer, columns=columns, show="headings", height=8)
+            self.lead_table = ttk.Treeview(content, columns=columns, show="headings", height=6)
             self.lead_table.heading("company", text="Firma")
             self.lead_table.heading("email", text="E-Mail")
             self.lead_table.heading("website", text="Website")
             self.lead_table.heading("status", text="Status")
-            self.lead_table.column("company", width=180)
-            self.lead_table.column("email", width=180)
-            self.lead_table.column("website", width=260)
-            self.lead_table.column("status", width=110)
-            self.lead_table.grid(row=17, column=0, columnspan=3, sticky="nsew", pady=(8, 8))
+            self.lead_table.column("company", width=160, minwidth=80)
+            self.lead_table.column("email", width=160, minwidth=80)
+            self.lead_table.column("website", width=200, minwidth=100)
+            self.lead_table.column("status", width=90, minwidth=70)
+            self.lead_table.grid(row=11, column=0, columnspan=3, sticky="ew", pady=(8, 8))
 
-            self.log = scrolledtext.ScrolledText(outer, height=8, state="disabled")
-            self.log.grid(row=18, column=0, columnspan=3, sticky="nsew")
-            outer.rowconfigure(17, weight=1)
-            outer.rowconfigure(18, weight=1)
+            self.log = scrolledtext.ScrolledText(content, height=6, state="disabled")
+            self.log.grid(row=12, column=0, columnspan=3, sticky="ew", pady=(0, 4))
+
+            footer = ttk.Frame(outer)
+            footer.grid(row=3, column=0, sticky="ew", pady=(8, 0))
+            footer.columnconfigure(0, weight=1)
+
+            self.progress = ttk.Progressbar(footer, variable=self.progress_value, maximum=1)
+            self.progress.grid(row=0, column=0, sticky="ew")
+
+            status_row = ttk.Frame(footer)
+            status_row.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+            status_row.columnconfigure(0, weight=1)
+            ttk.Label(status_row, textvariable=self.status_text).grid(row=0, column=0, sticky="w")
+            ttk.Label(status_row, textvariable=self.lead_count_text).grid(row=0, column=1, sticky="e")
+
+            ttk.Label(footer, textvariable=self.stats_text).grid(row=2, column=0, sticky="w", pady=(2, 0))
+            ttk.Label(footer, textvariable=self.current_page_text, foreground="#555").grid(
+                row=3, column=0, sticky="w", pady=(0, 2)
+            )
+
+        def _bind_canvas_scroll(self, canvas: "tk.Canvas", widget: "tk.Widget") -> None:
+            def _on_mousewheel(event: "tk.Event") -> None:
+                if event.num == 4:
+                    canvas.yview_scroll(-1, "units")
+                elif event.num == 5:
+                    canvas.yview_scroll(1, "units")
+                elif getattr(event, "delta", 0):
+                    canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+            def _bind(_event: "tk.Event | None" = None) -> None:
+                canvas.bind_all("<MouseWheel>", _on_mousewheel)
+                canvas.bind_all("<Button-4>", _on_mousewheel)
+                canvas.bind_all("<Button-5>", _on_mousewheel)
+
+            def _unbind(_event: "tk.Event | None" = None) -> None:
+                canvas.unbind_all("<MouseWheel>")
+                canvas.unbind_all("<Button-4>")
+                canvas.unbind_all("<Button-5>")
+
+            widget.bind("<Enter>", _bind)
+            widget.bind("<Leave>", _unbind)
 
         def _choose_output(self) -> None:
             selected = filedialog.asksaveasfilename(
