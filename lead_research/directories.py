@@ -85,6 +85,8 @@ DIRECTORY_HOST_SUFFIXES = (
     "fonts.googleapis.com",
     "gstatic.com",
     "schema.org",
+    "w3.org",
+    "ogp.me",
     "yelpcdn.com",
     "yelp.com",
     "manta.com",
@@ -99,6 +101,21 @@ DIRECTORY_HOST_SUFFIXES = (
     "btloader.com",
     "crsspxl.com",
     "chivalrouscord.com",
+    "pitchbook.com",
+    "pitchbook.",
+    "indeed.com",
+    "indeed.de",
+    "hiringlab.org",
+    "hrtechprivacy.com",
+    "deloi.tt",
+    "adjust.com",
+    "ogp.me",
+    "datadoghq.",
+    "go-mpulse.net",
+    "optimizely.com",
+    "gehalt.de",
+    "onelink.me",
+    "indeed.onelink.me",
 )
 
 BLOCKED_WEBSITE_SUFFIXES = (
@@ -983,6 +1000,162 @@ def parse_manta_detail_website(page_html: str) -> str:
     return candidates[0] if candidates else ""
 
 
+def parse_pitchbook_listing_html(page_html: str) -> list[tuple[str, str]]:
+    listings: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for path in re.findall(r'href="(/profiles/company/\d+-\d+)"', page_html):
+        detail_url = f"https://pitchbook.com{html.unescape(path)}"
+        if detail_url in seen:
+            continue
+        seen.add(detail_url)
+        listings.append((name_from_url_slug(path.split("/")[-1]), detail_url))
+    return listings
+
+
+def parse_pitchbook_detail_name(page_html: str) -> str:
+    match = re.search(r"<title>([^<|]+?)(?:\s+\d{4}\s+Company|\||$)", page_html, re.IGNORECASE)
+    if match:
+        return html.unescape(match.group(1).strip())
+    return ""
+
+
+def parse_pitchbook_detail_website(page_html: str) -> str:
+    match = re.search(r'Website[\s\S]{0,300}?href="(https?://[^"]+)"', page_html, re.IGNORECASE)
+    if match:
+        candidate = normalize_result_url(html.unescape(match.group(1)))
+        if is_external_business_url(candidate):
+            return candidate
+    return ""
+
+
+def parse_indeed_listing_html(page_html: str) -> list[tuple[str, str]]:
+    listings: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for path in re.findall(r'href="(/cmp/[^"?]+)', page_html):
+        normalized_path = re.sub(r"/faq$", "", html.unescape(path.strip()))
+        parts = normalized_path.strip("/").split("/")
+        if len(parts) < 2 or parts[0] != "cmp":
+            continue
+        company_path = f"/cmp/{parts[1]}"
+        detail_url = f"https://de.indeed.com{company_path}"
+        if detail_url in seen:
+            continue
+        seen.add(detail_url)
+        listings.append((name_from_url_slug(parts[1]), detail_url))
+    return listings
+
+
+def parse_indeed_detail_name(page_html: str) -> str:
+    match = re.search(r"<title>(?:Beruf und Karriere bei\s+)?([^|<]+?)(?:\s*\||\s+–|\s+-)", page_html, re.IGNORECASE)
+    if match:
+        return html.unescape(match.group(1).strip())
+    return ""
+
+
+def pick_best_embedded_business_url(page_html: str) -> str:
+    candidates: list[str] = []
+    seen: set[str] = set()
+    for raw in re.findall(r"https?://[^\s\"\\<>]+", page_html):
+        candidate = normalize_result_url(html.unescape(raw.rstrip("\\\",.;")))
+        if not candidate or not is_external_business_url(candidate):
+            continue
+        host = normalized_host(candidate).lower()
+        if len(host) < 4 or host in {"sb", "b"}:
+            continue
+        key = candidate.lower().rstrip("/")
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(candidate)
+    for candidate in candidates:
+        host = normalized_host(candidate).lower()
+        if any(token in host for token in ("onelink.", "adjust.com", "app.link")):
+            continue
+        return candidate
+    return candidates[0] if candidates else ""
+
+
+def parse_indeed_detail_website(page_html: str) -> str:
+    for pattern in (
+        r'"website"\s*:\s*"(https?://[^"]+)"',
+        r'"companyWebsite"\s*:\s*"(https?://[^"]+)"',
+        r'href="(https?://[^"]+)"[^>]*>[^<]*(?:Website|Webseite|Homepage)',
+    ):
+        match = re.search(pattern, page_html, re.IGNORECASE)
+        if match:
+            candidate = normalize_result_url(html.unescape(match.group(1)))
+            if is_external_business_url(candidate):
+                return candidate
+    return pick_best_embedded_business_url(page_html)
+
+
+def enrich_detail_name_and_website(
+    listings: list[tuple[str, str]],
+    *,
+    max_detail_fetches: int,
+    parse_detail_name: Callable[[str], str],
+    parse_detail_website: Callable[[str], str],
+    source_name: str,
+) -> list[DirectoryEntry]:
+    entries: list[DirectoryEntry] = []
+    for fallback_name, detail_url in listings[:max_detail_fetches]:
+        try:
+            detail_html = fetch_directory_html(detail_url)
+        except DirectoryFetchError:
+            continue
+        website = parse_detail_website(detail_html)
+        if not website:
+            continue
+        name = parse_detail_name(detail_html) or fallback_name
+        entries.append(
+            DirectoryEntry(
+                name=name,
+                website=website,
+                source_url=detail_url,
+                snippet=source_name,
+            )
+        )
+        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+    return entries
+
+
+def build_pitchbook_url(category: str, location: str) -> str:
+    query = f"{category} {location}".strip()
+    params = urllib.parse.urlencode({"q": query, "location": location.strip()})
+    return f"https://pitchbook.com/profiles/search?{params}"
+
+
+def build_indeed_url(category: str, location: str) -> str:
+    params = urllib.parse.urlencode({"q": category, "l": location})
+    return f"https://de.indeed.com/jobs?{params}"
+
+
+def scrape_pitchbook(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    source_url = build_pitchbook_url(category, location)
+    page_html = fetch_directory_html(source_url)
+    listings = parse_pitchbook_listing_html(page_html)
+    return enrich_detail_name_and_website(
+        listings,
+        max_detail_fetches=limit,
+        parse_detail_name=parse_pitchbook_detail_name,
+        parse_detail_website=parse_pitchbook_detail_website,
+        source_name="PitchBook",
+    )[:limit]
+
+
+def scrape_indeed(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    source_url = build_indeed_url(category, location)
+    page_html = fetch_directory_html(source_url)
+    listings = parse_indeed_listing_html(page_html)
+    return enrich_detail_name_and_website(
+        listings,
+        max_detail_fetches=limit,
+        parse_detail_name=parse_indeed_detail_name,
+        parse_detail_website=parse_indeed_detail_website,
+        source_name="Indeed",
+    )[:limit]
+
+
 def enrich_directory_listing_details(
     entries: list[DirectoryEntry],
     *,
@@ -1204,6 +1377,8 @@ def _directory_scraper_map() -> dict[str, callable]:
         "europages": scrape_europages,
         "yelp": scrape_yelp,
         "manta": scrape_manta,
+        "pitchbook": scrape_pitchbook,
+        "indeed": scrape_indeed,
     }
 
 

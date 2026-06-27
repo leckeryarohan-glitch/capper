@@ -62,6 +62,10 @@ def _source_id(category: str, id_suffix: str) -> str:
     return f"{category.casefold().replace(' ', '_').replace('/', '_')}_{id_suffix}"
 
 
+def _label_slug(label: str) -> str:
+    return label.lower().replace(" ", "_").replace("&", "and").replace(".", "").replace("-", "_")
+
+
 def _planned(category: str, id_suffix: str, label: str) -> DirectorySourceSpec:
     return DirectorySourceSpec(
         id=_source_id(category, id_suffix),
@@ -127,8 +131,51 @@ def build_directory_source_registry(
         _unavailable(cat, "firmenwissen", "Firmenwissen"),
     ]
 
+    active_category_sources: tuple[tuple[str, str, str, str], ...] = (
+        ("Unternehmensdatenbanken", "pitchbook", "PitchBook", "pitchbook"),
+        ("Jobboersen", "indeed", "Indeed", "indeed"),
+    )
+    active_slugs_by_category: dict[str, set[str]] = {}
+    for category, source_id, label, scraper_key in active_category_sources:
+        if scraper_key not in scrapers:
+            continue
+        specs.append(active(category, source_id, label, scraper_key))
+        active_slugs_by_category.setdefault(category, set()).add(_label_slug(label))
+
     unavailable_by_category: dict[str, set[str]] = {
-        "Unternehmensdatenbanken": {"north_data", "opencorporates"},
+        "Unternehmensdatenbanken": {
+            "north_data",
+            "opencorporates",
+            "dun_and_bradstreet",
+            "crunchbase",
+            "cb_insights",
+            "owler",
+            "apollo",
+            "zoominfo",
+            "rocketreach",
+            "seamlessai",
+            "dealroom",
+            "tracxn",
+        },
+        "Logistik": {"hapag_lloyd", "maersk", "msc", "cma_cgm"},
+        "Handelsregister": {
+            "handelsregisterde",
+            "bundesanzeiger",
+            "companies_house",
+            "sec_edgar",
+            "opencorporates",
+        },
+        "Jobboersen": {
+            "stepstone",
+            "linkedin_jobs",
+            "xing_jobs",
+            "monster",
+            "joblift",
+            "glassdoor",
+            "greenhouse",
+            "lever",
+            "workable",
+        },
     }
 
     planned_groups: dict[str, list[str]] = {
@@ -274,8 +321,11 @@ def build_directory_source_registry(
 
     for category, labels in planned_groups.items():
         blocked = unavailable_by_category.get(category, set())
+        active_slugs = active_slugs_by_category.get(category, set())
         for label in labels:
-            slug = label.lower().replace(" ", "_").replace("&", "and").replace(".", "").replace("-", "_")
+            slug = _label_slug(label)
+            if slug in active_slugs:
+                continue
             if slug in blocked:
                 specs.append(_unavailable(category, slug, label))
             else:
