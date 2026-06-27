@@ -9,8 +9,11 @@ from lead_research.directories import (
     build_dasoertliche_url,
     build_gelbeseiten_url,
     build_zenrows_directory_fetch_url,
+    cap_directory_detail_fetches,
+    cap_directory_source_limit,
     configure_directory_fetch,
     directory_entries_to_results,
+    enrich_gelbeseiten_entries,
     fetch_directory_html,
     is_external_business_url,
     parse_11880_html,
@@ -273,6 +276,28 @@ class DirectoryProviderTests(unittest.TestCase):
             provider = combined_provider(use_osm=False, use_duckduckgo=False, use_directories=True)
 
         self.assertEqual(provider.providers, [])
+
+
+class DirectoryLimitCapTests(unittest.TestCase):
+    def test_caps_per_source_limit(self) -> None:
+        self.assertEqual(cap_directory_source_limit(250_000), 120)
+        self.assertEqual(cap_directory_source_limit(10), 10)
+
+    def test_caps_detail_fetches_in_enrichment(self) -> None:
+        listings = [(f"Firma {index}", f"https://example.test/{index}") for index in range(50)]
+        fetch_calls = 0
+
+        def fake_fetch(_url: str) -> str:
+            nonlocal fetch_calls
+            fetch_calls += 1
+            return "<html></html>"
+
+        with patch("lead_research.directories.fetch_directory_html", side_effect=fake_fetch), patch(
+            "lead_research.directories.parse_gelbeseiten_detail_html", return_value=None
+        ), patch("lead_research.directories.time.sleep"):
+            enrich_gelbeseiten_entries(listings, max_detail_fetches=250_000)
+
+        self.assertEqual(fetch_calls, cap_directory_detail_fetches(250_000))
 
 
 if __name__ == "__main__":

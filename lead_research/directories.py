@@ -22,6 +22,16 @@ DIRECTORY_LOCATIONS_WITHOUT_QUERY = 5
 DIRECTORY_ZENROWS_ENDPOINT = "https://api.zenrows.com/v1/"
 DIRECTORY_ZENROWS_STEALTH_MODE = "auto"
 DIRECTORY_ZENROWS_TIMEOUT_SECONDS = 60
+DIRECTORY_MAX_RESULTS_PER_SOURCE = 120
+DIRECTORY_MAX_DETAIL_FETCHES = 30
+
+
+def cap_directory_source_limit(limit: int) -> int:
+    return max(1, min(limit, DIRECTORY_MAX_RESULTS_PER_SOURCE))
+
+
+def cap_directory_detail_fetches(limit: int) -> int:
+    return max(1, min(limit, DIRECTORY_MAX_DETAIL_FETCHES))
 
 DIRECTORY_HOST_SUFFIXES = (
     "gelbeseiten.de",
@@ -775,6 +785,7 @@ def build_manta_url(category: str, location: str) -> str:
 def enrich_11880_entries(entries: list[DirectoryEntry], *, max_detail_fetches: int) -> list[DirectoryEntry]:
     enriched: list[DirectoryEntry] = []
     detail_fetches = 0
+    max_detail_fetches = cap_directory_detail_fetches(max_detail_fetches)
     for entry in entries:
         if entry.website:
             enriched.append(entry)
@@ -802,6 +813,7 @@ def enrich_11880_entries(entries: list[DirectoryEntry], *, max_detail_fetches: i
 
 def enrich_gelbeseiten_entries(listings: list[tuple[str, str]], *, max_detail_fetches: int) -> list[DirectoryEntry]:
     entries: list[DirectoryEntry] = []
+    max_detail_fetches = cap_directory_detail_fetches(max_detail_fetches)
     for name, detail_url in listings[:max_detail_fetches]:
         try:
             detail_html = fetch_directory_html(detail_url)
@@ -822,6 +834,7 @@ def enrich_named_listing_details(
     source_name: str,
 ) -> list[DirectoryEntry]:
     entries: list[DirectoryEntry] = []
+    max_detail_fetches = cap_directory_detail_fetches(max_detail_fetches)
     for name, detail_url in listings[:max_detail_fetches]:
         try:
             detail_html = fetch_directory_html(detail_url)
@@ -1098,6 +1111,7 @@ def enrich_detail_name_and_website(
     source_name: str,
 ) -> list[DirectoryEntry]:
     entries: list[DirectoryEntry] = []
+    max_detail_fetches = cap_directory_detail_fetches(max_detail_fetches)
     for fallback_name, detail_url in listings[:max_detail_fetches]:
         try:
             detail_html = fetch_directory_html(detail_url)
@@ -1164,6 +1178,7 @@ def enrich_directory_listing_details(
 ) -> list[DirectoryEntry]:
     enriched: list[DirectoryEntry] = []
     detail_fetches = 0
+    max_detail_fetches = cap_directory_detail_fetches(max_detail_fetches)
     for entry in entries:
         if entry.website:
             enriched.append(entry)
