@@ -297,12 +297,37 @@ class SearchTests(unittest.TestCase):
                 use_osm=False,
                 use_duckduckgo=False,
                 use_directories=False,
+                use_zenrows_google=True,
                 zenrows_key="gui-key",
             )
 
         labels = [source_label(sub) for sub in provider.providers]
-        self.assertEqual(labels, ["Branchenverzeichnisse", "ZenRows"])
-        self.assertEqual(provider.providers[1].api_key, "gui-key")
+        self.assertEqual(labels, ["ZenRows"])
+        self.assertEqual(provider.providers[0].api_key, "gui-key")
+
+    def test_combined_provider_can_enable_directories_without_google(self) -> None:
+        provider = combined_provider(
+            use_osm=False,
+            use_duckduckgo=False,
+            use_directories=True,
+            use_zenrows_google=False,
+            zenrows_key="test-key",
+        )
+
+        labels = [source_label(sub) for sub in provider.providers]
+        self.assertEqual(labels, ["Branchenverzeichnisse"])
+
+    def test_combined_provider_can_enable_google_without_directories(self) -> None:
+        provider = combined_provider(
+            use_osm=False,
+            use_duckduckgo=False,
+            use_directories=False,
+            use_zenrows_google=True,
+            zenrows_key="test-key",
+        )
+
+        labels = [source_label(sub) for sub in provider.providers]
+        self.assertEqual(labels, ["ZenRows"])
 
     def test_build_zenrows_api_request_url_encodes_google_target(self) -> None:
         request_url = build_zenrows_api_request_url("zr-key", "hotel berlin", 0, "de", ".de")
@@ -442,6 +467,7 @@ class SearchTests(unittest.TestCase):
                 use_osm=False,
                 use_duckduckgo=False,
                 use_directories=True,
+                use_zenrows_google=False,
                 zenrows_key="test-key",
             )
             none_selected = combined_provider(use_osm=False, use_duckduckgo=False, use_directories=False)

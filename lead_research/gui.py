@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Mapping
 
 from .concurrency import recommended_workers
+from .directories import build_directory_source_registry
+from .directory_registry import directory_sources_by_category
 from .locations import DEFAULT_COUNTRIES
 from .pipeline import DEFAULT_WORKERS, DiscoveryConfig, LeadStats, run_discovery
 from .search import SearchProviderError, combined_provider
@@ -86,6 +88,18 @@ def selected_countries(values: Mapping[str, str | bool]) -> tuple[str, ...]:
     return tuple(codes) if codes else DEFAULT_COUNTRIES
 
 
+def selected_directory_source_ids(values: Mapping[str, str | bool]) -> set[str]:
+    registry = build_directory_source_registry()
+    enabled: set[str] = set()
+    for spec in registry:
+        if not spec.implemented:
+            continue
+        key = f"dir_source_{spec.id}"
+        if bool(values.get(key, spec.default_enabled)):
+            enabled.add(spec.id)
+    return enabled
+
+
 def run_gui_discovery(
     values: Mapping[str, str | bool],
     events: "queue.Queue[tuple]",
@@ -105,20 +119,38 @@ def run_gui_discovery(
 
     use_osm = bool(values.get("use_osm", True))
     use_duckduckgo = bool(values.get("use_duckduckgo", True))
+    use_directories = bool(values.get("use_directories", True))
+    use_zenrows_google = bool(values.get("use_zenrows_google", True))
+    use_serpapi = bool(values.get("use_serpapi", True))
+
+    if use_directories and not zenrows_key and os.getenv("DIRECTORY_ALLOW_DIRECT_FETCH") != "1":
+        raise SearchProviderError(
+            "Branchenverzeichnisse benoetigen einen ZenRows-Key (Universal API)."
+        )
+    if use_directories:
+        enabled_directory_sources = selected_directory_source_ids(values)
+        if not enabled_directory_sources:
+            raise SearchProviderError("Aktiviere mindestens ein Branchenverzeichnis unter 'Branchenquellen'.")
+    else:
+        enabled_directory_sources = set()
+    if use_zenrows_google and not zenrows_key:
+        raise SearchProviderError("Google-Suche via ZenRows benoetigt einen ZenRows-Key.")
+    if use_serpapi and not serpapi_key:
+        raise SearchProviderError("Google-Suche via SerpAPI benoetigt einen SerpAPI-Key.")
+
     provider = combined_provider(
         use_osm=use_osm,
         use_duckduckgo=use_duckduckgo,
+        use_directories=use_directories,
+        use_zenrows_google=use_zenrows_google,
+        use_serpapi=use_serpapi,
         serpapi_key=serpapi_key,
         zenrows_key=zenrows_key,
+        enabled_directory_sources=enabled_directory_sources if use_directories else None,
     )
     if not getattr(provider, "providers", None):
         raise SearchProviderError(
-            "Keine Suchquelle ausgewaehlt. Aktiviere OpenStreetMap oder DuckDuckGo "
-            "oder trage einen SerpAPI-/ZenRows-Key ein."
-        )
-    if not use_osm and not use_duckduckgo and not serpapi_key and not zenrows_key:
-        raise SearchProviderError(
-            "Ohne OpenStreetMap/DuckDuckGo wird mindestens ein API-Key benoetigt."
+            "Keine Suchquelle aktiv. Aktiviere mindestens eine Quelle unter 'Suchquellen'."
         )
     config = DiscoveryConfig(
         category=category,
@@ -178,6 +210,13 @@ def run_gui() -> int:
             self.zenrows_key = tk.StringVar(value=os.environ.get("ZENROWS_API_KEY", ""))
             self.use_osm = tk.BooleanVar(value=True)
             self.use_duckduckgo = tk.BooleanVar(value=True)
+            self.use_directories = tk.BooleanVar(value=True)
+            self.use_zenrows_google = tk.BooleanVar(value=True)
+            self.use_serpapi = tk.BooleanVar(value=True)
+            self.directory_source_vars: dict[str, tk.BooleanVar] = {}
+            for spec in build_directory_source_registry():
+                if spec.implemented:
+                    self.directory_source_vars[spec.id] = tk.BooleanVar(value=spec.default_enabled)
             self.country_de = tk.BooleanVar(value=True)
             self.country_at = tk.BooleanVar(value=False)
             self.checkpoint = tk.StringVar(value=DEFAULT_CHECKPOINT)
@@ -225,9 +264,7 @@ def run_gui() -> int:
                 limits_frame,
                 text="(Crawling; mehr = schneller, Standard auto)",
                 foreground="#555",
-            ).grid(row=1, column=4, columnspan=4, sticky="w", pady=(2, 0))
-            ttk.Checkbutton(limits_frame, text="OpenStreetMap", variable=self.use_osm).grid(row=0, column=6, padx=(0, 8))
-            ttk.Checkbutton(limits_frame, text="DuckDuckGo", variable=self.use_duckduckgo).grid(row=0, column=7)
+            ).grid(row=1, column=0, columnspan=6, sticky="w", pady=(2, 0))
 
             ttk.Label(outer, text="CSV-Ausgabe").grid(row=5, column=0, sticky="w", pady=4)
             ttk.Entry(outer, textvariable=self.output).grid(row=5, column=1, sticky="ew", pady=4)
@@ -257,26 +294,114 @@ def run_gui() -> int:
             ttk.Label(keys_frame, text="ZenRows Key").grid(row=0, column=2, sticky="w", padx=(0, 4))
             ttk.Entry(keys_frame, textvariable=self.zenrows_key, show="*").grid(row=0, column=3, sticky="ew")
 
-            source_text = (
-                "Vollautomatisch ohne API-Key: Capper kombiniert OpenStreetMap/Overpass, Nominatim "
-                "und DuckDuckGo. Ohne Ort werden alle Staedte ab 5000 Einwohner in den gewaehlten "
-                "Laendern per OSM abgedeckt. Mit SerpAPI- oder ZenRows-Key (Adaptive Stealth) "
-                "wird zusaetzlich Google genutzt. "
-                "Gefundene Websites werden parallel nach oeffentlichen B2B-Kontakten durchsucht; "
-                "doppelte E-Mails werden automatisch entfernt."
+            sources_frame = ttk.LabelFrame(outer, text="Suchquellen", padding=8)
+            sources_frame.grid(row=9, column=0, columnspan=3, sticky="ew", pady=(8, 4))
+            sources_frame.columnconfigure(1, weight=1)
+
+            free_sources = ttk.Frame(sources_frame)
+            free_sources.grid(row=0, column=0, columnspan=2, sticky="w")
+            ttk.Label(free_sources, text="Ohne API-Key:").grid(row=0, column=0, sticky="w", padx=(0, 8))
+            ttk.Checkbutton(free_sources, text="OpenStreetMap", variable=self.use_osm).grid(row=0, column=1, padx=(0, 12))
+            ttk.Checkbutton(free_sources, text="DuckDuckGo", variable=self.use_duckduckgo).grid(row=0, column=2)
+
+            api_sources = ttk.Frame(sources_frame)
+            api_sources.grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
+            ttk.Label(api_sources, text="Mit API-Key:").grid(row=0, column=0, sticky="nw", padx=(0, 8))
+            api_checks = ttk.Frame(api_sources)
+            api_checks.grid(row=0, column=1, sticky="w")
+            ttk.Checkbutton(
+                api_checks,
+                text="Branchenverzeichnisse via ZenRows aktivieren",
+                variable=self.use_directories,
+            ).grid(row=0, column=0, sticky="w")
+            ttk.Checkbutton(
+                api_checks,
+                text="Google-Suche via ZenRows",
+                variable=self.use_zenrows_google,
+            ).grid(row=1, column=0, sticky="w", pady=(4, 0))
+            ttk.Checkbutton(
+                api_checks,
+                text="Google-Suche via SerpAPI",
+                variable=self.use_serpapi,
+            ).grid(row=2, column=0, sticky="w", pady=(4, 0))
+
+            directory_frame = ttk.LabelFrame(outer, text="Branchenquellen (ZenRows Universal API)", padding=8)
+            directory_frame.grid(row=10, column=0, columnspan=3, sticky="nsew", pady=(8, 4))
+            directory_frame.columnconfigure(0, weight=1)
+            directory_frame.rowconfigure(0, weight=1)
+
+            directory_canvas = tk.Canvas(directory_frame, height=180, highlightthickness=0)
+            directory_scroll = ttk.Scrollbar(directory_frame, orient="vertical", command=directory_canvas.yview)
+            directory_inner = ttk.Frame(directory_canvas)
+            directory_inner.bind(
+                "<Configure>",
+                lambda _event: directory_canvas.configure(scrollregion=directory_canvas.bbox("all")),
             )
-            ttk.Label(outer, text=source_text, wraplength=760).grid(row=9, column=0, columnspan=3, sticky="ew", pady=(10, 8))
+            directory_canvas.create_window((0, 0), window=directory_inner, anchor="nw")
+            directory_canvas.configure(yscrollcommand=directory_scroll.set)
+            directory_canvas.grid(row=0, column=0, sticky="nsew")
+            directory_scroll.grid(row=0, column=1, sticky="ns")
+
+            row_idx = 0
+            for category, specs in directory_sources_by_category(build_directory_source_registry()).items():
+                if not specs:
+                    continue
+                implemented_specs = [spec for spec in specs if spec.implemented]
+                unavailable_specs = [spec for spec in specs if spec.unavailable]
+                planned_specs = [spec for spec in specs if not spec.implemented and not spec.unavailable]
+                if not implemented_specs and not planned_specs and not unavailable_specs:
+                    continue
+                ttk.Label(directory_inner, text=category, font=("", 10, "bold")).grid(
+                    row=row_idx, column=0, sticky="w", pady=(8 if row_idx else 0, 4)
+                )
+                row_idx += 1
+                for spec in implemented_specs:
+                    ttk.Checkbutton(
+                        directory_inner,
+                        text=spec.label,
+                        variable=self.directory_source_vars[spec.id],
+                    ).grid(row=row_idx, column=0, sticky="w", padx=(12, 0))
+                    row_idx += 1
+                if unavailable_specs:
+                    unavailable_text = ", ".join(spec.label for spec in unavailable_specs[:8])
+                    if len(unavailable_specs) > 8:
+                        unavailable_text += f" (+{len(unavailable_specs) - 8} weitere)"
+                    ttk.Label(
+                        directory_inner,
+                        text=f"Nicht verfuegbar (ZenRows/JS): {unavailable_text}",
+                        foreground="#888",
+                        wraplength=700,
+                    ).grid(row=row_idx, column=0, sticky="w", padx=(12, 0), pady=(2, 0))
+                    row_idx += 1
+                if planned_specs:
+                    planned_text = ", ".join(spec.label for spec in planned_specs[:8])
+                    if len(planned_specs) > 8:
+                        planned_text += f" (+{len(planned_specs) - 8} weitere geplant)"
+                    ttk.Label(
+                        directory_inner,
+                        text=f"Geplant: {planned_text}",
+                        foreground="#666",
+                        wraplength=700,
+                    ).grid(row=row_idx, column=0, sticky="w", padx=(12, 0), pady=(2, 0))
+                    row_idx += 1
+
+            source_text = (
+                "Aktiviere einzelne Branchenquellen. Implementierte Quellen laufen ueber ZenRows "
+                "(Adaptive Stealth). Quellen ohne brauchbare Ergebnisse sind als 'Nicht verfuegbar' "
+                "markiert; weitere Kategorien werden schrittweise ergaenzt."
+            )
+            ttk.Label(outer, text=source_text, wraplength=760).grid(row=11, column=0, columnspan=3, sticky="ew", pady=(10, 8))
 
             self.start_button = ttk.Button(outer, text="Leads suchen", command=self._start)
-            self.start_button.grid(row=10, column=0, columnspan=3, sticky="ew", pady=(4, 10))
+            self.start_button.grid(row=12, column=0, columnspan=3, sticky="ew", pady=(4, 10))
 
             self.progress = ttk.Progressbar(outer, variable=self.progress_value, maximum=1)
-            self.progress.grid(row=11, column=0, columnspan=3, sticky="ew")
-            ttk.Label(outer, textvariable=self.status_text).grid(row=12, column=0, columnspan=2, sticky="w", pady=(4, 0))
-            ttk.Label(outer, textvariable=self.lead_count_text).grid(row=12, column=2, sticky="e", pady=(4, 0))
-            ttk.Label(outer, textvariable=self.stats_text).grid(row=13, column=0, columnspan=3, sticky="w", pady=(2, 0))
+            self.progress.grid(row=13, column=0, columnspan=3, sticky="ew")
+            ttk.Label(outer, textvariable=self.status_text).grid(row=14, column=0, columnspan=2, sticky="w", pady=(4, 0))
+            ttk.Label(outer, textvariable=self.lead_count_text).grid(row=14, column=2, sticky="e", pady=(4, 0))
+            ttk.Label(outer, textvariable=self.stats_text).grid(row=15, column=0, columnspan=3, sticky="w", pady=(2, 0))
             ttk.Label(outer, textvariable=self.current_page_text, foreground="#555").grid(
-                row=14, column=0, columnspan=3, sticky="w", pady=(0, 6)
+                row=16, column=0, columnspan=3, sticky="w", pady=(0, 6)
             )
 
             columns = ("company", "email", "website", "status")
@@ -289,12 +414,12 @@ def run_gui() -> int:
             self.lead_table.column("email", width=180)
             self.lead_table.column("website", width=260)
             self.lead_table.column("status", width=110)
-            self.lead_table.grid(row=15, column=0, columnspan=3, sticky="nsew", pady=(8, 8))
+            self.lead_table.grid(row=17, column=0, columnspan=3, sticky="nsew", pady=(8, 8))
 
             self.log = scrolledtext.ScrolledText(outer, height=8, state="disabled")
-            self.log.grid(row=16, column=0, columnspan=3, sticky="nsew")
-            outer.rowconfigure(15, weight=1)
-            outer.rowconfigure(16, weight=1)
+            self.log.grid(row=18, column=0, columnspan=3, sticky="nsew")
+            outer.rowconfigure(17, weight=1)
+            outer.rowconfigure(18, weight=1)
 
         def _choose_output(self) -> None:
             selected = filedialog.asksaveasfilename(
@@ -326,6 +451,10 @@ def run_gui() -> int:
                 "zenrows_key": self.zenrows_key.get(),
                 "use_osm": self.use_osm.get(),
                 "use_duckduckgo": self.use_duckduckgo.get(),
+                "use_directories": self.use_directories.get(),
+                "use_zenrows_google": self.use_zenrows_google.get(),
+                "use_serpapi": self.use_serpapi.get(),
+                **{f"dir_source_{source_id}": var.get() for source_id, var in self.directory_source_vars.items()},
                 "country_de": self.country_de.get(),
                 "country_at": self.country_at.get(),
                 "checkpoint": self.checkpoint.get(),

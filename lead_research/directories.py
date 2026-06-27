@@ -7,6 +7,7 @@ import re
 import time
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from .extract import normalized_host
@@ -29,23 +30,75 @@ DIRECTORY_HOST_SUFFIXES = (
     "auskunft.de",
     "telefonbuch.de",
     "dastelefonbuch.de",
-    "meinestadt.de",
+    "cylex.de",
+    "cylex-international.com",
+    "hotfrog.de",
+    "hotfrog.com",
+    "centralindex.com",
     "werkenntdenbesten.de",
+    "goyellow.de",
     "wlw.de",
-    "firmenwissen.de",
-    "tripadvisor.",
+    "europages.",
+    "kompass.com",
+    "firmenabc.",
+    "brownbook.net",
+    "manta.com",
+    "yalwa.",
     "yelp.",
+    "meinestadt.de",
+    "firmenwissen.de",
+    "branchenbuch.net",
+    "tripadvisor.",
     "booking.com",
     "facebook.com",
     "instagram.com",
     "linkedin.com",
+    "pinterest.com",
     "google.",
     "youtube.com",
     "vimeo.com",
-    "cylex.",
     "golocal.de",
     "ekomi.de",
     "consentmanager.net",
+    "yext-wrap.com",
+    "holidaycheck.",
+    "expedia.",
+    "googletagservices.com",
+    "googletagmanager.com",
+    "google-analytics.com",
+    "googlesyndication.com",
+    "doubleclick.net",
+    "wkdb.h5v.eu",
+    "h5v.eu",
+    "postleitzahlen.de",
+    "wirfindendeinenjob.de",
+    "cleverb2b.de",
+    "cdn.11880.com",
+    "hrs.de",
+    "treatwell.de",
+    "apps.apple.com",
+    "play.google.com",
+    "bootstrapcdn.com",
+    "cloudfront.net",
+    "unpkg.com",
+    "cdnjs.cloudflare.com",
+    "fonts.googleapis.com",
+    "gstatic.com",
+    "schema.org",
+    "yelpcdn.com",
+    "yelp.com",
+    "manta.com",
+    "manta-r3.com",
+    "hotjar.com",
+    "visable.com",
+    "meinungsmeister.de",
+    "locanto.de",
+    "locanto.info",
+    "cookielaw.org",
+    "ksales.ai",
+    "btloader.com",
+    "crsspxl.com",
+    "chivalrouscord.com",
 )
 
 BLOCKED_WEBSITE_SUFFIXES = (
@@ -153,6 +206,14 @@ def slug_for_directory_path(value: str) -> str:
 def title_case_phrase(value: str) -> str:
     parts = re.split(r"(\s+|-)", value.strip())
     return "".join(part[:1].upper() + part[1:] if part and not part.isspace() and part != "-" else part for part in parts)
+
+
+def name_from_url_slug(value: str) -> str:
+    cleaned = value.strip().strip("/")
+    cleaned = re.sub(r"\.html?$", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"--[^/]+$", "", cleaned)
+    cleaned = cleaned.split("/")[-1]
+    return title_case_phrase(cleaned.replace("-", " "))
 
 
 def is_external_business_url(url: str) -> bool:
@@ -462,6 +523,85 @@ def parse_11880_html(page_html: str, *, source_url: str) -> list[DirectoryEntry]
     return entries
 
 
+def parse_goyellow_listing_html(page_html: str) -> list[tuple[str, str]]:
+    listings: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for seourl in re.findall(r'data-seourl="(/home/[^"]+\.html)"', page_html):
+        detail_url = f"https://www.goyellow.de{html.unescape(seourl)}"
+        if detail_url in seen:
+            continue
+        seen.add(detail_url)
+        listings.append((name_from_url_slug(seourl), detail_url))
+    return listings
+
+
+def parse_kompass_listing_html(page_html: str) -> list[tuple[str, str]]:
+    listings: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for path in re.findall(r'href="(/c/[^/]+/de\d+/)"', page_html):
+        detail_url = f"https://de.kompass.com{html.unescape(path)}"
+        if detail_url in seen:
+            continue
+        seen.add(detail_url)
+        slug = path.strip("/").split("/")[1] if path.count("/") >= 2 else path
+        listings.append((name_from_url_slug(slug), detail_url))
+    return listings
+
+
+def parse_europages_listing_html(page_html: str) -> list[tuple[str, str]]:
+    listings: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for href in re.findall(r'company-tile[\s\S]{0,800}?href="([^"]+)"', page_html, re.IGNORECASE):
+        candidate = html.unescape(href)
+        if candidate.startswith("/"):
+            detail_url = f"https://www.europages.de{candidate}"
+        elif candidate.startswith("https://www.europages.de/"):
+            detail_url = candidate
+        else:
+            continue
+        if detail_url in seen or "/de/suche" in detail_url or "/company/legal" in detail_url:
+            continue
+        seen.add(detail_url)
+        listings.append((name_from_url_slug(candidate), detail_url))
+    return listings
+
+
+def parse_yelp_listing_html(page_html: str) -> list[tuple[str, str]]:
+    listings: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for path in re.findall(r'href="(/biz/[^"?]+)', page_html):
+        detail_url = f"https://www.yelp.de{html.unescape(path)}"
+        if detail_url in seen:
+            continue
+        seen.add(detail_url)
+        listings.append((name_from_url_slug(path.replace("/biz/", "")), detail_url))
+    return listings
+
+
+def parse_manta_listing_html(page_html: str) -> list[tuple[str, str]]:
+    listings: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for match in re.finditer(r'href="(/c/[^"]+)"[^>]*>([^<]{3,120})</a>', page_html, re.IGNORECASE):
+        path = html.unescape(match.group(1))
+        if not path.startswith("/c/"):
+            continue
+        detail_url = f"https://www.manta.com{path}"
+        if detail_url in seen:
+            continue
+        seen.add(detail_url)
+        name = html.unescape(match.group(2).strip()) or name_from_url_slug(path)
+        listings.append((name, detail_url))
+    if listings:
+        return listings
+    for path in re.findall(r'href="(/c/[^"]+)"', page_html):
+        detail_url = f"https://www.manta.com{html.unescape(path)}"
+        if detail_url in seen:
+            continue
+        seen.add(detail_url)
+        listings.append((name_from_url_slug(path), detail_url))
+    return listings
+
+
 def parse_gelbeseiten_listing_html(page_html: str, *, source_url: str) -> list[tuple[str, str]]:
     listings: list[tuple[str, str]] = []
     seen: set[str] = set()
@@ -584,6 +724,37 @@ def build_telefonbuch_url(category: str, location: str) -> str:
     return f"https://www.telefonbuch.de/Suche/{slug_for_directory_path(category)}/{slug_for_directory_path(location)}"
 
 
+def build_goyellow_url(category: str, location: str, page: int) -> str:
+    base = (
+        f"https://www.goyellow.de/suche/"
+        f"{slug_for_directory_path(category)}/{slug_for_directory_path(location)}"
+    )
+    if page <= 1:
+        return base
+    return f"{base}/seite-{page}"
+
+
+def build_kompass_url(category: str, location: str) -> str:
+    params = urllib.parse.urlencode({"text": category, "location": location})
+    return f"https://de.kompass.com/searchCompanies?{params}"
+
+
+def build_europages_url(category: str, location: str) -> str:
+    category_slug = slug_for_directory_path(category).lower()
+    location_slug = slug_for_directory_path(location)
+    return f"https://www.europages.de/unternehmen/{category_slug}.html?loc={location_slug}"
+
+
+def build_yelp_url(category: str, location: str) -> str:
+    params = urllib.parse.urlencode({"find_desc": category, "find_loc": location})
+    return f"https://www.yelp.de/search?{params}"
+
+
+def build_manta_url(category: str, location: str) -> str:
+    params = urllib.parse.urlencode({"search": category, "city": location, "country": "Germany"})
+    return f"https://www.manta.com/search?{params}"
+
+
 def enrich_11880_entries(entries: list[DirectoryEntry], *, max_detail_fetches: int) -> list[DirectoryEntry]:
     enriched: list[DirectoryEntry] = []
     detail_fetches = 0
@@ -598,7 +769,7 @@ def enrich_11880_entries(entries: list[DirectoryEntry], *, max_detail_fetches: i
         except DirectoryFetchError:
             continue
         detail_fetches += 1
-        website = next((link for link in extract_external_links(detail_html)), "")
+        website = parse_11880_detail_website(detail_html)
         if website:
             enriched.append(
                 DirectoryEntry(
@@ -624,6 +795,272 @@ def enrich_gelbeseiten_entries(listings: list[tuple[str, str]], *, max_detail_fe
             entries.append(parsed)
         time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
     return entries
+
+
+def enrich_named_listing_details(
+    listings: list[tuple[str, str]],
+    *,
+    max_detail_fetches: int,
+    parse_detail_website: Callable[[str], str],
+    source_name: str,
+) -> list[DirectoryEntry]:
+    entries: list[DirectoryEntry] = []
+    for name, detail_url in listings[:max_detail_fetches]:
+        try:
+            detail_html = fetch_directory_html(detail_url)
+        except DirectoryFetchError:
+            continue
+        website = parse_detail_website(detail_html)
+        if not website:
+            continue
+        entries.append(
+            DirectoryEntry(
+                name=name,
+                website=website,
+                source_url=detail_url,
+                snippet=source_name,
+            )
+        )
+        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+    return entries
+
+
+def parse_json_ld_directory_entries(page_html: str, *, source_url: str, source_name: str) -> list[DirectoryEntry]:
+    entries: list[DirectoryEntry] = []
+    seen: set[str] = set()
+    for block in extract_json_ld_blocks(page_html):
+        for item in iter_json_ld_business_items(block):
+            if not isinstance(item, dict):
+                continue
+            name = html.unescape(str(item.get("name", "")).strip())
+            listing_url = normalize_result_url(str(item.get("url", ""))) or source_url
+            website = website_from_business_item(item)
+            phone = str(item.get("telephone", "")).strip()
+            email = str(item.get("email", "")).strip()
+            snippet_parts = [source_name]
+            if phone:
+                snippet_parts.append(phone)
+            if email:
+                snippet_parts.append(email)
+            key = (website or listing_url).lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            entries.append(
+                DirectoryEntry(
+                    name=name,
+                    website=website,
+                    source_url=listing_url,
+                    snippet=" | ".join(snippet_parts),
+                )
+            )
+    return entries
+
+
+def parse_cylex_detail_website(page_html: str) -> str:
+    match = re.search(r'"url"\s*:\s*"(https?://[^"]+)"', page_html)
+    if match:
+        candidate = html.unescape(match.group(1))
+        if is_external_business_url(candidate):
+            return normalize_result_url(candidate)
+    return next((link for link in extract_external_links(page_html)), "")
+
+
+def parse_11880_detail_website(page_html: str) -> str:
+    for pattern in (
+        r'itemprop="url"\s+content="(https?://[^"]+)"',
+        r'class="[^"]*website[^"]*"[^>]*href="(https?://[^"]+)"',
+        r'href="(https?://[^"]+)"[^>]*class="[^"]*website[^"]*"',
+        r'title="[^"]*(?:Webseite|Homepage)[^"]*"[^>]*href="(https?://[^"]+)"',
+        r'href="(https?://[^"]+)"[^>]*title="[^"]*(?:Webseite|Homepage)[^"]*"',
+    ):
+        match = re.search(pattern, page_html, re.IGNORECASE)
+        if not match:
+            continue
+        candidate = html.unescape(match.group(1))
+        if is_external_business_url(candidate):
+            return normalize_result_url(candidate)
+    return next((link for link in extract_external_links(page_html)), "")
+
+
+def parse_hotfrog_redirect_websites(page_html: str) -> list[str]:
+    websites: list[str] = []
+    seen: set[str] = set()
+    for encoded in re.findall(r"continue=(https[^&\"']+)", page_html):
+        candidate = normalize_result_url(html.unescape(urllib.parse.unquote(encoded)))
+        if not candidate or not is_external_business_url(candidate):
+            continue
+        key = candidate.lower().rstrip("/")
+        if key in seen:
+            continue
+        seen.add(key)
+        websites.append(candidate)
+    return websites
+
+
+def parse_werkenntdenbesten_detail_website(page_html: str) -> str:
+    for pattern in (
+        r'title="(?:Webseite[^"]*|Homepage)"[^>]*href="(https?://[^"]+)"',
+        r'href="(https?://[^"]+)"[^>]*title="(?:Webseite[^"]*|Homepage)"',
+        r'class="[^"]*website[^"]*"[^>]*href="(https?://[^"]+)"',
+        r'itemprop="url"\s+content="(https?://[^"]+)"',
+    ):
+        match = re.search(pattern, page_html, re.IGNORECASE)
+        if not match:
+            continue
+        candidate = html.unescape(match.group(1))
+        if is_external_business_url(candidate):
+            return normalize_result_url(candidate)
+    return next((link for link in extract_external_links(page_html)), "")
+
+
+def parse_goyellow_detail_website(page_html: str) -> str:
+    for pattern in (
+        r'itemprop="url"\s+content="(https?://[^"]+)"',
+        r'href="(https?://[^"]+)"[^>]*>[^<]*(?:Webseite|Homepage|Website)',
+        r'title="[^"]*(?:Webseite|Homepage)[^"]*"[^>]*href="(https?://[^"]+)"',
+    ):
+        match = re.search(pattern, page_html, re.IGNORECASE)
+        if not match:
+            continue
+        candidate = html.unescape(match.group(1))
+        if is_external_business_url(candidate):
+            return normalize_result_url(candidate)
+    return next((link for link in extract_external_links(page_html)), "")
+
+
+def parse_kompass_detail_website(page_html: str) -> str:
+    match = re.search(r'Website[\s\S]{0,220}?href="(https?://[^"]+)"', page_html, re.IGNORECASE)
+    if match:
+        candidate = html.unescape(match.group(1))
+        if is_external_business_url(candidate):
+            return normalize_result_url(candidate)
+    return next((link for link in extract_external_links(page_html)), "")
+
+
+def parse_europages_detail_website(page_html: str) -> str:
+    match = re.search(r'"website"\s*:\s*"(https?://[^"]+)"', page_html, re.IGNORECASE)
+    if match:
+        candidate = html.unescape(match.group(1))
+        if is_external_business_url(candidate):
+            return normalize_result_url(candidate)
+    return next((link for link in extract_external_links(page_html)), "")
+
+
+def parse_yelp_detail_website(page_html: str) -> str:
+    match = re.search(r'/biz_redir\?url=([^&"]+)', page_html, re.IGNORECASE)
+    if match:
+        candidate = normalize_result_url(html.unescape(urllib.parse.unquote(match.group(1))))
+        if is_external_business_url(candidate):
+            return candidate
+    return ""
+
+
+def parse_manta_detail_website(page_html: str) -> str:
+    candidates: list[str] = []
+    for encoded in re.findall(r'redirect=(https?[^&"\']+)', page_html, re.IGNORECASE):
+        candidate = normalize_result_url(html.unescape(urllib.parse.unquote(encoded)))
+        if is_external_business_url(candidate):
+            candidates.append(candidate)
+    for match in re.finditer(r'","(https?://[^"]+)"', page_html):
+        candidate = normalize_result_url(html.unescape(match.group(1)))
+        if is_external_business_url(candidate):
+            candidates.append(candidate)
+    for pattern in (
+        r'"website"\s*:\s*"(https?://[^"]+)"',
+        r'Visit Web Site[\s\S]{0,150}?href="(https?://[^"]+)"',
+    ):
+        match = re.search(pattern, page_html, re.IGNORECASE)
+        if match:
+            candidate = normalize_result_url(html.unescape(match.group(1)))
+            if is_external_business_url(candidate):
+                candidates.append(candidate)
+    for candidate in candidates:
+        host = normalized_host(candidate).lower()
+        if any(token in host for token in ("pinterest.", "twitter.", "facebook.", "instagram.", "linkedin.", "youtube.")):
+            continue
+        return candidate
+    return candidates[0] if candidates else ""
+
+
+def enrich_directory_listing_details(
+    entries: list[DirectoryEntry],
+    *,
+    max_detail_fetches: int,
+    parse_detail_website: Callable[[str], str],
+) -> list[DirectoryEntry]:
+    enriched: list[DirectoryEntry] = []
+    detail_fetches = 0
+    for entry in entries:
+        if entry.website:
+            enriched.append(entry)
+            continue
+        if detail_fetches >= max_detail_fetches or not entry.source_url:
+            continue
+        try:
+            detail_html = fetch_directory_html(entry.source_url)
+        except DirectoryFetchError:
+            continue
+        detail_fetches += 1
+        website = parse_detail_website(detail_html)
+        if website:
+            enriched.append(
+                DirectoryEntry(
+                    name=entry.name,
+                    website=website,
+                    source_url=entry.source_url,
+                    snippet=entry.snippet,
+                )
+            )
+        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+    return enriched
+
+
+def scrape_cylex(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    source_url = f"https://www.cylex.de/suche/{slug_for_directory_path(category)}/{slug_for_directory_path(location)}"
+    page_html = fetch_directory_html(source_url)
+    entries = parse_json_ld_directory_entries(page_html, source_url=source_url, source_name="Cylex")
+    return enrich_directory_listing_details(
+        entries,
+        max_detail_fetches=limit,
+        parse_detail_website=parse_cylex_detail_website,
+    )[:limit]
+
+
+def scrape_hotfrog(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    source_url = f"https://www.hotfrog.de/search/{slug_for_directory_path(location)}/{slug_for_directory_path(category)}"
+    page_html = fetch_directory_html(source_url)
+    entries: list[DirectoryEntry] = []
+    seen: set[str] = set()
+    for website in parse_hotfrog_redirect_websites(page_html):
+        key = website.lower().rstrip("/")
+        if key in seen:
+            continue
+        seen.add(key)
+        entries.append(
+            DirectoryEntry(
+                name=website,
+                website=website,
+                source_url=source_url,
+                snippet="Hotfrog",
+            )
+        )
+        if len(entries) >= limit:
+            break
+    return entries
+
+
+def scrape_werkenntdenbesten(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    category_slug = slug_for_directory_path(category)
+    location_slug = slug_for_directory_path(location)
+    source_url = f"https://www.werkenntdenbesten.de/{category_slug}/{location_slug}/"
+    page_html = fetch_directory_html(source_url)
+    entries = parse_json_ld_directory_entries(page_html, source_url=source_url, source_name="Wer kennt den BESTEN")
+    return enrich_directory_listing_details(
+        entries,
+        max_detail_fetches=limit,
+        parse_detail_website=parse_werkenntdenbesten_detail_website,
+    )[:limit]
 
 
 def scrape_dasoertliche(category: str, location: str, limit: int) -> list[DirectoryEntry]:
@@ -682,10 +1119,111 @@ def scrape_telefonbuch(category: str, location: str, limit: int) -> list[Directo
     return parse_telefonbuch_html(page_html, source_url=source_url)[:limit]
 
 
-DIRECTORY_SCRAPERS: tuple[tuple[str, callable], ...] = (
-    ("Das Örtliche", scrape_dasoertliche),
-    ("auskunft.de", scrape_auskunft),
-    ("Gelbe Seiten", scrape_gelbeseiten),
-    ("11880.com", scrape_11880),
-    ("Telefonbuch", scrape_telefonbuch),
-)
+def scrape_goyellow(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    listings: list[tuple[str, str]] = []
+    page = 1
+    while len(listings) < limit and page <= 3:
+        source_url = build_goyellow_url(category, location, page)
+        page_html = fetch_directory_html(source_url)
+        page_listings = parse_goyellow_listing_html(page_html)
+        if not page_listings:
+            break
+        listings.extend(page_listings)
+        if f"/seite-{page + 1}" not in page_html:
+            break
+        page += 1
+        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+    return enrich_named_listing_details(
+        listings,
+        max_detail_fetches=limit,
+        parse_detail_website=parse_goyellow_detail_website,
+        source_name="GoYellow",
+    )[:limit]
+
+
+def scrape_kompass(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    source_url = build_kompass_url(category, location)
+    page_html = fetch_directory_html(source_url)
+    listings = parse_kompass_listing_html(page_html)
+    return enrich_named_listing_details(
+        listings,
+        max_detail_fetches=limit,
+        parse_detail_website=parse_kompass_detail_website,
+        source_name="Kompass",
+    )[:limit]
+
+
+def scrape_europages(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    source_url = build_europages_url(category, location)
+    page_html = fetch_directory_html(source_url)
+    listings = parse_europages_listing_html(page_html)
+    return enrich_named_listing_details(
+        listings,
+        max_detail_fetches=limit,
+        parse_detail_website=parse_europages_detail_website,
+        source_name="Europages",
+    )[:limit]
+
+
+def scrape_yelp(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    source_url = build_yelp_url(category, location)
+    page_html = fetch_directory_html(source_url)
+    listings = parse_yelp_listing_html(page_html)
+    return enrich_named_listing_details(
+        listings,
+        max_detail_fetches=limit,
+        parse_detail_website=parse_yelp_detail_website,
+        source_name="Yelp",
+    )[:limit]
+
+
+def scrape_manta(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    source_url = build_manta_url(category, location)
+    page_html = fetch_directory_html(source_url)
+    listings = parse_manta_listing_html(page_html)
+    return enrich_named_listing_details(
+        listings,
+        max_detail_fetches=limit,
+        parse_detail_website=parse_manta_detail_website,
+        source_name="Manta",
+    )[:limit]
+
+
+def _directory_scraper_map() -> dict[str, callable]:
+    return {
+        "gelbeseiten": scrape_gelbeseiten,
+        "das_oertliche": scrape_dasoertliche,
+        "telefonbuch": scrape_telefonbuch,
+        "11880": scrape_11880,
+        "auskunft": scrape_auskunft,
+        "cylex": scrape_cylex,
+        "hotfrog": scrape_hotfrog,
+        "werkenntdenbesten": scrape_werkenntdenbesten,
+        "goyellow": scrape_goyellow,
+        "kompass": scrape_kompass,
+        "europages": scrape_europages,
+        "yelp": scrape_yelp,
+        "manta": scrape_manta,
+    }
+
+
+def build_directory_source_registry():
+    from .directory_registry import build_directory_source_registry as build_registry
+
+    return build_registry(_directory_scraper_map())
+
+
+def get_directory_scrapers(enabled_source_ids: set[str] | None = None) -> tuple[tuple[str, callable], ...]:
+    from .directory_registry import resolve_active_scrapers
+
+    return resolve_active_scrapers(build_directory_source_registry(), enabled_source_ids)
+
+
+def default_directory_source_ids() -> set[str]:
+    from .directory_registry import default_enabled_directory_source_ids
+
+    return default_enabled_directory_source_ids(build_directory_source_registry())
+
+
+# Backward compatibility for tests/imports
+DIRECTORY_SCRAPERS = get_directory_scrapers()
