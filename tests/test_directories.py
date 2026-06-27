@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from lead_research.directories import (
+    DirectoryFetchConfig,
     build_auskunft_url,
     build_dasoertliche_url,
     build_gelbeseiten_url,
+    build_zenrows_directory_fetch_url,
+    configure_directory_fetch,
     directory_entries_to_results,
+    fetch_directory_html,
     is_external_business_url,
     parse_11880_html,
     parse_auskunft_html,
@@ -14,7 +19,7 @@ from lead_research.directories import (
     parse_gelbeseiten_detail_html,
     parse_gelbeseiten_listing_html,
 )
-from lead_research.search import DirectorySearchProvider, combined_provider, provider_from_name, source_label
+from lead_research.search import DirectorySearchProvider, SearchProviderError, combined_provider, provider_from_name, source_label
 
 
 DASOERTLICHE_FIXTURE = """
@@ -113,6 +118,24 @@ class DirectoryParserTests(unittest.TestCase):
             "https://www.gelbeseiten.de/branchen/hotel/Berlin",
         )
 
+    def test_build_zenrows_directory_fetch_url(self) -> None:
+        request_url = build_zenrows_directory_fetch_url(
+            "test-key",
+            "https://www.gelbeseiten.de/branchen/hotel/Berlin",
+            proxy_country="de",
+        )
+
+        self.assertIn("api.zenrows.com/v1/", request_url)
+        self.assertIn("apikey=test-key", request_url)
+        self.assertIn("mode=auto", request_url)
+        self.assertIn("proxy_country=de", request_url)
+        self.assertIn("gelbeseiten.de", request_url)
+
+    def test_fetch_directory_html_requires_zenrows_by_default(self) -> None:
+        configure_directory_fetch(DirectoryFetchConfig())
+        with self.assertRaisesRegex(Exception, "ZenRows"):
+            fetch_directory_html("https://www.gelbeseiten.de/branchen/hotel/Berlin")
+
 
 class DirectoryProviderTests(unittest.TestCase):
     def test_provider_from_name_supports_directories(self) -> None:
@@ -121,11 +144,28 @@ class DirectoryProviderTests(unittest.TestCase):
         self.assertIsInstance(provider, DirectorySearchProvider)
         self.assertEqual(source_label(provider), "Branchenverzeichnisse")
 
-    def test_combined_provider_includes_directories(self) -> None:
-        provider = combined_provider(use_osm=False, use_duckduckgo=False, use_directories=True)
+    def test_directory_provider_requires_zenrows_key(self) -> None:
+        provider = DirectorySearchProvider(zenrows_api_key="")
+        with self.assertRaises(SearchProviderError):
+            provider.search("hotel", "Berlin", 5)
+
+    def test_combined_provider_includes_directories_with_zenrows_key(self) -> None:
+        provider = combined_provider(
+            use_osm=False,
+            use_duckduckgo=False,
+            use_directories=True,
+            zenrows_key="test-key",
+        )
 
         labels = [source_label(sub) for sub in provider.providers]
         self.assertEqual(labels, ["Branchenverzeichnisse"])
+        self.assertEqual(provider.providers[0].zenrows_api_key, "test-key")
+
+    def test_combined_provider_skips_directories_without_zenrows_key(self) -> None:
+        with patch.dict("os.environ", {}, clear=True):
+            provider = combined_provider(use_osm=False, use_duckduckgo=False, use_directories=True)
+
+        self.assertEqual(provider.providers, [])
 
 
 if __name__ == "__main__":

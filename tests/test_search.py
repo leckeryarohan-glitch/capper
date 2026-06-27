@@ -301,8 +301,8 @@ class SearchTests(unittest.TestCase):
             )
 
         labels = [source_label(sub) for sub in provider.providers]
-        self.assertEqual(labels, ["ZenRows"])
-        self.assertEqual(provider.providers[0].api_key, "gui-key")
+        self.assertEqual(labels, ["Branchenverzeichnisse", "ZenRows"])
+        self.assertEqual(provider.providers[1].api_key, "gui-key")
 
     def test_build_zenrows_api_request_url_encodes_google_target(self) -> None:
         request_url = build_zenrows_api_request_url("zr-key", "hotel berlin", 0, "de", ".de")
@@ -438,7 +438,12 @@ class SearchTests(unittest.TestCase):
         with patch.dict("os.environ", {}, clear=True):
             only_ddg = combined_provider(use_osm=False, use_duckduckgo=True, use_directories=False)
             only_osm = combined_provider(use_osm=True, use_duckduckgo=False, use_directories=False)
-            only_directories = combined_provider(use_osm=False, use_duckduckgo=False, use_directories=True)
+            only_directories = combined_provider(
+                use_osm=False,
+                use_duckduckgo=False,
+                use_directories=True,
+                zenrows_key="test-key",
+            )
             none_selected = combined_provider(use_osm=False, use_duckduckgo=False, use_directories=False)
 
         self.assertEqual([source_label(p) for p in only_ddg.providers], ["DuckDuckGo"])

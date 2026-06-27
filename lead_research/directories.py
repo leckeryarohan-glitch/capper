@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import re
 import time
 import urllib.parse
@@ -15,7 +16,11 @@ from .models import SearchResult
 
 DIRECTORY_USER_AGENT = "Mozilla/5.0 (compatible; capper-lead-research/0.1; +compliance-review)"
 DIRECTORY_REQUEST_DELAY_SECONDS = 0.35
+DIRECTORY_ZENROWS_DELAY_SECONDS = 0.5
 DIRECTORY_LOCATIONS_WITHOUT_QUERY = 5
+DIRECTORY_ZENROWS_ENDPOINT = "https://api.zenrows.com/v1/"
+DIRECTORY_ZENROWS_STEALTH_MODE = "auto"
+DIRECTORY_ZENROWS_TIMEOUT_SECONDS = 60
 
 DIRECTORY_HOST_SUFFIXES = (
     "gelbeseiten.de",
@@ -57,6 +62,49 @@ BLOCKED_WEBSITE_SUFFIXES = (
 
 class DirectoryFetchError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class DirectoryFetchConfig:
+    zenrows_api_key: str = ""
+    proxy_country: str = "de"
+    allow_direct_fallback: bool = False
+
+
+_fetch_config = DirectoryFetchConfig()
+
+
+def configure_directory_fetch(config: DirectoryFetchConfig) -> None:
+    global _fetch_config
+    _fetch_config = config
+
+
+def resolve_directory_zenrows_key(explicit_key: str | None = None) -> str:
+    if explicit_key is not None:
+        return explicit_key.strip()
+    return os.getenv("ZENROWS_API_KEY", "").strip()
+
+
+def directory_fetch_requires_zenrows(config: DirectoryFetchConfig | None = None) -> bool:
+    active = config or _fetch_config
+    return not active.allow_direct_fallback
+
+
+def build_zenrows_directory_fetch_url(
+    api_key: str,
+    target_url: str,
+    *,
+    proxy_country: str = "de",
+) -> str:
+    params = urllib.parse.urlencode(
+        {
+            "apikey": api_key,
+            "mode": DIRECTORY_ZENROWS_STEALTH_MODE,
+            "proxy_country": proxy_country,
+        }
+    )
+    encoded_target = urllib.parse.quote(target_url, safe="")
+    return f"{DIRECTORY_ZENROWS_ENDPOINT}?{params}&url={encoded_target}"
 
 
 def is_valid_lead_url(url: str) -> bool:
@@ -194,7 +242,7 @@ def directory_entries_to_results(
     return results
 
 
-def fetch_directory_html(url: str, *, timeout: int = 20) -> str:
+def fetch_directory_html_direct(url: str, *, timeout: int = 20) -> str:
     request = urllib.request.Request(
         url,
         headers={
@@ -209,6 +257,53 @@ def fetch_directory_html(url: str, *, timeout: int = 20) -> str:
             return read_response_text(response)
     except OSError as exc:
         raise DirectoryFetchError(f"Directory request failed for {url}: {format_request_error(exc)}") from exc
+
+
+def fetch_directory_html_via_zenrows(
+    url: str,
+    *,
+    api_key: str,
+    proxy_country: str = "de",
+    timeout: int = DIRECTORY_ZENROWS_TIMEOUT_SECONDS,
+) -> str:
+    request = urllib.request.Request(
+        build_zenrows_directory_fetch_url(api_key, url, proxy_country=proxy_country),
+        headers={
+            "Accept": "text/html,application/xhtml+xml",
+            "User-Agent": DIRECTORY_USER_AGENT,
+        },
+        method="GET",
+    )
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            return read_response_text(response)
+    except OSError as exc:
+        message = format_request_error(exc)
+        if "HTTP Error 401" in message or "HTTP Error 403" in message:
+            raise DirectoryFetchError(
+                "ZenRows API-Key ungueltig oder ohne Berechtigung fuer Branchenverzeichnisse. "
+                "Bitte den Key im ZenRows-Dashboard pruefen."
+            ) from exc
+        raise DirectoryFetchError(f"ZenRows directory request failed for {url}: {message}") from exc
+
+
+def fetch_directory_html(url: str, *, timeout: int = DIRECTORY_ZENROWS_TIMEOUT_SECONDS) -> str:
+    config = _fetch_config
+    if config.zenrows_api_key:
+        page_html = fetch_directory_html_via_zenrows(
+            url,
+            api_key=config.zenrows_api_key,
+            proxy_country=config.proxy_country,
+            timeout=timeout,
+        )
+        time.sleep(DIRECTORY_ZENROWS_DELAY_SECONDS)
+        return page_html
+    if config.allow_direct_fallback:
+        return fetch_directory_html_direct(url, timeout=min(timeout, 20))
+    raise DirectoryFetchError(
+        "Branchenverzeichnisse werden ueber die ZenRows API abgefragt. "
+        "Setze ZENROWS_API_KEY oder nutze --provider zenrows mit --source-profile common."
+    )
 
 
 def extract_external_links(page_html: str) -> list[str]:

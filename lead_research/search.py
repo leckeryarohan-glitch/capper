@@ -1363,7 +1363,18 @@ class CommonSourcesSearchProvider(SearchProvider):
 
 
 class DirectorySearchProvider(SearchProvider):
-    """Discovers business websites by reading public German directory listings."""
+    """Discovers business websites by reading public German directory listings via ZenRows."""
+
+    def __init__(
+        self,
+        zenrows_api_key: str | None = None,
+        *,
+        allow_direct_fetch: bool = False,
+        proxy_country: str = "de",
+    ):
+        self.zenrows_api_key = _resolve_api_key(zenrows_api_key, "ZENROWS_API_KEY")
+        self.allow_direct_fetch = allow_direct_fetch
+        self.proxy_country = proxy_country
 
     def search(
         self,
@@ -1374,7 +1385,9 @@ class DirectorySearchProvider(SearchProvider):
     ) -> list[SearchResult]:
         from .directories import (
             DIRECTORY_SCRAPERS,
+            DirectoryFetchConfig,
             DirectoryFetchError,
+            configure_directory_fetch,
             directory_entries_to_results,
             directory_location_plans,
         )
@@ -1384,27 +1397,44 @@ class DirectorySearchProvider(SearchProvider):
         if limit < 1:
             return []
 
+        if not self.zenrows_api_key and not self.allow_direct_fetch:
+            raise SearchProviderError(
+                "Branchenverzeichnisse (Gelbe Seiten, Das Oertliche, auskunft.de, 11880, Telefonbuch) "
+                "werden ueber die ZenRows Universal API abgefragt. Bitte ZENROWS_API_KEY setzen."
+            )
+
+        configure_directory_fetch(
+            DirectoryFetchConfig(
+                zenrows_api_key=self.zenrows_api_key,
+                proxy_country=self.proxy_country,
+                allow_direct_fallback=self.allow_direct_fetch,
+            )
+        )
+
         locations = directory_location_plans(location, countries)
         per_location_limit = max(1, ceil(limit / len(locations)))
         per_source_limit = max(1, ceil(per_location_limit / len(DIRECTORY_SCRAPERS)))
         results: list[SearchResult] = []
         seen: set[str] = set()
+        fetch_mode = "ZenRows" if self.zenrows_api_key else "Direct"
+        max_workers = 2 if self.zenrows_api_key else len(DIRECTORY_SCRAPERS)
 
         for plan_location in locations:
             if len(results) >= limit:
                 break
-            self._report(f"Branchenverzeichnisse: {category} in {plan_location} ...")
+            self._report(f"Branchenverzeichnisse ({fetch_mode}): {category} in {plan_location} ...")
 
             def run_scraper(scraper_item: tuple[str, object]) -> tuple[str, list]:
                 label, scraper = scraper_item
                 try:
                     return label, scraper(category, plan_location, per_source_limit)
-                except DirectoryFetchError:
+                except DirectoryFetchError as exc:
+                    self._report(f"{label}: {exc}")
                     return label, []
                 except Exception:  # noqa: BLE001 - one directory must not abort the others
                     return label, []
 
-            with ThreadPoolExecutor(max_workers=len(DIRECTORY_SCRAPERS)) as executor:
+            with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="capper-directories") as executor:
                 futures = [executor.submit(run_scraper, item) for item in DIRECTORY_SCRAPERS]
                 for future in as_completed(futures):
                     label, entries = future.result()
@@ -1516,7 +1546,14 @@ def combined_provider(
     if use_duckduckgo:
         providers.append(DuckDuckGoSearchProvider())
     if use_directories:
-        providers.append(DirectorySearchProvider())
+        resolved_zenrows_for_directories = _resolve_api_key(zenrows_key, "ZENROWS_API_KEY")
+        if resolved_zenrows_for_directories or os.getenv("DIRECTORY_ALLOW_DIRECT_FETCH") == "1":
+            providers.append(
+                DirectorySearchProvider(
+                    zenrows_api_key=resolved_zenrows_for_directories or None,
+                    allow_direct_fetch=os.getenv("DIRECTORY_ALLOW_DIRECT_FETCH") == "1",
+                )
+            )
     if os.getenv("GOOGLE_SEARCH_API_KEY") and os.getenv("GOOGLE_SEARCH_ENGINE_ID"):
         providers.append(GoogleCustomSearchProvider())
     if os.getenv("BRAVE_SEARCH_API_KEY"):
