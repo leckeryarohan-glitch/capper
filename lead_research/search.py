@@ -1392,6 +1392,7 @@ class DirectorySearchProvider(SearchProvider):
         from .directories import (
             DirectoryFetchConfig,
             DirectoryFetchError,
+            cap_directory_source_limit,
             configure_directory_fetch,
             directory_entries_to_results,
             directory_location_plans,
@@ -1423,28 +1424,37 @@ class DirectorySearchProvider(SearchProvider):
 
         locations = directory_location_plans(location, countries)
         per_location_limit = max(1, ceil(limit / len(locations)))
-        per_source_limit = max(1, ceil(per_location_limit / len(active_scrapers)))
+        per_source_limit = cap_directory_source_limit(
+            max(1, ceil(per_location_limit / len(active_scrapers)))
+        )
         results: list[SearchResult] = []
         seen: set[str] = set()
         fetch_mode = "ZenRows" if self.zenrows_api_key else "Direct"
         max_workers = 2 if self.zenrows_api_key else len(active_scrapers)
 
-        for plan_location in locations:
+        for plan_index, plan_location in enumerate(locations, start=1):
             if len(results) >= limit:
                 break
+            location_hint = (
+                f" ({plan_index}/{len(locations)})"
+                if len(locations) > 1
+                else ""
+            )
             self._report(
                 f"Branchenverzeichnisse ({fetch_mode}, {len(active_scrapers)} Quellen): "
-                f"{category} in {plan_location} ..."
+                f"{category} in {plan_location}{location_hint} ..."
             )
 
             def run_scraper(scraper_item: tuple[str, object]) -> tuple[str, list]:
                 label, scraper = scraper_item
+                self._report(f"{label}: starte Abfrage ...")
                 try:
                     return label, scraper(category, plan_location, per_source_limit)
                 except DirectoryFetchError as exc:
                     self._report(f"{label}: {exc}")
                     return label, []
                 except Exception:  # noqa: BLE001 - one directory must not abort the others
+                    self._report(f"{label}: unerwarteter Fehler, uebersprungen")
                     return label, []
 
             with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="capper-directories") as executor:

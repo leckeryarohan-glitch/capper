@@ -39,6 +39,31 @@ class SearchResult:
     title: str
     url: str
     snippet: str = ""
+    directory_email: str = ""
+    directory_phone: str = ""
+    directory_source_url: str = ""
+
+
+def search_result_crawl_key(result: SearchResult) -> str:
+    url = result.url.strip()
+    if url:
+        return url.lower().rstrip("/")
+    email = result.directory_email.strip().lower()
+    if email:
+        return f"directory-email:{email}"
+    source = result.directory_source_url.strip().lower().rstrip("/")
+    if source:
+        return f"directory-source:{source}"
+    title = result.title.strip().lower()
+    return f"directory-title:{title}" if title else "directory-empty"
+
+
+def search_result_display_label(result: SearchResult) -> str:
+    if result.url.strip():
+        return result.url
+    if result.directory_email.strip():
+        return result.directory_email
+    return result.title or result.directory_source_url or "Branchenverzeichnis"
 
 
 @dataclass

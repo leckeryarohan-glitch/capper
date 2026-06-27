@@ -9,8 +9,12 @@ from lead_research.directories import (
     build_dasoertliche_url,
     build_gelbeseiten_url,
     build_zenrows_directory_fetch_url,
+    cap_directory_detail_fetches,
+    cap_directory_source_limit,
     configure_directory_fetch,
     directory_entries_to_results,
+    directory_location_plans,
+    enrich_gelbeseiten_entries,
     fetch_directory_html,
     is_external_business_url,
     parse_11880_html,
@@ -40,6 +44,17 @@ GELBESEITEN_LIST_FIXTURE = """
 GELBESEITEN_DETAIL_FIXTURE = """
 <title>Demo GmbH in 10115 Berlin</title>
 <div class="mod-Kontaktdaten__list-item contains-icon-big-homepage"><a href="https://www.demo-gmbh.example"><span>Webseite</span></a></div>
+"""
+
+GELBESEITEN_EMAIL_ONLY_FIXTURE = """
+<title>Spedition Demo in 10115 Berlin</title>
+<a href="mailto:info@spedition-demo.example">E-Mail senden</a>
+"""
+
+DASOERTLICHE_EMAIL_ONLY_FIXTURE = """
+<script>
+var handlerData =[["1","","","","Berlin","","2","1126","10115","Musterstr.","1","030 123456","0","2239","Spedition Demo","https://www.dasoertliche.de/Themen/Spedition-Demo-Berlin","1","info@spedition-demo.example"]];
+</script>
 """
 
 E11880_FIXTURE = """
@@ -80,6 +95,30 @@ class DirectoryParserTests(unittest.TestCase):
         assert detail is not None
         self.assertEqual(detail.website, "https://www.demo-gmbh.example")
 
+    def test_parse_gelbeseiten_detail_accepts_email_without_website(self) -> None:
+        detail = parse_gelbeseiten_detail_html(
+            GELBESEITEN_EMAIL_ONLY_FIXTURE,
+            name="Spedition Demo",
+            source_url="https://www.gelbeseiten.de/gsbiz/demo",
+        )
+
+        self.assertIsNotNone(detail)
+        assert detail is not None
+        self.assertEqual(detail.email, "info@spedition-demo.example")
+        self.assertEqual(detail.website, "")
+
+    def test_parse_dasoertliche_accepts_email_without_website(self) -> None:
+        entries = parse_dasoertliche_html(DASOERTLICHE_EMAIL_ONLY_FIXTURE, source_url="https://example.test")
+
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0].email, "info@spedition-demo.example")
+        self.assertEqual(entries[0].website, "")
+
+    def test_parse_11880_html_stores_email(self) -> None:
+        entries = parse_11880_html(E11880_FIXTURE, source_url="https://example.test")
+
+        self.assertEqual(entries[0].email, "demo@example.de")
+
     def test_parse_11880_html_reads_json_ld(self) -> None:
         entries = parse_11880_html(E11880_FIXTURE, source_url="https://example.test")
 
@@ -99,6 +138,24 @@ class DirectoryParserTests(unittest.TestCase):
 
         self.assertEqual(len(results), 2)
         self.assertEqual(sorted(result.url for result in results), ["https://a.example/", "https://b.example/"])
+
+    def test_directory_entries_to_results_includes_email_only(self) -> None:
+        from lead_research.directories import DirectoryEntry
+
+        entries = [
+            DirectoryEntry(
+                name="Spedition Demo",
+                website="",
+                source_url="https://www.gelbeseiten.de/gsbiz/demo",
+                email="info@spedition-demo.example",
+            )
+        ]
+        results = directory_entries_to_results(entries, limit=5, seen=set())
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].directory_email, "info@spedition-demo.example")
+        self.assertEqual(results[0].url, "")
+        self.assertEqual(results[0].directory_source_url, "https://www.gelbeseiten.de/gsbiz/demo")
 
     def test_directory_url_builders(self) -> None:
         self.assertEqual(
@@ -273,6 +330,34 @@ class DirectoryProviderTests(unittest.TestCase):
             provider = combined_provider(use_osm=False, use_duckduckgo=False, use_directories=True)
 
         self.assertEqual(provider.providers, [])
+
+
+class DirectoryLimitCapTests(unittest.TestCase):
+    def test_caps_per_source_limit(self) -> None:
+        self.assertEqual(cap_directory_source_limit(250_000), 120)
+        self.assertEqual(cap_directory_source_limit(10), 10)
+
+    def test_directory_location_plans_without_location_uses_all_cities(self) -> None:
+        plans = directory_location_plans("", ("DE",))
+
+        self.assertGreater(len(plans), 500)
+        self.assertIn("Berlin", plans)
+
+    def test_caps_detail_fetches_in_enrichment(self) -> None:
+        listings = [(f"Firma {index}", f"https://example.test/{index}") for index in range(50)]
+        fetch_calls = 0
+
+        def fake_fetch(_url: str) -> str:
+            nonlocal fetch_calls
+            fetch_calls += 1
+            return "<html></html>"
+
+        with patch("lead_research.directories.fetch_directory_html", side_effect=fake_fetch), patch(
+            "lead_research.directories.parse_gelbeseiten_detail_html", return_value=None
+        ), patch("lead_research.directories.time.sleep"):
+            enrich_gelbeseiten_entries(listings, max_detail_fetches=250_000)
+
+        self.assertEqual(fetch_calls, cap_directory_detail_fetches(250_000))
 
 
 if __name__ == "__main__":

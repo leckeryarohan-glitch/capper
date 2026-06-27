@@ -41,7 +41,13 @@ class CheckpointTests(unittest.TestCase):
                 dedupe_by="email",
             )
             checkpoint.search_results = [
-                {"title": "A", "url": "https://a.example/", "snippet": ""},
+                {
+                    "title": "Spedition Demo",
+                    "url": "",
+                    "snippet": "Gelbe Seiten",
+                    "directory_email": "info@spedition-demo.example",
+                    "directory_source_url": "https://www.gelbeseiten.de/gsbiz/demo",
+                },
             ]
             checkpoint.zenrows_completed_plans = ["DE\tlogistik Berlin"]
             checkpoint.crawled_urls = ["https://a.example/"]
@@ -65,6 +71,9 @@ class CheckpointTests(unittest.TestCase):
         self.assertIsNotNone(loaded)
         assert loaded is not None
         self.assertEqual(len(loaded.search_results), 1)
+        restored = loaded.search_result_objects()[0]
+        self.assertEqual(restored.directory_email, "info@spedition-demo.example")
+        self.assertEqual(restored.directory_source_url, "https://www.gelbeseiten.de/gsbiz/demo")
         self.assertEqual(loaded.zenrows_completed_plans, ["DE\tlogistik Berlin"])
         self.assertEqual(len(loaded.leads), 1)
 

@@ -13,7 +13,7 @@ from .checkpoint import (
     append_lead,
     config_fingerprint,
     load_discovery_checkpoint,
-    mark_url_crawled,
+    mark_result_crawled,
     new_discovery_checkpoint,
     save_discovery_checkpoint,
     update_search_results,
@@ -23,7 +23,7 @@ from .concurrency import CHECKPOINT_SAVE_INTERVAL, AsyncCheckpointWriter, recomm
 from .crawl import CrawlConfig, DEFAULT_SITE_TIMEOUT_SECONDS, LeadCrawler
 from .export import StreamingCsvWriter, write_json
 from .extract import normalized_host
-from .models import ConsentStatus, Lead, LeadDeduplicator, SearchResult
+from .models import ConsentStatus, Lead, LeadDeduplicator, SearchResult, search_result_crawl_key, search_result_display_label
 from .locations import DEFAULT_COUNTRIES
 from .search import SearchProvider, ZenRowsResumeState, find_zenrows_provider, is_zenrows_only_provider
 from .suppression import SuppressionList
@@ -181,7 +181,7 @@ def run_discovery(
     pending_results = [
         result
         for result in search_results
-        if result.url.lower().rstrip("/") not in crawled_urls
+        if search_result_crawl_key(result) not in crawled_urls
     ]
     if stats.websites_done:
         emit(
@@ -264,19 +264,19 @@ def run_discovery(
                     _, site_leads = future.result(timeout=site_timeout)
                 except TimeoutError:
                     site_leads = []
-                    emit("warning", f"Website-Timeout (uebersprungen): {result.url}")
+                    emit("warning", f"Website-Timeout (uebersprungen): {search_result_display_label(result)}")
                 except Exception as exc:  # noqa: BLE001 - keep run alive on a single site failure
                     site_leads = []
                     emit("warning", f"Website-Fehler: {exc}")
                 with state_lock:
                     stats.websites_done += 1
-                    mark_url_crawled(checkpoint_state, result.url)
+                    mark_result_crawled(checkpoint_state, result)
                     leads_before = stats.leads_found
                     for lead in site_leads:
                         store_lead(lead)
                     new_leads = stats.leads_found - leads_before
                     sites_since_checkpoint += 1
-                emit("site_done", result.url, new_leads, stats)
+                emit("site_done", search_result_display_label(result), new_leads, stats)
                 emit("progress", stats)
                 maybe_save_checkpoint()
                 if stats.leads_found >= config.max_leads:

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from .extract import extract_emails, extract_phone, normalized_host, parse_page, strip_fragment
+from .extract import normalize_email
 from .http import read_response_text, urlopen
 from .models import Lead, SearchResult, classify_email
 
@@ -78,8 +79,13 @@ class LeadCrawler:
         self._robots_lock = threading.Lock()
 
     def crawl_result(self, result: SearchResult, category: str) -> list[Lead]:
+        if result.directory_email and not result.url.strip():
+            return self._directory_email_leads(result, category)
+
         start_url = normalize_url(result.url)
         if not start_url:
+            if result.directory_email:
+                return self._directory_email_leads(result, category)
             return []
 
         deadline = time.monotonic() + max(self.config.site_timeout_seconds, 1.0)
@@ -157,7 +163,33 @@ class LeadCrawler:
                 if remaining > 0:
                     time.sleep(remaining)
 
+        if not leads and result.directory_email:
+            return self._directory_email_leads(result, category)
         return leads
+
+    def _directory_email_leads(self, result: SearchResult, category: str) -> list[Lead]:
+        email = normalize_email(result.directory_email)
+        if not email:
+            return []
+        status = classify_email(email)
+        if status.value == "personal_review_required" and not self.config.include_personal:
+            return []
+        source_url = result.directory_source_url or result.url or result.snippet
+        website = result.url.strip()
+        lead = Lead(
+            category=category,
+            source_url=source_url,
+            website=website,
+            email=email,
+            company_name=result.title,
+            phone=result.directory_phone,
+            page_title=result.title,
+            consent_status=status,
+            notes=[f"Branchenverzeichnis: {result.snippet}"] if result.snippet else ["Branchenverzeichnis"],
+        )
+        if self.on_lead:
+            self.on_lead(lead)
+        return [lead]
 
     def _allowed(self, url: str, deadline: float) -> bool:
         if not self.config.respect_robots:

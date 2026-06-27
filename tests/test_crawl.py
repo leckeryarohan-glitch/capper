@@ -109,6 +109,23 @@ class CrawlTests(unittest.TestCase):
         emails = sorted(lead.email for lead in leads)
         self.assertEqual(emails, ["kontakt@multi.example", "sales@multi.example"])
 
+    def test_crawler_uses_directory_email_without_fetching(self) -> None:
+        crawler = LeadCrawler(CrawlConfig(max_pages_per_site=1, delay_seconds=0.0, respect_robots=False))
+        result = SearchResult(
+            title="Spedition Demo",
+            url="",
+            snippet="Gelbe Seiten",
+            directory_email="info@spedition-demo.example",
+            directory_source_url="https://www.gelbeseiten.de/gsbiz/demo",
+        )
+        with patch("lead_research.crawl.fetch_url") as fetch_mock:
+            leads = crawler.crawl_result(result, "logistik")
+
+        fetch_mock.assert_not_called()
+        self.assertEqual(len(leads), 1)
+        self.assertEqual(leads[0].email, "info@spedition-demo.example")
+        self.assertEqual(leads[0].source_url, "https://www.gelbeseiten.de/gsbiz/demo")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -12,16 +12,26 @@ from dataclasses import dataclass
 
 from .extract import normalized_host
 from .http import format_request_error, read_response_text, urlopen
-from .locations import DEFAULT_COUNTRIES, top_cities_for_web_search
+from .extract import extract_emails, normalize_email
+from .locations import DEFAULT_COUNTRIES, cities_for_mass_web_search
 from .models import SearchResult
 
 DIRECTORY_USER_AGENT = "Mozilla/5.0 (compatible; capper-lead-research/0.1; +compliance-review)"
 DIRECTORY_REQUEST_DELAY_SECONDS = 0.35
 DIRECTORY_ZENROWS_DELAY_SECONDS = 0.5
-DIRECTORY_LOCATIONS_WITHOUT_QUERY = 5
 DIRECTORY_ZENROWS_ENDPOINT = "https://api.zenrows.com/v1/"
 DIRECTORY_ZENROWS_STEALTH_MODE = "auto"
 DIRECTORY_ZENROWS_TIMEOUT_SECONDS = 60
+DIRECTORY_MAX_RESULTS_PER_SOURCE = 120
+DIRECTORY_MAX_DETAIL_FETCHES = 30
+
+
+def cap_directory_source_limit(limit: int) -> int:
+    return max(1, min(limit, DIRECTORY_MAX_RESULTS_PER_SOURCE))
+
+
+def cap_directory_detail_fetches(limit: int) -> int:
+    return max(1, min(limit, DIRECTORY_MAX_DETAIL_FETCHES))
 
 DIRECTORY_HOST_SUFFIXES = (
     "gelbeseiten.de",
@@ -203,6 +213,40 @@ class DirectoryEntry:
     website: str
     source_url: str
     snippet: str = ""
+    email: str = ""
+    phone: str = ""
+
+
+def normalize_directory_email(value: str) -> str:
+    cleaned = normalize_email(value)
+    if not cleaned or "@" not in cleaned:
+        return ""
+    local, _, domain = cleaned.partition("@")
+    if not local or not domain or "." not in domain:
+        return ""
+    return cleaned
+
+
+def pick_directory_email(page_html: str, *explicit_values: str) -> str:
+    for value in explicit_values:
+        email = normalize_directory_email(value)
+        if email:
+            return email
+    for email in extract_emails(page_html):
+        normalized = normalize_directory_email(email)
+        if normalized:
+            return normalized
+    return ""
+
+
+def directory_entry_dedupe_key(entry: DirectoryEntry) -> str:
+    website = normalize_result_url(entry.website)
+    if website and is_external_business_url(website):
+        return f"url:{website.lower().rstrip('/')}"
+    email = normalize_directory_email(entry.email)
+    if email:
+        return f"email:{email}"
+    return ""
 
 
 def directory_location_plans(
@@ -211,7 +255,7 @@ def directory_location_plans(
 ) -> list[str]:
     if location.strip():
         return [location.strip()]
-    plans = [city for city, _country in top_cities_for_web_search(countries, per_country=DIRECTORY_LOCATIONS_WITHOUT_QUERY)]
+    plans = [city for city, _country in cities_for_mass_web_search(countries)]
     return plans or ["Berlin"]
 
 
@@ -302,19 +346,41 @@ def directory_entries_to_results(
     results: list[SearchResult] = []
     for entry in entries:
         website = normalize_result_url(entry.website)
-        if not website or not is_external_business_url(website):
+        email = normalize_directory_email(entry.email)
+        phone = entry.phone.strip()
+        dedupe_key = directory_entry_dedupe_key(entry)
+        if not dedupe_key or dedupe_key in seen:
             continue
-        key = website.lower().rstrip("/")
-        if key in seen:
-            continue
-        seen.add(key)
-        results.append(
-            SearchResult(
-                title=entry.name or website,
-                url=website,
-                snippet=entry.snippet or f"Branchenverzeichnis: {entry.source_url}",
+
+        if website and is_external_business_url(website):
+            seen.add(dedupe_key)
+            if email:
+                seen.add(f"email:{email}")
+            results.append(
+                SearchResult(
+                    title=entry.name or website,
+                    url=website,
+                    snippet=entry.snippet or f"Branchenverzeichnis: {entry.source_url}",
+                    directory_email=email,
+                    directory_phone=phone,
+                    directory_source_url=entry.source_url,
+                )
             )
-        )
+        elif email:
+            seen.add(dedupe_key)
+            results.append(
+                SearchResult(
+                    title=entry.name or email,
+                    url="",
+                    snippet=entry.snippet or f"Branchenverzeichnis: {entry.source_url}",
+                    directory_email=email,
+                    directory_phone=phone,
+                    directory_source_url=entry.source_url,
+                )
+            )
+        else:
+            continue
+
         if len(results) >= limit:
             break
     return results
@@ -407,19 +473,21 @@ def parse_dasoertliche_html(page_html: str, *, source_url: str) -> list[Director
             if not isinstance(row, list) or len(row) < 18:
                 continue
             website = normalize_result_url(str(row[3] or ""))
-            if not is_external_business_url(website):
-                continue
+            if website and not is_external_business_url(website):
+                website = ""
             name = html.unescape(str(row[14] or "").strip())
             listing_url = normalize_result_url(str(row[15] or "")) or source_url
-            email = str(row[17] or "").strip()
+            email = normalize_directory_email(str(row[17] or ""))
             phone = str(row[11] or "").strip()
+            if not website and not email:
+                continue
             snippet_parts = ["Das Örtliche"]
             if phone:
                 snippet_parts.append(phone)
-            if email:
-                snippet_parts.append(email)
-            key = website.lower()
-            if key in seen_keys:
+            key = directory_entry_dedupe_key(
+                DirectoryEntry(name=name, website=website, source_url=listing_url, email=email)
+            )
+            if not key or key in seen_keys:
                 continue
             seen_keys.add(key)
             entries.append(
@@ -428,6 +496,8 @@ def parse_dasoertliche_html(page_html: str, *, source_url: str) -> list[Director
                     website=website,
                     source_url=listing_url,
                     snippet=" | ".join(snippet_parts),
+                    email=email,
+                    phone=phone,
                 )
             )
 
@@ -439,11 +509,12 @@ def parse_dasoertliche_html(page_html: str, *, source_url: str) -> list[Director
             if not isinstance(item, dict):
                 continue
             website = website_from_business_item(item)
-            if not website:
-                continue
             name = html.unescape(str(item.get("name", "")).strip())
             listing_url = normalize_result_url(str(item.get("url", ""))) or source_url
             phone = str(item.get("telephone", "")).strip()
+            email = normalize_directory_email(str(item.get("email", "")))
+            if not website and not email:
+                continue
             snippet = "Das Örtliche"
             if phone:
                 snippet = f"{snippet} | {phone}"
@@ -453,6 +524,8 @@ def parse_dasoertliche_html(page_html: str, *, source_url: str) -> list[Director
                     website=website,
                     source_url=listing_url,
                     snippet=snippet,
+                    email=email,
+                    phone=phone,
                 )
             )
     return entries
@@ -475,11 +548,11 @@ def parse_auskunft_html(page_html: str, *, source_url: str) -> list[DirectoryEnt
                 website = normalize_result_url(candidate)
                 break
 
-        if not website:
-            continue
-
         phone_match = re.search(r'href="tel:([^"]+)"', block)
         phone = phone_match.group(1).strip() if phone_match else ""
+        email = pick_directory_email(block)
+        if not website and not email:
+            continue
         snippet = "auskunft.de"
         if phone:
             snippet = f"{snippet} | {phone}"
@@ -489,6 +562,8 @@ def parse_auskunft_html(page_html: str, *, source_url: str) -> list[DirectoryEnt
                 website=website,
                 source_url=listing_url,
                 snippet=snippet,
+                email=email,
+                phone=phone,
             )
         )
 
@@ -500,7 +575,8 @@ def parse_auskunft_html(page_html: str, *, source_url: str) -> list[DirectoryEnt
         name_match = re.search(r'<h2 class="resultHeader"><a[^>]*>([^<]+)</a>', block)
         name = html.unescape(name_match.group(1).strip()) if name_match else ""
         website = next((link for link in extract_external_links(block)), "")
-        if not website:
+        email = pick_directory_email(block)
+        if not website and not email:
             continue
         entries.append(
             DirectoryEntry(
@@ -508,6 +584,7 @@ def parse_auskunft_html(page_html: str, *, source_url: str) -> list[DirectoryEnt
                 website=website,
                 source_url=source_url,
                 snippet="auskunft.de",
+                email=email,
             )
         )
     return entries
@@ -522,19 +599,21 @@ def parse_11880_html(page_html: str, *, source_url: str) -> list[DirectoryEntry]
             name = html.unescape(str(item.get("name", "")).strip())
             listing_url = normalize_result_url(str(item.get("url", ""))) or source_url
             website = website_from_business_item(item)
-            email = str(item.get("email", "")).strip()
+            email = normalize_directory_email(str(item.get("email", "")))
             phone = str(item.get("telephone", "")).strip()
             snippet_parts = ["11880.com"]
             if phone:
                 snippet_parts.append(phone)
-            if email:
-                snippet_parts.append(email)
+            if not website and not email:
+                continue
             entries.append(
                 DirectoryEntry(
                     name=name,
                     website=website,
                     source_url=listing_url,
                     snippet=" | ".join(snippet_parts),
+                    email=email,
+                    phone=phone,
                 )
             )
     return entries
@@ -652,16 +731,20 @@ def parse_gelbeseiten_detail_html(page_html: str, *, name: str, source_url: str)
     if not website:
         website = next((link for link in extract_external_links(page_html)), "")
 
-    if not website:
+    email = pick_directory_email(page_html)
+    if not website and not email:
         return None
 
     title_match = re.search(r"<title>([^<|]+)", page_html)
     resolved_name = html.unescape(title_match.group(1).strip()) if title_match and title_match.group(1).strip() else name
-    phone_match = re.search(r'data-prg="[^"]+"', page_html)
     snippet = "Gelbe Seiten"
-    if phone_match:
-        snippet = f"{snippet} | {source_url}"
-    return DirectoryEntry(name=resolved_name or name, website=website, source_url=source_url, snippet=snippet)
+    return DirectoryEntry(
+        name=resolved_name or name,
+        website=website,
+        source_url=source_url,
+        snippet=snippet,
+        email=email,
+    )
 
 
 def parse_telefonbuch_html(page_html: str, *, source_url: str) -> list[DirectoryEntry]:
@@ -674,7 +757,9 @@ def parse_telefonbuch_html(page_html: str, *, source_url: str) -> list[Directory
             if not isinstance(item, dict):
                 continue
             website = website_from_business_item(item)
-            if not website:
+            email = normalize_directory_email(str(item.get("email", "")))
+            phone = str(item.get("telephone", "")).strip()
+            if not website and not email:
                 continue
             name = html.unescape(str(item.get("name", "")).strip())
             listing_url = normalize_result_url(str(item.get("url", ""))) or source_url
@@ -684,6 +769,8 @@ def parse_telefonbuch_html(page_html: str, *, source_url: str) -> list[Directory
                     website=website,
                     source_url=listing_url,
                     snippet="Telefonbuch",
+                    email=email,
+                    phone=phone,
                 )
             )
 
@@ -775,6 +862,7 @@ def build_manta_url(category: str, location: str) -> str:
 def enrich_11880_entries(entries: list[DirectoryEntry], *, max_detail_fetches: int) -> list[DirectoryEntry]:
     enriched: list[DirectoryEntry] = []
     detail_fetches = 0
+    max_detail_fetches = cap_directory_detail_fetches(max_detail_fetches)
     for entry in entries:
         if entry.website:
             enriched.append(entry)
@@ -787,6 +875,7 @@ def enrich_11880_entries(entries: list[DirectoryEntry], *, max_detail_fetches: i
             continue
         detail_fetches += 1
         website = parse_11880_detail_website(detail_html)
+        email = pick_directory_email(detail_html, entry.email)
         if website:
             enriched.append(
                 DirectoryEntry(
@@ -794,6 +883,19 @@ def enrich_11880_entries(entries: list[DirectoryEntry], *, max_detail_fetches: i
                     website=website,
                     source_url=entry.source_url,
                     snippet=entry.snippet,
+                    email=email or entry.email,
+                    phone=entry.phone,
+                )
+            )
+        elif email or entry.email:
+            enriched.append(
+                DirectoryEntry(
+                    name=entry.name,
+                    website="",
+                    source_url=entry.source_url,
+                    snippet=entry.snippet,
+                    email=email or entry.email,
+                    phone=entry.phone,
                 )
             )
         time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
@@ -802,6 +904,7 @@ def enrich_11880_entries(entries: list[DirectoryEntry], *, max_detail_fetches: i
 
 def enrich_gelbeseiten_entries(listings: list[tuple[str, str]], *, max_detail_fetches: int) -> list[DirectoryEntry]:
     entries: list[DirectoryEntry] = []
+    max_detail_fetches = cap_directory_detail_fetches(max_detail_fetches)
     for name, detail_url in listings[:max_detail_fetches]:
         try:
             detail_html = fetch_directory_html(detail_url)
@@ -822,13 +925,15 @@ def enrich_named_listing_details(
     source_name: str,
 ) -> list[DirectoryEntry]:
     entries: list[DirectoryEntry] = []
+    max_detail_fetches = cap_directory_detail_fetches(max_detail_fetches)
     for name, detail_url in listings[:max_detail_fetches]:
         try:
             detail_html = fetch_directory_html(detail_url)
         except DirectoryFetchError:
             continue
         website = parse_detail_website(detail_html)
-        if not website:
+        email = pick_directory_email(detail_html)
+        if not website and not email:
             continue
         entries.append(
             DirectoryEntry(
@@ -836,6 +941,7 @@ def enrich_named_listing_details(
                 website=website,
                 source_url=detail_url,
                 snippet=source_name,
+                email=email,
             )
         )
         time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
@@ -853,22 +959,26 @@ def parse_json_ld_directory_entries(page_html: str, *, source_url: str, source_n
             listing_url = normalize_result_url(str(item.get("url", ""))) or source_url
             website = website_from_business_item(item)
             phone = str(item.get("telephone", "")).strip()
-            email = str(item.get("email", "")).strip()
+            email = normalize_directory_email(str(item.get("email", "")))
             snippet_parts = [source_name]
             if phone:
                 snippet_parts.append(phone)
-            if email:
-                snippet_parts.append(email)
-            key = (website or listing_url).lower()
-            if key in seen:
+            key = directory_entry_dedupe_key(
+                DirectoryEntry(name=name, website=website, source_url=listing_url, email=email)
+            )
+            if not key or key in seen:
                 continue
             seen.add(key)
+            if not website and not email:
+                continue
             entries.append(
                 DirectoryEntry(
                     name=name,
                     website=website,
                     source_url=listing_url,
                     snippet=" | ".join(snippet_parts),
+                    email=email,
+                    phone=phone,
                 )
             )
     return entries
@@ -1098,13 +1208,15 @@ def enrich_detail_name_and_website(
     source_name: str,
 ) -> list[DirectoryEntry]:
     entries: list[DirectoryEntry] = []
+    max_detail_fetches = cap_directory_detail_fetches(max_detail_fetches)
     for fallback_name, detail_url in listings[:max_detail_fetches]:
         try:
             detail_html = fetch_directory_html(detail_url)
         except DirectoryFetchError:
             continue
         website = parse_detail_website(detail_html)
-        if not website:
+        email = pick_directory_email(detail_html)
+        if not website and not email:
             continue
         name = parse_detail_name(detail_html) or fallback_name
         entries.append(
@@ -1113,6 +1225,7 @@ def enrich_detail_name_and_website(
                 website=website,
                 source_url=detail_url,
                 snippet=source_name,
+                email=email,
             )
         )
         time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
@@ -1164,6 +1277,7 @@ def enrich_directory_listing_details(
 ) -> list[DirectoryEntry]:
     enriched: list[DirectoryEntry] = []
     detail_fetches = 0
+    max_detail_fetches = cap_directory_detail_fetches(max_detail_fetches)
     for entry in entries:
         if entry.website:
             enriched.append(entry)
@@ -1176,6 +1290,7 @@ def enrich_directory_listing_details(
             continue
         detail_fetches += 1
         website = parse_detail_website(detail_html)
+        email = pick_directory_email(detail_html, entry.email)
         if website:
             enriched.append(
                 DirectoryEntry(
@@ -1183,6 +1298,19 @@ def enrich_directory_listing_details(
                     website=website,
                     source_url=entry.source_url,
                     snippet=entry.snippet,
+                    email=email or entry.email,
+                    phone=entry.phone,
+                )
+            )
+        elif email or entry.email:
+            enriched.append(
+                DirectoryEntry(
+                    name=entry.name,
+                    website="",
+                    source_url=entry.source_url,
+                    snippet=entry.snippet,
+                    email=email or entry.email,
+                    phone=entry.phone,
                 )
             )
         time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
