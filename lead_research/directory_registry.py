@@ -14,6 +14,7 @@ class DirectorySourceSpec:
     scraper: DirectoryScraper | None = None
     default_enabled: bool = True
     implemented: bool = False
+    unavailable: bool = False
 
 
 DIRECTORY_CATEGORIES: tuple[str, ...] = (
@@ -57,14 +58,31 @@ DIRECTORY_CATEGORIES: tuple[str, ...] = (
 )
 
 
+def _source_id(category: str, id_suffix: str) -> str:
+    return f"{category.casefold().replace(' ', '_').replace('/', '_')}_{id_suffix}"
+
+
 def _planned(category: str, id_suffix: str, label: str) -> DirectorySourceSpec:
     return DirectorySourceSpec(
-        id=f"{category.casefold().replace(' ', '_').replace('/', '_')}_{id_suffix}",
+        id=_source_id(category, id_suffix),
         label=label,
         category=category,
         scraper=None,
         default_enabled=False,
         implemented=False,
+        unavailable=False,
+    )
+
+
+def _unavailable(category: str, id_suffix: str, label: str) -> DirectorySourceSpec:
+    return DirectorySourceSpec(
+        id=_source_id(category, id_suffix),
+        label=label,
+        category=category,
+        scraper=None,
+        default_enabled=False,
+        implemented=False,
+        unavailable=True,
     )
 
 
@@ -96,18 +114,22 @@ def build_directory_source_registry(
         active(cat, "europages", "Europages", "europages"),
         active(cat, "kompass", "Kompass", "kompass"),
         active(cat, "manta", "Manta", "manta"),
-        _planned(cat, "wlw", "Wer liefert was (WLW)"),
-        _planned(cat, "firmenabc", "FirmenABC"),
-        _planned(cat, "business_branchenbuch", "Business Branchenbuch"),
-        _planned(cat, "brownbook", "Brownbook"),
-        _planned(cat, "yalwa", "Yalwa"),
-        _planned(cat, "yellow_pages", "Yellow Pages"),
-        _planned(cat, "192com", "192.com"),
-        _planned(cat, "scoot", "Scoot"),
-        _planned(cat, "businesslist", "BusinessList"),
-        _planned(cat, "meinestadt", "meinestadt.de"),
-        _planned(cat, "firmenwissen", "Firmenwissen"),
+        _unavailable(cat, "wlw", "Wer liefert was (WLW)"),
+        _unavailable(cat, "firmenabc", "FirmenABC"),
+        _unavailable(cat, "business_branchenbuch", "Business Branchenbuch"),
+        _unavailable(cat, "brownbook", "Brownbook"),
+        _unavailable(cat, "yalwa", "Yalwa"),
+        _unavailable(cat, "yellow_pages", "Yellow Pages"),
+        _unavailable(cat, "192com", "192.com"),
+        _unavailable(cat, "scoot", "Scoot"),
+        _unavailable(cat, "businesslist", "BusinessList"),
+        _unavailable(cat, "meinestadt", "meinestadt.de"),
+        _unavailable(cat, "firmenwissen", "Firmenwissen"),
     ]
+
+    unavailable_by_category: dict[str, set[str]] = {
+        "Unternehmensdatenbanken": {"north_data", "opencorporates"},
+    }
 
     planned_groups: dict[str, list[str]] = {
         "Unternehmensdatenbanken": [
@@ -251,15 +273,27 @@ def build_directory_source_registry(
     }
 
     for category, labels in planned_groups.items():
+        blocked = unavailable_by_category.get(category, set())
         for label in labels:
             slug = label.lower().replace(" ", "_").replace("&", "and").replace(".", "").replace("-", "_")
-            specs.append(_planned(category, slug, label))
+            if slug in blocked:
+                specs.append(_unavailable(category, slug, label))
+            else:
+                specs.append(_planned(category, slug, label))
 
     return tuple(specs)
 
 
 def implemented_directory_sources(registry: Iterable[DirectorySourceSpec]) -> tuple[DirectorySourceSpec, ...]:
     return tuple(spec for spec in registry if spec.implemented and spec.scraper is not None)
+
+
+def unavailable_directory_sources(registry: Iterable[DirectorySourceSpec]) -> tuple[DirectorySourceSpec, ...]:
+    return tuple(spec for spec in registry if spec.unavailable)
+
+
+def planned_directory_sources(registry: Iterable[DirectorySourceSpec]) -> tuple[DirectorySourceSpec, ...]:
+    return tuple(spec for spec in registry if not spec.implemented and not spec.unavailable)
 
 
 def resolve_active_scrapers(

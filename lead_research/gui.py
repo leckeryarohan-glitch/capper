@@ -347,8 +347,9 @@ def run_gui() -> int:
                 if not specs:
                     continue
                 implemented_specs = [spec for spec in specs if spec.implemented]
-                planned_specs = [spec for spec in specs if not spec.implemented]
-                if not implemented_specs and not planned_specs:
+                unavailable_specs = [spec for spec in specs if spec.unavailable]
+                planned_specs = [spec for spec in specs if not spec.implemented and not spec.unavailable]
+                if not implemented_specs and not planned_specs and not unavailable_specs:
                     continue
                 ttk.Label(directory_inner, text=category, font=("", 10, "bold")).grid(
                     row=row_idx, column=0, sticky="w", pady=(8 if row_idx else 0, 4)
@@ -361,7 +362,18 @@ def run_gui() -> int:
                         variable=self.directory_source_vars[spec.id],
                     ).grid(row=row_idx, column=0, sticky="w", padx=(12, 0))
                     row_idx += 1
-                if planned_specs and category == "Firmenverzeichnisse":
+                if unavailable_specs:
+                    unavailable_text = ", ".join(spec.label for spec in unavailable_specs[:8])
+                    if len(unavailable_specs) > 8:
+                        unavailable_text += f" (+{len(unavailable_specs) - 8} weitere)"
+                    ttk.Label(
+                        directory_inner,
+                        text=f"Nicht verfuegbar (ZenRows/JS): {unavailable_text}",
+                        foreground="#888",
+                        wraplength=700,
+                    ).grid(row=row_idx, column=0, sticky="w", padx=(12, 0), pady=(2, 0))
+                    row_idx += 1
+                if planned_specs:
                     planned_text = ", ".join(spec.label for spec in planned_specs[:8])
                     if len(planned_specs) > 8:
                         planned_text += f" (+{len(planned_specs) - 8} weitere geplant)"
@@ -375,8 +387,8 @@ def run_gui() -> int:
 
             source_text = (
                 "Aktiviere einzelne Branchenquellen. Implementierte Quellen laufen ueber ZenRows "
-                "(Adaptive Stealth). Weitere Kategorien aus deiner Liste sind als 'geplant' markiert "
-                "und werden schrittweise ergänzt."
+                "(Adaptive Stealth). Quellen ohne brauchbare Ergebnisse sind als 'Nicht verfuegbar' "
+                "markiert; weitere Kategorien werden schrittweise ergaenzt."
             )
             ttk.Label(outer, text=source_text, wraplength=760).grid(row=11, column=0, columnspan=3, sticky="ew", pady=(10, 8))
 
