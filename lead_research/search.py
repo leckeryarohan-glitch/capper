@@ -1371,10 +1371,12 @@ class DirectorySearchProvider(SearchProvider):
         *,
         allow_direct_fetch: bool = False,
         proxy_country: str = "de",
+        enabled_directory_sources: set[str] | None = None,
     ):
         self.zenrows_api_key = _resolve_api_key(zenrows_api_key, "ZENROWS_API_KEY")
         self.allow_direct_fetch = allow_direct_fetch
         self.proxy_country = proxy_country
+        self.enabled_directory_sources = enabled_directory_sources
 
     def search(
         self,
@@ -1384,12 +1386,12 @@ class DirectorySearchProvider(SearchProvider):
         countries: tuple[str, ...] = DEFAULT_COUNTRIES,
     ) -> list[SearchResult]:
         from .directories import (
-            DIRECTORY_SCRAPERS,
             DirectoryFetchConfig,
             DirectoryFetchError,
             configure_directory_fetch,
             directory_entries_to_results,
             directory_location_plans,
+            get_directory_scrapers,
         )
         from concurrent.futures import ThreadPoolExecutor, as_completed
         from math import ceil
@@ -1397,10 +1399,14 @@ class DirectorySearchProvider(SearchProvider):
         if limit < 1:
             return []
 
+        active_scrapers = get_directory_scrapers(self.enabled_directory_sources)
+        if not active_scrapers:
+            raise SearchProviderError("Keine Branchenverzeichnis-Quelle aktiviert.")
+
         if not self.zenrows_api_key and not self.allow_direct_fetch:
             raise SearchProviderError(
-                "Branchenverzeichnisse (Gelbe Seiten, Das Oertliche, auskunft.de, 11880, Telefonbuch) "
-                "werden ueber die ZenRows Universal API abgefragt. Bitte ZENROWS_API_KEY setzen."
+                "Branchenverzeichnisse werden ueber die ZenRows Universal API abgefragt. "
+                "Bitte ZENROWS_API_KEY setzen."
             )
 
         configure_directory_fetch(
@@ -1413,16 +1419,19 @@ class DirectorySearchProvider(SearchProvider):
 
         locations = directory_location_plans(location, countries)
         per_location_limit = max(1, ceil(limit / len(locations)))
-        per_source_limit = max(1, ceil(per_location_limit / len(DIRECTORY_SCRAPERS)))
+        per_source_limit = max(1, ceil(per_location_limit / len(active_scrapers)))
         results: list[SearchResult] = []
         seen: set[str] = set()
         fetch_mode = "ZenRows" if self.zenrows_api_key else "Direct"
-        max_workers = 2 if self.zenrows_api_key else len(DIRECTORY_SCRAPERS)
+        max_workers = 2 if self.zenrows_api_key else len(active_scrapers)
 
         for plan_location in locations:
             if len(results) >= limit:
                 break
-            self._report(f"Branchenverzeichnisse ({fetch_mode}): {category} in {plan_location} ...")
+            self._report(
+                f"Branchenverzeichnisse ({fetch_mode}, {len(active_scrapers)} Quellen): "
+                f"{category} in {plan_location} ..."
+            )
 
             def run_scraper(scraper_item: tuple[str, object]) -> tuple[str, list]:
                 label, scraper = scraper_item
@@ -1435,7 +1444,7 @@ class DirectorySearchProvider(SearchProvider):
                     return label, []
 
             with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="capper-directories") as executor:
-                futures = [executor.submit(run_scraper, item) for item in DIRECTORY_SCRAPERS]
+                futures = [executor.submit(run_scraper, item) for item in active_scrapers]
                 for future in as_completed(futures):
                     label, entries = future.result()
                     added = directory_entries_to_results(entries, limit=limit - len(results), seen=seen)
@@ -1540,6 +1549,7 @@ def combined_provider(
     use_serpapi: bool = True,
     serpapi_key: str | None = None,
     zenrows_key: str | None = None,
+    enabled_directory_sources: set[str] | None = None,
 ) -> SearchProvider:
     """Combine the selected no-key and key-based sources for maximum coverage."""
     providers: list[SearchProvider] = []
@@ -1554,6 +1564,7 @@ def combined_provider(
                 DirectorySearchProvider(
                     zenrows_api_key=resolved_zenrows_for_directories or None,
                     allow_direct_fetch=os.getenv("DIRECTORY_ALLOW_DIRECT_FETCH") == "1",
+                    enabled_directory_sources=enabled_directory_sources,
                 )
             )
     if os.getenv("GOOGLE_SEARCH_API_KEY") and os.getenv("GOOGLE_SEARCH_ENGINE_ID"):

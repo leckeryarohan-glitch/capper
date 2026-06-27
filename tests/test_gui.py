@@ -85,11 +85,16 @@ class GuiArgumentTests(unittest.TestCase):
             with patch("lead_research.gui.combined_provider", return_value=FakeProvider()), patch(
                 "lead_research.pipeline.LeadCrawler", FakeCrawler
             ):
-                exit_code = run_gui_discovery(
+                exit_code =                 run_gui_discovery(
                     {
                         "category": "hotel",
                         "location": "Berlin",
                         "output": str(output),
+                        "use_osm": True,
+                        "use_duckduckgo": False,
+                        "use_directories": False,
+                        "use_zenrows_google": False,
+                        "use_serpapi": False,
                     },
                     events,
                 )
@@ -143,6 +148,39 @@ class GuiArgumentTests(unittest.TestCase):
         self.assertFalse(captured["use_zenrows_google"])
         self.assertFalse(captured["use_serpapi"])
 
+    def test_run_gui_discovery_passes_directory_source_ids(self) -> None:
+        from lead_research.directories import build_directory_source_registry
+        from lead_research.directory_registry import implemented_directory_sources
+
+        events: "queue.Queue[tuple]" = queue.Queue()
+        captured: dict[str, object] = {}
+
+        def fake_combined_provider(**kwargs):
+            captured.update(kwargs)
+            return FakeProvider()
+
+        implemented_ids = {spec.id for spec in implemented_directory_sources(build_directory_source_registry())}
+        directory_flags = {f"dir_source_{source_id}": source_id == "gelbeseiten" for source_id in implemented_ids}
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "leads.csv"
+            with patch("lead_research.gui.combined_provider", side_effect=fake_combined_provider), patch(
+                "lead_research.pipeline.LeadCrawler", FakeCrawler
+            ):
+                run_gui_discovery(
+                    {
+                        "category": "hotel",
+                        "output": str(output),
+                        "use_directories": True,
+                        "use_zenrows_google": False,
+                        "use_serpapi": False,
+                        "zenrows_key": "zr-key",
+                        **directory_flags,
+                    },
+                    events,
+                )
+
+        self.assertEqual(captured["enabled_directory_sources"], {"gelbeseiten"})
+
     def test_run_gui_discovery_requires_zenrows_key_for_directories(self) -> None:
         events: "queue.Queue[tuple]" = queue.Queue()
         with tempfile.TemporaryDirectory() as tmp:
@@ -152,10 +190,9 @@ class GuiArgumentTests(unittest.TestCase):
                     {
                         "category": "hotel",
                         "output": str(output),
-                        "use_osm": True,
                         "use_directories": True,
-                        "use_zenrows_google": False,
                         "zenrows_key": "",
+                        "dir_source_gelbeseiten": True,
                     },
                     events,
                 )

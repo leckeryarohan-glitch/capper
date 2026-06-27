@@ -7,6 +7,7 @@ import re
 import time
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from .extract import normalized_host
@@ -29,12 +30,25 @@ DIRECTORY_HOST_SUFFIXES = (
     "auskunft.de",
     "telefonbuch.de",
     "dastelefonbuch.de",
-    "meinestadt.de",
+    "cylex.de",
+    "cylex-international.com",
+    "hotfrog.de",
+    "hotfrog.com",
+    "centralindex.com",
     "werkenntdenbesten.de",
+    "goyellow.de",
     "wlw.de",
-    "firmenwissen.de",
-    "tripadvisor.",
+    "europages.",
+    "kompass.com",
+    "firmenabc.",
+    "brownbook.net",
+    "manta.com",
+    "yalwa.",
     "yelp.",
+    "meinestadt.de",
+    "firmenwissen.de",
+    "branchenbuch.net",
+    "tripadvisor.",
     "booking.com",
     "facebook.com",
     "instagram.com",
@@ -42,10 +56,34 @@ DIRECTORY_HOST_SUFFIXES = (
     "google.",
     "youtube.com",
     "vimeo.com",
-    "cylex.",
     "golocal.de",
     "ekomi.de",
     "consentmanager.net",
+    "yext-wrap.com",
+    "holidaycheck.",
+    "expedia.",
+    "googletagservices.com",
+    "googletagmanager.com",
+    "google-analytics.com",
+    "googlesyndication.com",
+    "doubleclick.net",
+    "wkdb.h5v.eu",
+    "h5v.eu",
+    "postleitzahlen.de",
+    "wirfindendeinenjob.de",
+    "cleverb2b.de",
+    "cdn.11880.com",
+    "hrs.de",
+    "treatwell.de",
+    "apps.apple.com",
+    "play.google.com",
+    "bootstrapcdn.com",
+    "cloudfront.net",
+    "unpkg.com",
+    "cdnjs.cloudflare.com",
+    "fonts.googleapis.com",
+    "gstatic.com",
+    "schema.org",
 )
 
 BLOCKED_WEBSITE_SUFFIXES = (
@@ -598,7 +636,7 @@ def enrich_11880_entries(entries: list[DirectoryEntry], *, max_detail_fetches: i
         except DirectoryFetchError:
             continue
         detail_fetches += 1
-        website = next((link for link in extract_external_links(detail_html)), "")
+        website = parse_11880_detail_website(detail_html)
         if website:
             enriched.append(
                 DirectoryEntry(
@@ -624,6 +662,175 @@ def enrich_gelbeseiten_entries(listings: list[tuple[str, str]], *, max_detail_fe
             entries.append(parsed)
         time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
     return entries
+
+
+def parse_json_ld_directory_entries(page_html: str, *, source_url: str, source_name: str) -> list[DirectoryEntry]:
+    entries: list[DirectoryEntry] = []
+    seen: set[str] = set()
+    for block in extract_json_ld_blocks(page_html):
+        for item in iter_json_ld_business_items(block):
+            if not isinstance(item, dict):
+                continue
+            name = html.unescape(str(item.get("name", "")).strip())
+            listing_url = normalize_result_url(str(item.get("url", ""))) or source_url
+            website = website_from_business_item(item)
+            phone = str(item.get("telephone", "")).strip()
+            email = str(item.get("email", "")).strip()
+            snippet_parts = [source_name]
+            if phone:
+                snippet_parts.append(phone)
+            if email:
+                snippet_parts.append(email)
+            key = (website or listing_url).lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            entries.append(
+                DirectoryEntry(
+                    name=name,
+                    website=website,
+                    source_url=listing_url,
+                    snippet=" | ".join(snippet_parts),
+                )
+            )
+    return entries
+
+
+def parse_cylex_detail_website(page_html: str) -> str:
+    match = re.search(r'"url"\s*:\s*"(https?://[^"]+)"', page_html)
+    if match:
+        candidate = html.unescape(match.group(1))
+        if is_external_business_url(candidate):
+            return normalize_result_url(candidate)
+    return next((link for link in extract_external_links(page_html)), "")
+
+
+def parse_11880_detail_website(page_html: str) -> str:
+    for pattern in (
+        r'itemprop="url"\s+content="(https?://[^"]+)"',
+        r'class="[^"]*website[^"]*"[^>]*href="(https?://[^"]+)"',
+        r'href="(https?://[^"]+)"[^>]*class="[^"]*website[^"]*"',
+        r'title="[^"]*(?:Webseite|Homepage)[^"]*"[^>]*href="(https?://[^"]+)"',
+        r'href="(https?://[^"]+)"[^>]*title="[^"]*(?:Webseite|Homepage)[^"]*"',
+    ):
+        match = re.search(pattern, page_html, re.IGNORECASE)
+        if not match:
+            continue
+        candidate = html.unescape(match.group(1))
+        if is_external_business_url(candidate):
+            return normalize_result_url(candidate)
+    return next((link for link in extract_external_links(page_html)), "")
+
+
+def parse_hotfrog_redirect_websites(page_html: str) -> list[str]:
+    websites: list[str] = []
+    seen: set[str] = set()
+    for encoded in re.findall(r"continue=(https[^&\"']+)", page_html):
+        candidate = normalize_result_url(html.unescape(urllib.parse.unquote(encoded)))
+        if not candidate or not is_external_business_url(candidate):
+            continue
+        key = candidate.lower().rstrip("/")
+        if key in seen:
+            continue
+        seen.add(key)
+        websites.append(candidate)
+    return websites
+
+
+def parse_werkenntdenbesten_detail_website(page_html: str) -> str:
+    for pattern in (
+        r'title="(?:Webseite[^"]*|Homepage)"[^>]*href="(https?://[^"]+)"',
+        r'href="(https?://[^"]+)"[^>]*title="(?:Webseite[^"]*|Homepage)"',
+        r'class="[^"]*website[^"]*"[^>]*href="(https?://[^"]+)"',
+        r'itemprop="url"\s+content="(https?://[^"]+)"',
+    ):
+        match = re.search(pattern, page_html, re.IGNORECASE)
+        if not match:
+            continue
+        candidate = html.unescape(match.group(1))
+        if is_external_business_url(candidate):
+            return normalize_result_url(candidate)
+    return next((link for link in extract_external_links(page_html)), "")
+
+
+def enrich_directory_listing_details(
+    entries: list[DirectoryEntry],
+    *,
+    max_detail_fetches: int,
+    parse_detail_website: Callable[[str], str],
+) -> list[DirectoryEntry]:
+    enriched: list[DirectoryEntry] = []
+    detail_fetches = 0
+    for entry in entries:
+        if entry.website:
+            enriched.append(entry)
+            continue
+        if detail_fetches >= max_detail_fetches or not entry.source_url:
+            continue
+        try:
+            detail_html = fetch_directory_html(entry.source_url)
+        except DirectoryFetchError:
+            continue
+        detail_fetches += 1
+        website = parse_detail_website(detail_html)
+        if website:
+            enriched.append(
+                DirectoryEntry(
+                    name=entry.name,
+                    website=website,
+                    source_url=entry.source_url,
+                    snippet=entry.snippet,
+                )
+            )
+        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+    return enriched
+
+
+def scrape_cylex(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    source_url = f"https://www.cylex.de/suche/{slug_for_directory_path(category)}/{slug_for_directory_path(location)}"
+    page_html = fetch_directory_html(source_url)
+    entries = parse_json_ld_directory_entries(page_html, source_url=source_url, source_name="Cylex")
+    return enrich_directory_listing_details(
+        entries,
+        max_detail_fetches=limit,
+        parse_detail_website=parse_cylex_detail_website,
+    )[:limit]
+
+
+def scrape_hotfrog(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    source_url = f"https://www.hotfrog.de/search/{slug_for_directory_path(location)}/{slug_for_directory_path(category)}"
+    page_html = fetch_directory_html(source_url)
+    entries: list[DirectoryEntry] = []
+    seen: set[str] = set()
+    for website in parse_hotfrog_redirect_websites(page_html):
+        key = website.lower().rstrip("/")
+        if key in seen:
+            continue
+        seen.add(key)
+        entries.append(
+            DirectoryEntry(
+                name=website,
+                website=website,
+                source_url=source_url,
+                snippet="Hotfrog",
+            )
+        )
+        if len(entries) >= limit:
+            break
+    return entries
+
+
+def scrape_werkenntdenbesten(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    category_slug = slug_for_directory_path(category)
+    location_slug = slug_for_directory_path(location)
+    source_url = f"https://www.werkenntdenbesten.de/{category_slug}/{location_slug}/"
+    page_html = fetch_directory_html(source_url)
+    entries = parse_json_ld_directory_entries(page_html, source_url=source_url, source_name="Wer kennt den BESTEN")
+    return enrich_directory_listing_details(
+        entries,
+        max_detail_fetches=limit,
+        parse_detail_website=parse_werkenntdenbesten_detail_website,
+    )[:limit]
 
 
 def scrape_dasoertliche(category: str, location: str, limit: int) -> list[DirectoryEntry]:
@@ -682,10 +889,36 @@ def scrape_telefonbuch(category: str, location: str, limit: int) -> list[Directo
     return parse_telefonbuch_html(page_html, source_url=source_url)[:limit]
 
 
-DIRECTORY_SCRAPERS: tuple[tuple[str, callable], ...] = (
-    ("Das Örtliche", scrape_dasoertliche),
-    ("auskunft.de", scrape_auskunft),
-    ("Gelbe Seiten", scrape_gelbeseiten),
-    ("11880.com", scrape_11880),
-    ("Telefonbuch", scrape_telefonbuch),
-)
+def _directory_scraper_map() -> dict[str, callable]:
+    return {
+        "gelbeseiten": scrape_gelbeseiten,
+        "das_oertliche": scrape_dasoertliche,
+        "telefonbuch": scrape_telefonbuch,
+        "11880": scrape_11880,
+        "auskunft": scrape_auskunft,
+        "cylex": scrape_cylex,
+        "hotfrog": scrape_hotfrog,
+        "werkenntdenbesten": scrape_werkenntdenbesten,
+    }
+
+
+def build_directory_source_registry():
+    from .directory_registry import build_directory_source_registry as build_registry
+
+    return build_registry(_directory_scraper_map())
+
+
+def get_directory_scrapers(enabled_source_ids: set[str] | None = None) -> tuple[tuple[str, callable], ...]:
+    from .directory_registry import resolve_active_scrapers
+
+    return resolve_active_scrapers(build_directory_source_registry(), enabled_source_ids)
+
+
+def default_directory_source_ids() -> set[str]:
+    from .directory_registry import default_enabled_directory_source_ids
+
+    return default_enabled_directory_source_ids(build_directory_source_registry())
+
+
+# Backward compatibility for tests/imports
+DIRECTORY_SCRAPERS = get_directory_scrapers()

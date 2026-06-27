@@ -131,6 +131,32 @@ class DirectoryParserTests(unittest.TestCase):
         self.assertIn("proxy_country=de", request_url)
         self.assertIn("gelbeseiten.de", request_url)
 
+    def test_parse_11880_detail_website(self) -> None:
+        from lead_research.directories import parse_11880_detail_website
+
+        website = parse_11880_detail_website(
+            '<link itemprop="url" content="http://www.pension-goldkopf-berlin.de">'
+            '<a class="website-link" href="https://www.googletagservices.com">Ad</a>'
+        )
+        self.assertEqual(website, "http://www.pension-goldkopf-berlin.de")
+
+    def test_parse_werkenntdenbesten_detail_website(self) -> None:
+        from lead_research.directories import parse_werkenntdenbesten_detail_website
+
+        website = parse_werkenntdenbesten_detail_website(
+            '<a href="https://wkdb.h5v.eu">Track</a>'
+            '<a title="Homepage" href="http://www.palace.de/" target="_blank">Web</a>'
+        )
+        self.assertEqual(website, "http://www.palace.de/")
+
+    def test_parse_hotfrog_redirect_websites(self) -> None:
+        from lead_research.directories import parse_hotfrog_redirect_websites
+
+        websites = parse_hotfrog_redirect_websites(
+            'href="https://x.yext-wrap.com/plclick?continue=https%3A%2F%2Fwww.example-hotel.de%2F"'
+        )
+        self.assertEqual(websites, ["https://www.example-hotel.de/"])
+
     def test_fetch_directory_html_requires_zenrows_by_default(self) -> None:
         configure_directory_fetch(DirectoryFetchConfig())
         with self.assertRaisesRegex(Exception, "ZenRows"):
@@ -154,6 +180,7 @@ class DirectoryProviderTests(unittest.TestCase):
             use_osm=False,
             use_duckduckgo=False,
             use_directories=True,
+            use_zenrows_google=False,
             zenrows_key="test-key",
         )
 

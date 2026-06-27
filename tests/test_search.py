@@ -467,6 +467,7 @@ class SearchTests(unittest.TestCase):
                 use_osm=False,
                 use_duckduckgo=False,
                 use_directories=True,
+                use_zenrows_google=False,
                 zenrows_key="test-key",
             )
             none_selected = combined_provider(use_osm=False, use_duckduckgo=False, use_directories=False)
