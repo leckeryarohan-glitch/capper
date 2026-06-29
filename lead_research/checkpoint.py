@@ -74,6 +74,17 @@ def validate_checkpoint_config(checkpoint: DiscoveryCheckpoint, expected: dict[s
         )
 
 
+def checkpoint_progress_summary(checkpoint: DiscoveryCheckpoint) -> str:
+    parts = [
+        f"{len(checkpoint.search_results)} Websites",
+        f"{len(checkpoint.crawled_urls)} gecrawlt",
+        f"{len(checkpoint.leads)} Leads",
+    ]
+    if checkpoint.directory_completed_locations and not checkpoint.search_complete:
+        parts.append(f"{len(checkpoint.directory_completed_locations)} Branchenorte")
+    return ", ".join(parts)
+
+
 def lead_to_dict(lead: Lead) -> dict:
     item = asdict(lead)
     item["consent_status"] = lead.consent_status.value

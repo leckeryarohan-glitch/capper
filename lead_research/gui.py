@@ -10,6 +10,7 @@ from .concurrency import recommended_workers
 from .directories import build_directory_source_registry
 from .directory_registry import directory_sources_by_category
 from .locations import DEFAULT_COUNTRIES
+from .checkpoint import load_discovery_checkpoint, checkpoint_progress_summary
 from .pipeline import DEFAULT_WORKERS, DiscoveryConfig, LeadStats, run_discovery
 from .search import (
     DEFAULT_DIRECTORY_PARALLEL_REQUESTS,
@@ -106,6 +107,85 @@ def selected_directory_source_ids(values: Mapping[str, str | bool]) -> set[str]:
     return enabled
 
 
+def collect_gui_settings(values: Mapping[str, str | bool]) -> dict[str, object]:
+    countries: list[str] = []
+    if bool(values.get("country_de", True)):
+        countries.append("DE")
+    if bool(values.get("country_at", False)):
+        countries.append("AT")
+    if not countries:
+        countries = list(DEFAULT_COUNTRIES)
+    return {
+        "category": str(values.get("category", "")).strip(),
+        "location": str(values.get("location", "")).strip(),
+        "countries": countries,
+        "limit": parse_positive_int(values.get("limit"), int(DEFAULT_LIMIT)),
+        "max_leads": parse_positive_int(values.get("max_leads"), int(DEFAULT_MAX_LEADS)),
+        "workers": str(values.get("workers", DEFAULT_WORKERS_TEXT)).strip() or DEFAULT_WORKERS_TEXT,
+        "directory_parallel": str(values.get("directory_parallel", DEFAULT_DIRECTORY_PARALLEL_TEXT)).strip()
+        or DEFAULT_DIRECTORY_PARALLEL_TEXT,
+        "use_osm": bool(values.get("use_osm", True)),
+        "use_duckduckgo": bool(values.get("use_duckduckgo", True)),
+        "use_directories": bool(values.get("use_directories", True)),
+        "use_zenrows_google": bool(values.get("use_zenrows_google", True)),
+        "use_serpapi": bool(values.get("use_serpapi", True)),
+        "directory_sources": sorted(selected_directory_source_ids(values)),
+    }
+
+
+def checkpoint_settings_for_gui(path: Path) -> dict[str, object] | None:
+    checkpoint = load_discovery_checkpoint(path)
+    if checkpoint is None:
+        return None
+
+    config = checkpoint.config
+    gui_settings = dict(config.get("gui_settings", {}))
+    countries = list(config.get("countries", gui_settings.get("countries", list(DEFAULT_COUNTRIES))))
+    settings: dict[str, object] = {
+        "category": str(config.get("category", gui_settings.get("category", ""))),
+        "location": str(config.get("location", gui_settings.get("location", ""))),
+        "countries": countries,
+        "limit": int(config.get("limit", gui_settings.get("limit", DEFAULT_LIMIT))),
+        "max_leads": int(config.get("max_leads", gui_settings.get("max_leads", DEFAULT_MAX_LEADS))),
+        "workers": str(gui_settings.get("workers", DEFAULT_WORKERS_TEXT)),
+        "directory_parallel": str(gui_settings.get("directory_parallel", DEFAULT_DIRECTORY_PARALLEL_TEXT)),
+        "use_osm": bool(gui_settings.get("use_osm", True)),
+        "use_duckduckgo": bool(gui_settings.get("use_duckduckgo", True)),
+        "use_directories": bool(gui_settings.get("use_directories", True)),
+        "use_zenrows_google": bool(gui_settings.get("use_zenrows_google", True)),
+        "use_serpapi": bool(gui_settings.get("use_serpapi", False)),
+        "directory_sources": list(gui_settings.get("directory_sources", [])),
+        "progress_summary": checkpoint_progress_summary(checkpoint),
+    }
+    return settings
+
+
+def apply_gui_settings(values: dict[str, object], settings: Mapping[str, object]) -> None:
+    values["category"] = str(settings.get("category", ""))
+    values["location"] = str(settings.get("location", ""))
+    countries = {str(code).upper() for code in settings.get("countries", list(DEFAULT_COUNTRIES))}
+    values["country_de"] = "DE" in countries
+    values["country_at"] = "AT" in countries
+    values["limit"] = str(settings.get("limit", DEFAULT_LIMIT))
+    values["max_leads"] = str(settings.get("max_leads", DEFAULT_MAX_LEADS))
+    values["workers"] = str(settings.get("workers", DEFAULT_WORKERS_TEXT))
+    values["directory_parallel"] = str(settings.get("directory_parallel", DEFAULT_DIRECTORY_PARALLEL_TEXT))
+    values["use_osm"] = bool(settings.get("use_osm", True))
+    values["use_duckduckgo"] = bool(settings.get("use_duckduckgo", True))
+    values["use_directories"] = bool(settings.get("use_directories", True))
+    values["use_zenrows_google"] = bool(settings.get("use_zenrows_google", True))
+    values["use_serpapi"] = bool(settings.get("use_serpapi", False))
+
+    directory_sources = settings.get("directory_sources")
+    if isinstance(directory_sources, list) and directory_sources:
+        enabled_ids = {str(source_id) for source_id in directory_sources}
+        for spec in build_directory_source_registry():
+            if spec.implemented:
+                key = f"dir_source_{spec.id}"
+                if key in values:
+                    values[key] = spec.id in enabled_ids
+
+
 def run_gui_discovery(
     values: Mapping[str, str | bool],
     events: "queue.Queue[tuple]",
@@ -186,6 +266,7 @@ def run_gui_discovery(
         on_event=lambda *event: events.put(event),
         checkpoint=checkpoint,
         resume=resume,
+        gui_settings=collect_gui_settings(values),
     )
     return 0
 
@@ -331,7 +412,10 @@ def run_gui() -> int:
                 checkpoint_frame,
                 text="Fortsetzen",
                 variable=self.resume,
+                command=self._on_resume_toggled,
             ).grid(row=0, column=2, padx=(12, 0))
+
+            self.checkpoint.trace_add("write", self._on_checkpoint_path_changed)
 
             ttk.Label(content, text="Opt-out Liste").grid(row=6, column=0, sticky="w", pady=4)
             ttk.Entry(content, textvariable=self.suppression_file).grid(row=6, column=1, sticky="ew", pady=4)
@@ -518,9 +602,73 @@ def run_gui() -> int:
             if selected:
                 self.suppression_file.set(selected)
 
+        def _gui_values_dict(self) -> dict[str, object]:
+            values: dict[str, object] = {
+                "category": self.category.get(),
+                "location": self.location.get(),
+                "max_leads": self.max_leads.get(),
+                "limit": self.limit.get(),
+                "workers": self.workers.get(),
+                "directory_parallel": self.directory_parallel.get(),
+                "use_osm": self.use_osm.get(),
+                "use_duckduckgo": self.use_duckduckgo.get(),
+                "use_directories": self.use_directories.get(),
+                "use_zenrows_google": self.use_zenrows_google.get(),
+                "use_serpapi": self.use_serpapi.get(),
+                "country_de": self.country_de.get(),
+                "country_at": self.country_at.get(),
+            }
+            for source_id, var in self.directory_source_vars.items():
+                values[f"dir_source_{source_id}"] = var.get()
+            return values
+
+        def _apply_checkpoint_settings(self, settings: Mapping[str, object]) -> None:
+            values = self._gui_values_dict()
+            apply_gui_settings(values, settings)
+            self.category.set(str(values["category"]))
+            self.location.set(str(values["location"]))
+            self.max_leads.set(str(values["max_leads"]))
+            self.limit.set(str(values["limit"]))
+            self.workers.set(str(values["workers"]))
+            self.directory_parallel.set(str(values["directory_parallel"]))
+            self.use_osm.set(bool(values["use_osm"]))
+            self.use_duckduckgo.set(bool(values["use_duckduckgo"]))
+            self.use_directories.set(bool(values["use_directories"]))
+            self.use_zenrows_google.set(bool(values["use_zenrows_google"]))
+            self.use_serpapi.set(bool(values["use_serpapi"]))
+            self.country_de.set(bool(values["country_de"]))
+            self.country_at.set(bool(values["country_at"]))
+            for source_id, var in self.directory_source_vars.items():
+                var.set(bool(values.get(f"dir_source_{source_id}", var.get())))
+
+        def _load_checkpoint_into_form(self, *, show_errors: bool = True) -> bool:
+            path = Path(self.checkpoint.get().strip() or DEFAULT_CHECKPOINT)
+            settings = checkpoint_settings_for_gui(path)
+            if settings is None:
+                if show_errors:
+                    messagebox.showwarning("Checkpoint", f"Datei nicht gefunden: {path}")
+                    self.resume.set(False)
+                return False
+            self._apply_checkpoint_settings(settings)
+            summary = str(settings.get("progress_summary", ""))
+            self.status_text.set(f"Einstellungen aus Checkpoint geladen ({summary}).")
+            self._append_log(f"Checkpoint-Einstellungen geladen: {path} — {summary}\n")
+            return True
+
+        def _on_resume_toggled(self) -> None:
+            if self.resume.get():
+                self._load_checkpoint_into_form()
+
+        def _on_checkpoint_path_changed(self, *_args: object) -> None:
+            if self.resume.get():
+                self._load_checkpoint_into_form(show_errors=False)
+
         def _start(self) -> None:
             if self.worker and self.worker.is_alive():
                 messagebox.showinfo("Capper", "Die Suche laeuft bereits.")
+                return
+
+            if self.resume.get() and not self._load_checkpoint_into_form():
                 return
 
             values = {

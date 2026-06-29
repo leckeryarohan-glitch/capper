@@ -106,6 +106,7 @@ def run_discovery(
     on_event: EventCallback | None = None,
     checkpoint: Path | None = None,
     resume: bool = False,
+    gui_settings: dict[str, object] | None = None,
 ) -> LeadStats:
     """Run a concurrent discovery: search, crawl websites in parallel, dedupe,
     suppress, and stream results to disk while reporting live statistics."""
@@ -147,6 +148,10 @@ def run_discovery(
             max_leads=config.max_leads,
             dedupe_by=config.dedupe_by,
         )
+
+    if gui_settings is not None:
+        checkpoint_state.config["gui_settings"] = gui_settings
+        save_discovery_checkpoint(checkpoint, checkpoint_state)
 
     emit("status", "Bereite Suche vor ...")
     try:
