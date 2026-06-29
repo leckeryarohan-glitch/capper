@@ -36,6 +36,7 @@ from lead_research.search import (
     zenrows_cities_budget,
     zenrows_items_to_results,
     zenrows_query_plans,
+    directory_parallel_workers,
 )
 
 
@@ -541,6 +542,13 @@ class SearchTests(unittest.TestCase):
         self.assertEqual(len(results), 5)
         # multiple distinct queries (cities) were used, not just one
         self.assertGreater(len(set(captured)), 1)
+
+
+class DirectoryParallelismTests(unittest.TestCase):
+    def test_directory_parallel_workers_caps_zenrows_requests(self) -> None:
+        self.assertEqual(directory_parallel_workers(15, use_zenrows=True), 6)
+        self.assertEqual(directory_parallel_workers(3, use_zenrows=True), 3)
+        self.assertEqual(directory_parallel_workers(15, use_zenrows=False), 15)
 
 
 if __name__ == "__main__":
