@@ -147,7 +147,8 @@ CATEGORY_SEARCH_VARIANTS: dict[str, tuple[str, ...]] = {
 
 ZENROWS_MASS_MODE_LIMIT = 500
 ZENROWS_MAX_PARALLEL_REQUESTS = 6
-DIRECTORY_MAX_PARALLEL_REQUESTS = 6
+DEFAULT_DIRECTORY_PARALLEL_REQUESTS = 20
+DIRECTORY_MAX_PARALLEL_REQUESTS = 100
 ZENROWS_DEEP_PAGINATION_START = 90
 ZENROWS_MEDIUM_PAGINATION_START = 40
 ZENROWS_LIGHT_PAGINATION_START = 10
@@ -645,12 +646,19 @@ def zenrows_parallel_workers(requested: int, mass_mode: bool, plan_count: int) -
     return max(1, min(ZENROWS_MAX_PARALLEL_REQUESTS, requested))
 
 
-def directory_parallel_workers(active_scraper_count: int, *, use_zenrows: bool) -> int:
+def directory_parallel_workers(
+    active_scraper_count: int,
+    *,
+    use_zenrows: bool,
+    requested_parallel: int | None = None,
+) -> int:
     if active_scraper_count < 1:
         return 1
     if not use_zenrows:
         return active_scraper_count
-    return max(1, min(active_scraper_count, DIRECTORY_MAX_PARALLEL_REQUESTS))
+    cap = requested_parallel if requested_parallel and requested_parallel > 0 else DEFAULT_DIRECTORY_PARALLEL_REQUESTS
+    cap = max(1, min(cap, DIRECTORY_MAX_PARALLEL_REQUESTS))
+    return max(1, min(active_scraper_count, cap))
 
 
 def find_zenrows_provider(provider: SearchProvider) -> ZenRowsSearchProvider | None:
@@ -1385,11 +1393,13 @@ class DirectorySearchProvider(SearchProvider):
         allow_direct_fetch: bool = False,
         proxy_country: str = "de",
         enabled_directory_sources: set[str] | None = None,
+        parallel_requests: int | None = None,
     ):
         self.zenrows_api_key = _resolve_api_key(zenrows_api_key, "ZENROWS_API_KEY")
         self.allow_direct_fetch = allow_direct_fetch
         self.proxy_country = proxy_country
         self.enabled_directory_sources = enabled_directory_sources
+        self.parallel_requests = parallel_requests
 
     def search(
         self,
@@ -1439,7 +1449,11 @@ class DirectorySearchProvider(SearchProvider):
         results: list[SearchResult] = []
         seen: set[str] = set()
         fetch_mode = "ZenRows" if self.zenrows_api_key else "Direct"
-        max_workers = directory_parallel_workers(len(active_scrapers), use_zenrows=bool(self.zenrows_api_key))
+        max_workers = directory_parallel_workers(
+            len(active_scrapers),
+            use_zenrows=bool(self.zenrows_api_key),
+            requested_parallel=self.parallel_requests,
+        )
 
         for plan_index, plan_location in enumerate(locations, start=1):
             if len(results) >= limit:
@@ -1574,6 +1588,7 @@ def combined_provider(
     serpapi_key: str | None = None,
     zenrows_key: str | None = None,
     enabled_directory_sources: set[str] | None = None,
+    directory_parallel_requests: int | None = None,
 ) -> SearchProvider:
     """Combine the selected no-key and key-based sources for maximum coverage."""
     providers: list[SearchProvider] = []
@@ -1589,6 +1604,7 @@ def combined_provider(
                     zenrows_api_key=resolved_zenrows_for_directories or None,
                     allow_direct_fetch=os.getenv("DIRECTORY_ALLOW_DIRECT_FETCH") == "1",
                     enabled_directory_sources=enabled_directory_sources,
+                    parallel_requests=directory_parallel_requests,
                 )
             )
     if os.getenv("GOOGLE_SEARCH_API_KEY") and os.getenv("GOOGLE_SEARCH_ENGINE_ID"):
