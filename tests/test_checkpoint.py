@@ -99,6 +99,29 @@ class CheckpointTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_checkpoint_config(checkpoint, expected)
 
+    def test_checkpoint_roundtrip_directory_progress(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "checkpoint.json"
+            checkpoint = new_discovery_checkpoint(
+                category="logistik",
+                location="",
+                countries=("DE",),
+                limit=5000,
+                max_leads=20000,
+                dedupe_by="email",
+            )
+            checkpoint.directory_completed_locations = ["Berlin", "Hamburg"]
+            checkpoint.directory_partial_results = [
+                {"title": "Berlin", "url": "https://berlin.example", "snippet": ""},
+            ]
+            checkpoint.directory_seen_keys = ["url:https://berlin.example"]
+            save_discovery_checkpoint(path, checkpoint)
+            loaded = load_discovery_checkpoint(path)
+
+        assert loaded is not None
+        self.assertEqual(loaded.directory_completed_locations, ["Berlin", "Hamburg"])
+        self.assertEqual(loaded.directory_search_result_objects()[0].url, "https://berlin.example")
+
 
 class ResumableDiscoveryTests(unittest.TestCase):
     def test_run_discovery_resumes_crawl_from_checkpoint(self) -> None:
@@ -216,6 +239,40 @@ class ResumableDiscoveryTests(unittest.TestCase):
 
         self.assertEqual(len(results), 2)
         self.assertNotIn("logistik Deutschland", captured)
+
+    def test_directory_search_resume_skips_completed_locations(self) -> None:
+        from lead_research.directories import DirectoryEntry
+        from lead_research.search import DirectoryResumeState, DirectorySearchProvider
+
+        cities = ["Berlin", "Hamburg", "Muenchen"]
+        visited: list[str] = []
+
+        def fake_scraper(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+            visited.append(location)
+            slug = location.lower()
+            return [
+                DirectoryEntry(
+                    name=f"Firma {location}",
+                    website=f"https://{slug}.example",
+                    source_url=f"https://source/{slug}",
+                )
+            ]
+
+        provider = DirectorySearchProvider(zenrows_api_key="test-key", allow_direct_fetch=True)
+        resume_state = DirectoryResumeState(
+            results=[SearchResult(title="Berlin", url="https://berlin.example")],
+            seen={"url:https://berlin.example"},
+            completed_locations={"Berlin", "Hamburg"},
+        )
+        with patch("lead_research.directories.get_directory_scrapers", return_value=(("Test", fake_scraper),)), patch(
+            "lead_research.directories.directory_location_plans",
+            return_value=cities,
+        ), patch("lead_research.directories.configure_directory_fetch"):
+            results = provider.search("logistik", "", 10, ("DE",), resume_state=resume_state)
+
+        self.assertEqual(visited, ["Muenchen"])
+        self.assertEqual(len(results), 2)
+        self.assertEqual({result.url for result in results}, {"https://berlin.example", "https://muenchen.example"})
 
 
 if __name__ == "__main__":

@@ -384,6 +384,13 @@ def serpapi_items_to_results(data: dict) -> list[SearchResult]:
 
 
 @dataclass
+class DirectoryResumeState:
+    results: list[SearchResult]
+    seen: set[str]
+    completed_locations: set[str]
+
+
+@dataclass
 class ZenRowsResumeState:
     results: list[SearchResult]
     seen_urls: set[str]
@@ -1295,6 +1302,9 @@ class MultiSourceProvider(SearchProvider):
         location: str,
         limit: int,
         countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+        *,
+        directory_resume_state: DirectoryResumeState | None = None,
+        on_directory_location_complete: Callable[[DirectoryResumeState], None] | None = None,
     ) -> list[SearchResult]:
         if limit < 1 or not self.providers:
             return []
@@ -1310,7 +1320,16 @@ class MultiSourceProvider(SearchProvider):
         grouped: list[list[SearchResult]] = []
         with ThreadPoolExecutor(max_workers=len(self.providers)) as executor:
             futures = {
-                executor.submit(self._safe_search, provider, category, location, limit, countries): provider
+                executor.submit(
+                    self._safe_search,
+                    provider,
+                    category,
+                    location,
+                    limit,
+                    countries,
+                    directory_resume_state,
+                    on_directory_location_complete,
+                ): provider
                 for provider in self.providers
             }
             for future in as_completed(futures):
@@ -1341,8 +1360,19 @@ class MultiSourceProvider(SearchProvider):
         location: str,
         limit: int,
         countries: tuple[str, ...],
+        directory_resume_state: DirectoryResumeState | None = None,
+        on_directory_location_complete: Callable[[DirectoryResumeState], None] | None = None,
     ) -> list[SearchResult]:
         try:
+            if isinstance(provider, DirectorySearchProvider):
+                return provider.search(
+                    category,
+                    location,
+                    limit,
+                    countries,
+                    resume_state=directory_resume_state,
+                    on_location_complete=on_directory_location_complete,
+                )
             return provider.search(category, location, limit, countries)
         except SearchProviderError:
             return []
@@ -1407,6 +1437,9 @@ class DirectorySearchProvider(SearchProvider):
         location: str,
         limit: int,
         countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+        *,
+        resume_state: DirectoryResumeState | None = None,
+        on_location_complete: Callable[[DirectoryResumeState], None] | None = None,
     ) -> list[SearchResult]:
         from .directories import (
             DirectoryFetchConfig,
@@ -1446,8 +1479,19 @@ class DirectorySearchProvider(SearchProvider):
         per_source_limit = cap_directory_source_limit(
             max(1, ceil(per_location_limit / len(active_scrapers)))
         )
-        results: list[SearchResult] = []
-        seen: set[str] = set()
+        if resume_state:
+            results = list(resume_state.results)
+            seen = set(resume_state.seen)
+            completed_locations = set(resume_state.completed_locations)
+            if completed_locations:
+                self._report(
+                    f"Branchenverzeichnisse: Fortsetzung — {len(results)} Websites, "
+                    f"{len(completed_locations)}/{len(locations)} Orte fertig."
+                )
+        else:
+            results = []
+            seen: set[str] = set()
+            completed_locations: set[str] = set()
         fetch_mode = "ZenRows" if self.zenrows_api_key else "Direct"
         max_workers = directory_parallel_workers(
             len(active_scrapers),
@@ -1456,6 +1500,8 @@ class DirectorySearchProvider(SearchProvider):
         )
 
         for plan_index, plan_location in enumerate(locations, start=1):
+            if plan_location in completed_locations:
+                continue
             if len(results) >= limit:
                 break
             location_hint = (
@@ -1492,8 +1538,31 @@ class DirectorySearchProvider(SearchProvider):
                     if len(results) >= limit:
                         break
 
+            completed_locations.add(plan_location)
+            if on_location_complete:
+                on_location_complete(
+                    DirectoryResumeState(
+                        results=list(results),
+                        seen=set(seen),
+                        completed_locations=set(completed_locations),
+                    )
+                )
+
         self._report(f"Branchenverzeichnisse: {len(results)} Websites gefunden")
         return results[:limit]
+
+
+def find_directory_provider(provider: SearchProvider) -> "DirectorySearchProvider | None":
+    if isinstance(provider, DirectorySearchProvider):
+        return provider
+    if isinstance(provider, MultiSourceProvider):
+        for sub_provider in provider.providers:
+            found = find_directory_provider(sub_provider)
+            if found is not None:
+                return found
+    if isinstance(provider, CommonSourcesSearchProvider):
+        return find_directory_provider(provider.provider)
+    return None
 
 
 def build_query(category: str, location: str, *, broad: bool = False) -> str:
