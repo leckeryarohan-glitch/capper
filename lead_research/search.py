@@ -147,6 +147,7 @@ CATEGORY_SEARCH_VARIANTS: dict[str, tuple[str, ...]] = {
 
 ZENROWS_MASS_MODE_LIMIT = 500
 ZENROWS_MAX_PARALLEL_REQUESTS = 6
+DIRECTORY_MAX_PARALLEL_REQUESTS = 6
 ZENROWS_DEEP_PAGINATION_START = 90
 ZENROWS_MEDIUM_PAGINATION_START = 40
 ZENROWS_LIGHT_PAGINATION_START = 10
@@ -642,6 +643,14 @@ def zenrows_parallel_workers(requested: int, mass_mode: bool, plan_count: int) -
     if not mass_mode or plan_count <= 30 or requested <= 1:
         return 1
     return max(1, min(ZENROWS_MAX_PARALLEL_REQUESTS, requested))
+
+
+def directory_parallel_workers(active_scraper_count: int, *, use_zenrows: bool) -> int:
+    if active_scraper_count < 1:
+        return 1
+    if not use_zenrows:
+        return active_scraper_count
+    return max(1, min(active_scraper_count, DIRECTORY_MAX_PARALLEL_REQUESTS))
 
 
 def find_zenrows_provider(provider: SearchProvider) -> ZenRowsSearchProvider | None:
@@ -1430,7 +1439,7 @@ class DirectorySearchProvider(SearchProvider):
         results: list[SearchResult] = []
         seen: set[str] = set()
         fetch_mode = "ZenRows" if self.zenrows_api_key else "Direct"
-        max_workers = 2 if self.zenrows_api_key else len(active_scrapers)
+        max_workers = directory_parallel_workers(len(active_scrapers), use_zenrows=bool(self.zenrows_api_key))
 
         for plan_index, plan_location in enumerate(locations, start=1):
             if len(results) >= limit:
@@ -1440,8 +1449,9 @@ class DirectorySearchProvider(SearchProvider):
                 if len(locations) > 1
                 else ""
             )
+            parallel_hint = f", {max_workers} parallel" if max_workers > 1 else ""
             self._report(
-                f"Branchenverzeichnisse ({fetch_mode}, {len(active_scrapers)} Quellen): "
+                f"Branchenverzeichnisse ({fetch_mode}, {len(active_scrapers)} Quellen{parallel_hint}): "
                 f"{category} in {plan_location}{location_hint} ..."
             )
 
