@@ -414,6 +414,30 @@ class DirectoryParserTests(unittest.TestCase):
         self.assertEqual(entry.email, "kontakt@demo-salon.example")
         self.assertEqual(entry.name, "Demo Salon")
 
+    def test_jameda_specialization_scraper_defaults(self) -> None:
+        from unittest.mock import patch
+
+        from lead_research.directories import (
+            build_jameda_url,
+            scrape_jameda_physio,
+            scrape_jameda_zahn,
+        )
+
+        self.assertEqual(
+            build_jameda_url("physiotherapie", "Berlin"),
+            "https://www.jameda.de/physiotherapie/berlin",
+        )
+        self.assertEqual(
+            build_jameda_url("zahnarzt", "Berlin"),
+            "https://www.jameda.de/zahnarzt/berlin",
+        )
+        with patch("lead_research.directories.scrape_jameda", return_value=[]) as mock:
+            scrape_jameda_physio("", "Berlin", 5)
+            mock.assert_called_once_with("physiotherapie", "Berlin", 5)
+        with patch("lead_research.directories.scrape_jameda", return_value=[]) as mock:
+            scrape_jameda_zahn("Kieferorthopädie", "München", 3)
+            mock.assert_called_once_with("Kieferorthopädie", "München", 3)
+
     def test_parse_jameda_listing_and_detail(self) -> None:
         from lead_research.directories import (
             build_jameda_url,

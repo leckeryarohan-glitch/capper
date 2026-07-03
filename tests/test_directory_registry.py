@@ -84,7 +84,8 @@ class DirectoryRegistryTests(unittest.TestCase):
         self.assertIn("jobboersen_monster", unavailable_ids)
         self.assertIn("immobilien_idealista", unavailable_ids)
         self.assertIn("lieferanten_thomasnet", unavailable_ids)
-        self.assertIn("branchen_physiotherapeuten", unavailable_ids)
+        self.assertNotIn("branchen_physiotherapeuten", unavailable_ids)
+        self.assertNotIn("branchen_zahnaerzte", unavailable_ids)
 
     def test_branchen_trade_sources_are_implemented(self) -> None:
         registry = build_directory_source_registry()
@@ -94,7 +95,11 @@ class DirectoryRegistryTests(unittest.TestCase):
         self.assertIn("branchen_restaurants", implemented_ids)
         self.assertIn("branchen_elektriker", implemented_ids)
         self.assertIn("branchen_fitnessstudios", implemented_ids)
+        self.assertIn("branchen_physiotherapeuten", implemented_ids)
+        self.assertIn("branchen_zahnaerzte", implemented_ids)
         self.assertNotIn("branchen_restaurants", unavailable_ids)
+        self.assertNotIn("branchen_physiotherapeuten", unavailable_ids)
+        self.assertNotIn("branchen_zahnaerzte", unavailable_ids)
 
     def test_blocked_gastronomie_and_aerzte_sources_marked_unavailable(self) -> None:
         registry = build_directory_source_registry()
