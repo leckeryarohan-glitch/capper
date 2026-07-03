@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .batch import read_terms, run_batch_discovery
 from .crawl import CrawlConfig
+from .mass import run_mass_discovery
 from .pipeline import DEFAULT_WORKERS, DiscoveryConfig, run_discovery
 from .search import SearchProviderError, provider_from_name
 from .locations import parse_countries
@@ -223,6 +224,95 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output file path (.csv or .json).",
     )
 
+    mass = subparsers.add_parser(
+        "mass",
+        help="Mass directory discovery for one category across all cities in selected countries.",
+    )
+    mass.add_argument("--category", required=True, help="Business category, e.g. steuerberater.")
+    mass.add_argument(
+        "--countries",
+        default="DE",
+        help="Comma-separated ISO country codes (DE, AT).",
+    )
+    mass.add_argument(
+        "--target",
+        type=int,
+        default=150000,
+        help="Stop after this many deduplicated reviewable leads.",
+    )
+    mass.add_argument(
+        "--limit-per-query",
+        type=int,
+        default=100,
+        help="Maximum directory results to inspect per city query.",
+    )
+    mass.add_argument(
+        "--max-pages-per-site",
+        type=int,
+        default=3,
+        help="Maximum pages to crawl per search result.",
+    )
+    mass.add_argument(
+        "--delay",
+        type=float,
+        default=1.0,
+        help="Delay in seconds between page requests on a site.",
+    )
+    mass.add_argument(
+        "--query-delay",
+        type=float,
+        default=0.0,
+        help="Delay in seconds between search provider queries.",
+    )
+    mass.add_argument(
+        "--query-parallel",
+        type=int,
+        default=4,
+        help="Number of city queries to run in parallel.",
+    )
+    mass.add_argument(
+        "--directory-parallel",
+        type=int,
+        default=40,
+        help="Parallel Branchenverzeichnis sources per query (ZenRows).",
+    )
+    mass.add_argument(
+        "--directory-detail-parallel",
+        type=int,
+        default=12,
+        help="Parallel detail-page fetches within each directory source.",
+    )
+    mass.add_argument(
+        "--include-personal-review",
+        action="store_true",
+        help="Include non-role emails marked as personal_review_required.",
+    )
+    mass.add_argument(
+        "--ignore-robots",
+        action="store_true",
+        help="Do not check robots.txt before crawling websites.",
+    )
+    mass.add_argument(
+        "--suppression-file",
+        type=Path,
+        help="Opt-out list with emails or domains to exclude.",
+    )
+    mass.add_argument(
+        "--checkpoint",
+        type=Path,
+        help="Checkpoint file to resume long mass runs (default: capper-mass-<category>.json).",
+    )
+    mass.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume from --checkpoint instead of starting over.",
+    )
+    mass.add_argument(
+        "--output",
+        type=Path,
+        help="Output file path (.csv or .json). Default: mass-<category>.csv",
+    )
+
     subparsers.add_parser(
         "gui",
         help="Open a desktop form for guided lead discovery.",
@@ -338,6 +428,53 @@ def run_batch(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_mass(args: argparse.Namespace) -> int:
+    if args.max_pages_per_site < 1:
+        raise ValueError("--max-pages-per-site must be at least 1")
+    if args.target < 1:
+        raise ValueError("--target must be at least 1")
+    if args.limit_per_query < 1:
+        raise ValueError("--limit-per-query must be at least 1")
+
+    import os
+    import re
+
+    os.environ["DIRECTORY_MASS_MODE"] = "1"
+    os.environ["DIRECTORY_DETAIL_PARALLEL"] = str(args.directory_detail_parallel)
+
+    countries = parse_countries(args.countries)
+    slug = re.sub(r"[^a-z0-9]+", "-", args.category.strip().casefold()).strip("-") or "category"
+    output = args.output or Path(f"mass-{slug}.csv")
+    checkpoint = args.checkpoint or Path(f"capper-mass-{slug}.json")
+
+    count = run_mass_discovery(
+        category=args.category,
+        countries=countries,
+        crawl_config=CrawlConfig(
+            max_pages_per_site=args.max_pages_per_site,
+            delay_seconds=args.delay,
+            include_personal=args.include_personal_review,
+            respect_robots=not args.ignore_robots,
+        ),
+        limit_per_query=args.limit_per_query,
+        target_leads=args.target,
+        output=output,
+        suppression_file=args.suppression_file,
+        checkpoint=checkpoint,
+        resume=args.resume,
+        query_delay=args.query_delay,
+        query_parallel=args.query_parallel,
+        directory_parallel=args.directory_parallel,
+        directory_detail_parallel=args.directory_detail_parallel,
+    )
+
+    print(f"Discovered {count} reviewable lead(s). Wrote {output}.")
+    print(f"Checkpoint: {checkpoint}")
+    if not args.include_personal_review:
+        print("Personal-looking emails were excluded. Use --include-personal-review to export them for manual review.")
+    return 0
+
+
 def run_gui() -> int:
     from .gui import run_gui as launch_gui
 
@@ -352,6 +489,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_discover(args)
         if args.command == "batch":
             return run_batch(args)
+        if args.command == "mass":
+            return run_mass(args)
         if args.command == "gui":
             return run_gui()
     except (OSError, SearchProviderError, ValueError) as exc:

@@ -28,8 +28,12 @@ DIRECTORY_MAX_RESULTS_PER_SOURCE = 120
 DIRECTORY_MAX_DETAIL_FETCHES = 30
 DIRECTORY_FAST_DETAIL_FETCH_CAP = 10
 DIRECTORY_FAST_LISTING_PAGE_CAP = 1
+DIRECTORY_MASS_RESULTS_PER_SOURCE = 200
+DIRECTORY_MASS_DETAIL_FETCH_CAP = 100
+DIRECTORY_MASS_LISTING_PAGE_CAP = 5
 DEFAULT_DIRECTORY_DETAIL_PARALLEL = 8
 DIRECTORY_MAX_DETAIL_PARALLEL = 50
+DEFAULT_DIRECTORY_MASS_DETAIL_PARALLEL = 12
 
 
 def _env_float(name: str, default: float) -> float:
@@ -56,13 +60,26 @@ def directory_fast_mode_enabled() -> bool:
     return os.getenv("DIRECTORY_FAST_MODE", "").strip() == "1"
 
 
+def directory_mass_mode_enabled() -> bool:
+    return os.getenv("DIRECTORY_MASS_MODE", "").strip() == "1"
+
+
 def cap_directory_source_limit(limit: int) -> int:
-    return max(1, min(limit, DIRECTORY_MAX_RESULTS_PER_SOURCE))
+    config = current_fetch_config()
+    if config.max_results_per_source is not None:
+        effective_cap = config.max_results_per_source
+    elif directory_mass_mode_enabled():
+        effective_cap = DIRECTORY_MASS_RESULTS_PER_SOURCE
+    else:
+        effective_cap = DIRECTORY_MAX_RESULTS_PER_SOURCE
+    return max(1, min(limit, effective_cap))
 
 
 def cap_directory_detail_fetches(limit: int) -> int:
     config = current_fetch_config()
     effective_cap = config.max_detail_fetches
+    if effective_cap is None and directory_mass_mode_enabled():
+        effective_cap = DIRECTORY_MASS_DETAIL_FETCH_CAP
     if effective_cap is None and directory_fast_mode_enabled():
         effective_cap = DIRECTORY_FAST_DETAIL_FETCH_CAP
     if effective_cap is None:
@@ -74,6 +91,8 @@ def directory_listing_page_limit() -> int:
     config = current_fetch_config()
     if config.max_listing_pages is not None:
         return max(1, config.max_listing_pages)
+    if directory_mass_mode_enabled():
+        return DIRECTORY_MASS_LISTING_PAGE_CAP
     if directory_fast_mode_enabled():
         return DIRECTORY_FAST_LISTING_PAGE_CAP
     return 3
@@ -83,7 +102,7 @@ def directory_request_delay() -> float:
     config = current_fetch_config()
     if config.request_delay_seconds is not None:
         return config.request_delay_seconds
-    if config.detail_parallel_workers > 1 or directory_fast_mode_enabled():
+    if config.detail_parallel_workers > 1 or directory_fast_mode_enabled() or directory_mass_mode_enabled():
         return 0.0
     return _env_float("DIRECTORY_REQUEST_DELAY_SECONDS", DIRECTORY_REQUEST_DELAY_SECONDS)
 
@@ -92,7 +111,7 @@ def directory_zenrows_delay() -> float:
     config = current_fetch_config()
     if config.zenrows_delay_seconds is not None:
         return config.zenrows_delay_seconds
-    if config.detail_parallel_workers > 1 or directory_fast_mode_enabled():
+    if config.detail_parallel_workers > 1 or directory_fast_mode_enabled() or directory_mass_mode_enabled():
         return 0.0
     return _env_float("DIRECTORY_ZENROWS_DELAY_SECONDS", DIRECTORY_ZENROWS_DELAY_SECONDS)
 
@@ -259,6 +278,7 @@ class DirectoryFetchConfig:
     zenrows_delay_seconds: float | None = None
     max_detail_fetches: int | None = None
     max_listing_pages: int | None = None
+    max_results_per_source: int | None = None
 
 
 _fetch_config_var: ContextVar[DirectoryFetchConfig] = ContextVar(
@@ -283,12 +303,28 @@ def build_directory_fetch_config(
     scraper_parallel_requests: int | None = None,
     detail_parallel_requests: int | None = None,
     fast_mode: bool | None = None,
+    mass_mode: bool | None = None,
 ) -> DirectoryFetchConfig:
-    fast = directory_fast_mode_enabled() if fast_mode is None else fast_mode
+    mass = directory_mass_mode_enabled() if mass_mode is None else mass_mode
+    fast = False if mass else (directory_fast_mode_enabled() if fast_mode is None else fast_mode)
     detail_parallel = directory_detail_parallel_workers(detail_parallel_requests)
+    if mass and (detail_parallel_requests is None or detail_parallel_requests <= 0):
+        detail_parallel = max(detail_parallel, DEFAULT_DIRECTORY_MASS_DETAIL_PARALLEL)
     if detail_parallel <= 1 and scraper_parallel_requests and scraper_parallel_requests > 1:
         detail_parallel = directory_detail_parallel_workers(None)
-    no_delay = detail_parallel > 1 or fast
+    no_delay = detail_parallel > 1 or fast or mass
+    if mass:
+        max_detail_fetches = DIRECTORY_MASS_DETAIL_FETCH_CAP
+        max_listing_pages = DIRECTORY_MASS_LISTING_PAGE_CAP
+        max_results_per_source = DIRECTORY_MASS_RESULTS_PER_SOURCE
+    elif fast:
+        max_detail_fetches = DIRECTORY_FAST_DETAIL_FETCH_CAP
+        max_listing_pages = DIRECTORY_FAST_LISTING_PAGE_CAP
+        max_results_per_source = None
+    else:
+        max_detail_fetches = None
+        max_listing_pages = None
+        max_results_per_source = None
     return DirectoryFetchConfig(
         zenrows_api_key=zenrows_api_key,
         proxy_country=proxy_country,
@@ -296,8 +332,9 @@ def build_directory_fetch_config(
         detail_parallel_workers=detail_parallel,
         request_delay_seconds=0.0 if no_delay else None,
         zenrows_delay_seconds=0.0 if no_delay else None,
-        max_detail_fetches=DIRECTORY_FAST_DETAIL_FETCH_CAP if fast else None,
-        max_listing_pages=DIRECTORY_FAST_LISTING_PAGE_CAP if fast else None,
+        max_detail_fetches=max_detail_fetches,
+        max_listing_pages=max_listing_pages,
+        max_results_per_source=max_results_per_source,
     )
 
 

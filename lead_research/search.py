@@ -1425,6 +1425,7 @@ class DirectorySearchProvider(SearchProvider):
         enabled_directory_sources: set[str] | None = None,
         parallel_requests: int | None = None,
         detail_parallel_requests: int | None = None,
+        mass_mode: bool = False,
     ):
         self.zenrows_api_key = _resolve_api_key(zenrows_api_key, "ZENROWS_API_KEY")
         self.allow_direct_fetch = allow_direct_fetch
@@ -1432,6 +1433,7 @@ class DirectorySearchProvider(SearchProvider):
         self.enabled_directory_sources = enabled_directory_sources
         self.parallel_requests = parallel_requests
         self.detail_parallel_requests = detail_parallel_requests
+        self.mass_mode = mass_mode
 
     def search(
         self,
@@ -1475,6 +1477,7 @@ class DirectorySearchProvider(SearchProvider):
                 allow_direct_fallback=self.allow_direct_fetch,
                 scraper_parallel_requests=self.parallel_requests,
                 detail_parallel_requests=self.detail_parallel_requests,
+                mass_mode=self.mass_mode,
             )
         )
 
