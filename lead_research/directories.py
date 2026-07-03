@@ -138,6 +138,9 @@ DIRECTORY_HOST_SUFFIXES = (
     "verzeichnis-steuerberater.de",
     "bstbk.de",
     "berufs-org.de",
+    "herold.at",
+    "ksv.at",
+    "arztsuche24.at",
 )
 
 BLOCKED_WEBSITE_SUFFIXES = (
@@ -1558,6 +1561,79 @@ def parse_steuerberater_detail_link(page_html: str) -> str:
     return f"https://steuerberaterverzeichnis.berufs-org.de/{match.group(1)}"
 
 
+_HEROLD_LISTING_LINK_RE = re.compile(
+    r'href="(/gelbe-seiten/[^/]+/[A-Za-z0-9]{4,}/[^"]+/)"[^>]*data-ht-label="(?:company_name|go_to_company_detail)"'
+    r'|data-ht-label="(?:company_name|go_to_company_detail)"[^>]*href="(/gelbe-seiten/[^/]+/[A-Za-z0-9]{4,}/[^"]+/)"',
+    re.IGNORECASE,
+)
+
+
+def parse_herold_listing_html(page_html: str) -> list[tuple[str, str]]:
+    listings: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for match in _HEROLD_LISTING_LINK_RE.finditer(page_html):
+        path = match.group(1) or match.group(2)
+        if not path or path in seen:
+            continue
+        seen.add(path)
+        chunk = page_html[match.start() : match.start() + 1500]
+        logo_match = re.search(r'alt="Logo von ([^"]+)"', chunk)
+        inline_match = re.search(r"<!--t=[^>]+-->([^<]+)<!---->", chunk)
+        if logo_match:
+            name = html.unescape(logo_match.group(1).strip())
+        elif inline_match:
+            name = html.unescape(inline_match.group(1).strip())
+        else:
+            name = name_from_url_slug(path)
+        detail_url = f"https://www.herold.at{path}"
+        listings.append((name, detail_url))
+    return listings
+
+
+def parse_herold_detail_name(page_html: str) -> str:
+    title_match = re.search(r"<title[^>]*>([^<|]+)", page_html, re.IGNORECASE)
+    if title_match:
+        name = html.unescape(title_match.group(1).strip())
+        name = re.split(r"\s+in\s+", name, maxsplit=1)[0].strip()
+        if name:
+            return name
+    heading_match = re.search(r"<h1[^>]*>([^<]+)", page_html, re.IGNORECASE)
+    if heading_match:
+        return html.unescape(heading_match.group(1).strip())
+    return ""
+
+
+def parse_herold_detail_website(page_html: str) -> str:
+    for pattern in (
+        r'data-ht-label="use_other_contact_info"[^>]*href="(https?://[^"]+)"',
+        r'href="(https?://[^"]+)"[^>]*data-ht-label="use_other_contact_info"',
+        r'icon-internet[\s\S]{0,400}?href="(https?://[^"]+)"',
+        r'data-yxt="ofl"[^>]*href="(https?://[^"]+)"',
+        r'href="(https?://[^"]+)"[^>]*data-yxt="ofl"',
+    ):
+        match = re.search(pattern, page_html, re.IGNORECASE)
+        if match:
+            candidate = normalize_directory_website(match.group(1))
+            if candidate:
+                return candidate
+    return next((link for link in extract_external_links(page_html) if is_external_business_url(link)), "")
+
+
+def parse_herold_detail_html(page_html: str, *, name: str, source_url: str) -> DirectoryEntry | None:
+    website = parse_herold_detail_website(page_html)
+    email = pick_directory_email(page_html)
+    if not website and not email:
+        return None
+    resolved_name = parse_herold_detail_name(page_html) or name
+    return DirectoryEntry(
+        name=resolved_name,
+        website=website,
+        source_url=source_url,
+        snippet="Herold",
+        email=email,
+    )
+
+
 def parse_steuerberater_detail_html(page_html: str, *, name: str, source_url: str) -> DirectoryEntry | None:
     email = pick_directory_email(page_html)
     website = ""
@@ -1669,6 +1745,12 @@ def build_anwaltauskunft_url(category: str, location: str) -> str:
 def build_steuerberater_url(category: str, location: str) -> str:
     _ = category
     return "https://steuerberaterverzeichnis.berufs-org.de/?lang=de"
+
+
+def build_herold_url(category: str, location: str) -> str:
+    location_slug = directory_lower_hyphen_slug(location)
+    category_slug = directory_lower_hyphen_slug(category)
+    return f"https://www.herold.at/gelbe-seiten/{location_slug}/{category_slug}/"
 
 
 def scrape_pitchbook(category: str, location: str, limit: int) -> list[DirectoryEntry]:
@@ -1787,6 +1869,28 @@ def scrape_anwaltauskunft(category: str, location: str, limit: int) -> list[Dire
     source_url = build_anwaltauskunft_url(category, location)
     page_text = fetch_directory_html(source_url)
     return parse_anwaltauskunft_json(page_text, source_url=source_url)[:limit]
+
+
+def enrich_herold_entries(listings: list[tuple[str, str]], *, max_detail_fetches: int) -> list[DirectoryEntry]:
+    entries: list[DirectoryEntry] = []
+    max_detail_fetches = cap_directory_detail_fetches(max_detail_fetches)
+    for name, detail_url in listings[:max_detail_fetches]:
+        try:
+            detail_html = fetch_directory_html(detail_url)
+        except DirectoryFetchError:
+            continue
+        parsed = parse_herold_detail_html(detail_html, name=name, source_url=detail_url)
+        if parsed is not None:
+            entries.append(parsed)
+        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+    return entries
+
+
+def scrape_herold(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    source_url = build_herold_url(category, location)
+    page_html = fetch_directory_html(source_url)
+    listings = parse_herold_listing_html(page_html)
+    return enrich_herold_entries(listings, max_detail_fetches=limit)
 
 
 def scrape_steuerberater(category: str, location: str, limit: int) -> list[DirectoryEntry]:
@@ -2067,6 +2171,7 @@ def _directory_scraper_map() -> dict[str, callable]:
         "docfinder": scrape_docfinder,
         "anwaltauskunft": scrape_anwaltauskunft,
         "steuerberater": scrape_steuerberater,
+        "herold": scrape_herold,
     }
 
 

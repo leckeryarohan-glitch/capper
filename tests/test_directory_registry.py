@@ -34,7 +34,7 @@ class DirectoryRegistryTests(unittest.TestCase):
         implemented = [
             spec for spec in registry if spec.category == "Firmenverzeichnisse" and spec.implemented
         ]
-        self.assertEqual(len(implemented), 13)
+        self.assertEqual(len(implemented), 14)
 
     def test_pitchbook_and_indeed_are_implemented(self) -> None:
         registry = build_directory_source_registry()
@@ -53,6 +53,7 @@ class DirectoryRegistryTests(unittest.TestCase):
         self.assertIn("docfinder", implemented_ids)
         self.assertIn("anwaltauskunft", implemented_ids)
         self.assertIn("steuerberater", implemented_ids)
+        self.assertIn("herold", implemented_ids)
 
     def test_blocked_gastronomie_and_aerzte_sources_marked_unavailable(self) -> None:
         registry = build_directory_source_registry()

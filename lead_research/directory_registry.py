@@ -118,6 +118,7 @@ def build_directory_source_registry(
         active(cat, "europages", "Europages", "europages"),
         active(cat, "kompass", "Kompass", "kompass"),
         active(cat, "manta", "Manta", "manta"),
+        active(cat, "herold", "Herold", "herold"),
         _unavailable(cat, "wlw", "Wer liefert was (WLW)"),
         _unavailable(cat, "firmenabc", "FirmenABC"),
         _unavailable(cat, "business_branchenbuch", "Business Branchenbuch"),
