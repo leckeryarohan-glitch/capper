@@ -382,6 +382,46 @@ class DirectoryParserTests(unittest.TestCase):
         name = parse_restaurantguru_detail_name("<title>Demo Restaurant, Berlin - Speisekarte</title>")
         self.assertEqual(name, "Demo Restaurant")
 
+    def test_parse_docfinder_listing_and_detail(self) -> None:
+        from lead_research.directories import (
+            build_docfinder_url,
+            parse_docfinder_detail_email,
+            parse_docfinder_detail_name,
+            parse_docfinder_detail_website,
+            parse_docfinder_listing_html,
+        )
+
+        self.assertEqual(
+            build_docfinder_url("Hausarzt", "Wien"),
+            "https://www.docfinder.at/suche/hausarzt/wien",
+        )
+        listings = parse_docfinder_listing_html(
+            """
+            <script type="application/ld+json">
+            {"@context":"https://schema.org","@type":"SearchResultsPage","mainEntity":{"@type":"ItemList",
+            "itemListElement":[{"@type":"ListItem","position":1,
+            "url":"https://www.docfinder.at/praktischer-arzt/1090-wien/dr-demo-arzt","name":"Dr. Demo Arzt"}]}}
+            </script>
+            """
+        )
+        self.assertEqual(
+            listings[0],
+            ("Dr. Demo Arzt", "https://www.docfinder.at/praktischer-arzt/1090-wien/dr-demo-arzt"),
+        )
+        website = parse_docfinder_detail_website(
+            '<a data-t-action="homepage" data-t-params="https://www.praxis-demo.example/arzt/demo">Homepage</a>'
+            '<a data-t-action="homepage" data-t-params="https://demo.youcanbook.me/">Buchen</a>'
+        )
+        self.assertEqual(website, "https://www.praxis-demo.example/arzt/demo")
+        email = parse_docfinder_detail_email(
+            '<a data-t-action="email" data-t-params="kontakt@praxis-demo.example">Mail</a>'
+        )
+        self.assertEqual(email, "kontakt@praxis-demo.example")
+        name = parse_docfinder_detail_name(
+            "<title>Dr. Demo Arzt | Praktischer Arzt in 1090 Wien - DocFinder.at</title>"
+        )
+        self.assertEqual(name, "Dr. Demo Arzt")
+
     def test_fetch_directory_html_requires_zenrows_by_default(self) -> None:
         configure_directory_fetch(DirectoryFetchConfig())
         with self.assertRaisesRegex(Exception, "ZenRows"):

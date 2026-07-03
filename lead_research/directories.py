@@ -131,6 +131,8 @@ DIRECTORY_HOST_SUFFIXES = (
     "sanego.de",
     "restaurantguru.com",
     "openstreetmap.org",
+    "docfinder.at",
+    "youcanbook.me",
 )
 
 BLOCKED_WEBSITE_SUFFIXES = (
@@ -1360,6 +1362,71 @@ def parse_restaurantguru_detail_website(page_html: str) -> str:
     return ""
 
 
+def parse_docfinder_listing_html(page_html: str) -> list[tuple[str, str]]:
+    listings: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for block in extract_json_ld_blocks(page_html):
+        if not isinstance(block, dict) or block.get("@type") != "SearchResultsPage":
+            continue
+        main_entity = block.get("mainEntity")
+        if not isinstance(main_entity, dict):
+            continue
+        for item in main_entity.get("itemListElement", []):
+            if not isinstance(item, dict):
+                continue
+            detail_url = str(item.get("url", "")).strip()
+            name = str(item.get("name", "")).strip()
+            if not detail_url.startswith("https://www.docfinder.at/") or not name:
+                continue
+            if detail_url in seen:
+                continue
+            seen.add(detail_url)
+            listings.append((html.unescape(name), detail_url))
+    if listings:
+        return listings
+    for match in re.finditer(r'href="(https://www\.docfinder\.at/[^/]+/\d{4}-[^/]+/[^"#?]+)"', page_html):
+        detail_url = html.unescape(match.group(1)).rstrip("/")
+        if detail_url in seen:
+            continue
+        seen.add(detail_url)
+        slug = detail_url.rsplit("/", maxsplit=1)[-1]
+        listings.append((name_from_url_slug(slug), detail_url))
+    return listings
+
+
+def parse_docfinder_detail_name(page_html: str) -> str:
+    match = re.search(r"<title>([^|<]+)", page_html)
+    if match:
+        return html.unescape(match.group(1).strip())
+    return ""
+
+
+def parse_docfinder_detail_website(page_html: str) -> str:
+    candidates: list[str] = []
+    for pattern in (
+        r'data-t-action="homepage"[^>]*data-t-params="(https?://[^"]+)"',
+        r'data-t-params="(https?://[^"]+)"[^>]*data-t-action="homepage"',
+        r'ga-event-homepage[^>]*href="(https?://[^"]+)"',
+    ):
+        for match in re.finditer(pattern, page_html, re.IGNORECASE):
+            candidate = normalize_result_url(html.unescape(match.group(1)))
+            if candidate and is_external_business_url(candidate):
+                candidates.append(candidate)
+    for candidate in candidates:
+        host = normalized_host(candidate).lower()
+        if any(token in host for token in ("youcanbook.me", "maps.apple.com", "docfinder.at")):
+            continue
+        return candidate
+    return ""
+
+
+def parse_docfinder_detail_email(page_html: str) -> str:
+    match = re.search(r'data-t-action="email"[^>]*data-t-params="([^"]+)"', page_html, re.IGNORECASE)
+    if match:
+        return normalize_directory_email(html.unescape(match.group(1)))
+    return pick_directory_email(page_html)
+
+
 def enrich_detail_name_and_website(
     listings: list[tuple[str, str]],
     *,
@@ -1423,6 +1490,12 @@ def build_restaurantguru_url(category: str, location: str) -> str:
         category_slug = directory_hyphen_slug(category)
         return f"https://de.restaurantguru.com/{category_slug}-{location_slug}"
     return f"https://de.restaurantguru.com/{location_slug}"
+
+
+def build_docfinder_url(category: str, location: str) -> str:
+    category_slug = directory_lower_hyphen_slug(category) or "arzt"
+    location_slug = directory_lower_hyphen_slug(location) or "wien"
+    return f"https://www.docfinder.at/suche/{category_slug}/{location_slug}"
 
 
 def scrape_pitchbook(category: str, location: str, limit: int) -> list[DirectoryEntry]:
@@ -1506,6 +1579,35 @@ def scrape_restaurantguru(category: str, location: str, limit: int) -> list[Dire
         parse_detail_website=parse_restaurantguru_detail_website,
         source_name="Restaurant Guru",
     )[:limit]
+
+
+def scrape_docfinder(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    source_url = build_docfinder_url(category, location)
+    page_html = fetch_directory_html(source_url)
+    listings = parse_docfinder_listing_html(page_html)
+    max_detail_fetches = cap_directory_detail_fetches(limit)
+    entries: list[DirectoryEntry] = []
+    for fallback_name, detail_url in listings[:max_detail_fetches]:
+        try:
+            detail_html = fetch_directory_html(detail_url)
+        except DirectoryFetchError:
+            continue
+        website = parse_docfinder_detail_website(detail_html)
+        email = parse_docfinder_detail_email(detail_html)
+        if not website and not email:
+            continue
+        name = parse_docfinder_detail_name(detail_html) or fallback_name
+        entries.append(
+            DirectoryEntry(
+                name=name,
+                website=website,
+                source_url=detail_url,
+                snippet="DocFinder",
+                email=email,
+            )
+        )
+        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+    return entries[:limit]
 
 
 def enrich_directory_listing_details(
@@ -1749,6 +1851,7 @@ def _directory_scraper_map() -> dict[str, callable]:
         "jameda": scrape_jameda,
         "sanego": scrape_sanego,
         "restaurantguru": scrape_restaurantguru,
+        "docfinder": scrape_docfinder,
     }
 
 

@@ -136,6 +136,7 @@ def build_directory_source_registry(
         ("Jobboersen", "indeed", "Indeed", "indeed"),
         ("Aerzte", "jameda", "Jameda", "jameda"),
         ("Aerzte", "sanego", "Sanego", "sanego"),
+        ("Aerzte", "docfinder", "DocFinder", "docfinder"),
         ("Gastronomie", "restaurantguru", "Restaurant Guru", "restaurantguru"),
     )
     active_slugs_by_category: dict[str, set[str]] = {}
@@ -196,6 +197,8 @@ def build_directory_source_registry(
         "Handwerker": {
             "myhammer",
             "houzz",
+            "check24",
+            "trustatrader",
         },
         "Immobilien": {
             "immobilienscout24",
@@ -207,6 +210,13 @@ def build_directory_source_registry(
             "capterra",
             "getapp",
             "alternativeto",
+        },
+        "Bewertungen": {
+            "trustpilot",
+        },
+        "Lokale Portale": {
+            "golocal",
+            "locanto",
         },
     }
 

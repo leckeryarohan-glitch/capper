@@ -50,6 +50,7 @@ class DirectoryRegistryTests(unittest.TestCase):
         self.assertIn("jameda", implemented_ids)
         self.assertIn("sanego", implemented_ids)
         self.assertIn("restaurantguru", implemented_ids)
+        self.assertIn("docfinder", implemented_ids)
 
     def test_blocked_gastronomie_and_aerzte_sources_marked_unavailable(self) -> None:
         registry = build_directory_source_registry()
@@ -58,7 +59,10 @@ class DirectoryRegistryTests(unittest.TestCase):
         self.assertIn("gastronomie_opentable", unavailable_ids)
         self.assertIn("gastronomie_tripadvisor", unavailable_ids)
         self.assertIn("aerzte_doctolib", unavailable_ids)
+        self.assertIn("bewertungen_trustpilot", unavailable_ids)
+        self.assertIn("handwerker_trustatrader", unavailable_ids)
         self.assertNotIn("aerzte_jameda", unavailable_ids)
+        self.assertNotIn("aerzte_docfinder", unavailable_ids)
         self.assertNotIn("gastronomie_restaurant_guru", unavailable_ids)
 
     def test_logistik_sources_marked_unavailable(self) -> None:
