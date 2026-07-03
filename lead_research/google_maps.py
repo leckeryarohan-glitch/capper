@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import re
-import time
 import urllib.parse
 import urllib.request
 
@@ -15,12 +14,9 @@ from .models import SearchResult
 GOOGLE_MAPS_ZENROWS_ENDPOINT = "https://api.zenrows.com/v1/"
 GOOGLE_MAPS_DEFAULT_SCROLL_STEPS = 2
 GOOGLE_MAPS_MAX_SCROLL_STEPS = 5
-GOOGLE_MAPS_DEFAULT_TIMEOUT_SECONDS = 180
-GOOGLE_MAPS_DEFAULT_RETRIES = 4
-GOOGLE_MAPS_RETRY_BACKOFF_SECONDS = 5.0
-GOOGLE_MAPS_INITIAL_WAIT_MS = 8000
-GOOGLE_MAPS_DEFAULT_PARALLEL = 3
-GOOGLE_MAPS_MAX_PARALLEL = 8
+GOOGLE_MAPS_DEFAULT_TIMEOUT_SECONDS = 240
+GOOGLE_MAPS_DEFAULT_PARALLEL = 12
+GOOGLE_MAPS_MAX_PARALLEL = 40
 GOOGLE_MAPS_HOST_MARKERS = (
     "google.com",
     "google.de",
@@ -117,42 +113,6 @@ def google_maps_parallel_workers() -> int:
     return GOOGLE_MAPS_DEFAULT_PARALLEL
 
 
-def google_maps_request_retries() -> int:
-    import os
-
-    raw = os.getenv("GOOGLE_MAPS_RETRIES", "").strip()
-    if raw:
-        try:
-            return max(1, min(int(raw), 8))
-        except ValueError:
-            pass
-    return GOOGLE_MAPS_DEFAULT_RETRIES
-
-
-def is_retryable_maps_error(message: str) -> bool:
-    lowered = message.casefold()
-    if any(
-        token in lowered
-        for token in (
-            "remote end closed connection",
-            "connection reset",
-            "broken pipe",
-            "connection aborted",
-            "timed out",
-            "timeout",
-            "temporarily unavailable",
-            "eof occurred",
-        )
-    ):
-        return True
-    if "HTTP Error" not in message:
-        return False
-    return any(
-        f"HTTP Error {code}:" in message
-        for code in (408, 425, 429, 500, 502, 503, 504, 522, 524)
-    )
-
-
 def build_zenrows_google_maps_request_url(
     api_key: str,
     target_url: str,
@@ -166,17 +126,16 @@ def build_zenrows_google_maps_request_url(
         "js_render": "true",
         "premium_proxy": "true",
         "proxy_country": proxy_country,
-        "wait": str(GOOGLE_MAPS_INITIAL_WAIT_MS),
     }
     if steps > 0:
         instructions: list[dict[str, int]] = []
         for _ in range(steps):
-            instructions.append({"scrollY": 4000})
+            instructions.append({"scroll_y": 4000})
             instructions.append({"wait": 1500})
         params["js_instructions"] = json.dumps(instructions, separators=(",", ":"))
-    encoded_target = urllib.parse.urlencode({"url": target_url})
+    encoded_target = urllib.parse.quote(target_url, safe="")
     query = urllib.parse.urlencode(params)
-    return f"{GOOGLE_MAPS_ZENROWS_ENDPOINT}?{query}&{encoded_target}"
+    return f"{GOOGLE_MAPS_ZENROWS_ENDPOINT}?{query}&url={encoded_target}"
 
 
 def is_external_maps_website(url: str) -> bool:
@@ -313,40 +272,6 @@ def fetch_google_maps_html(
     proxy_country: str = "de",
     timeout: int = GOOGLE_MAPS_DEFAULT_TIMEOUT_SECONDS,
     scroll_steps: int | None = None,
-    retries: int | None = None,
-) -> str:
-    attempts = google_maps_request_retries() if retries is None else max(1, retries)
-    last_error: GoogleMapsFetchError | None = None
-    for attempt in range(attempts):
-        try:
-            return _fetch_google_maps_html_once(
-                api_key,
-                target_url,
-                proxy_country=proxy_country,
-                timeout=timeout,
-                scroll_steps=scroll_steps,
-            )
-        except GoogleMapsFetchError as exc:
-            last_error = exc
-            message = str(exc)
-            if "API-Key ungueltig" in message or "Berechtigung" in message:
-                raise
-            if is_retryable_maps_error(message) and attempt + 1 < attempts:
-                time.sleep(GOOGLE_MAPS_RETRY_BACKOFF_SECONDS * (attempt + 1))
-                continue
-            raise
-    if last_error is not None:
-        raise last_error
-    raise GoogleMapsFetchError(f"Google Maps ZenRows request failed for {target_url}")
-
-
-def _fetch_google_maps_html_once(
-    api_key: str,
-    target_url: str,
-    *,
-    proxy_country: str = "de",
-    timeout: int = GOOGLE_MAPS_DEFAULT_TIMEOUT_SECONDS,
-    scroll_steps: int | None = None,
 ) -> str:
     request_url = build_zenrows_google_maps_request_url(
         api_key,
@@ -359,6 +284,7 @@ def _fetch_google_maps_html_once(
         headers={
             "Accept": "text/html,application/xhtml+xml,application/json",
             "User-Agent": "Mozilla/5.0 (compatible; capper-lead-research/0.1)",
+            "Connection": "close",
         },
         method="GET",
     )
