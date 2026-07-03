@@ -134,6 +134,9 @@ def build_directory_source_registry(
     active_category_sources: tuple[tuple[str, str, str, str], ...] = (
         ("Unternehmensdatenbanken", "pitchbook", "PitchBook", "pitchbook"),
         ("Jobboersen", "indeed", "Indeed", "indeed"),
+        ("Aerzte", "jameda", "Jameda", "jameda"),
+        ("Aerzte", "sanego", "Sanego", "sanego"),
+        ("Gastronomie", "restaurantguru", "Restaurant Guru", "restaurantguru"),
     )
     active_slugs_by_category: dict[str, set[str]] = {}
     for category, source_id, label, scraper_key in active_category_sources:
@@ -175,6 +178,35 @@ def build_directory_source_registry(
             "greenhouse",
             "lever",
             "workable",
+        },
+        "Gastronomie": {
+            "opentable",
+            "tripadvisor",
+            "michelin_guide",
+        },
+        "Hotels": {
+            "booking",
+            "expedia",
+            "hotelscom",
+            "tripadvisor",
+        },
+        "Aerzte": {
+            "doctolib",
+        },
+        "Handwerker": {
+            "myhammer",
+            "houzz",
+        },
+        "Immobilien": {
+            "immobilienscout24",
+            "immowelt",
+            "immonet",
+        },
+        "Software": {
+            "g2",
+            "capterra",
+            "getapp",
+            "alternativeto",
         },
     }
 
