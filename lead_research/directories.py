@@ -7,7 +7,7 @@ import re
 import time
 import urllib.parse
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from .extract import normalized_host
@@ -126,6 +126,18 @@ DIRECTORY_HOST_SUFFIXES = (
     "gehalt.de",
     "onelink.me",
     "indeed.onelink.me",
+    "jameda.de",
+    "docplanner.",
+    "sanego.de",
+    "restaurantguru.com",
+    "openstreetmap.org",
+    "docfinder.at",
+    "youcanbook.me",
+    "anwaltauskunft.de",
+    "steuerberaterverzeichnis.berufs-org.de",
+    "verzeichnis-steuerberater.de",
+    "bstbk.de",
+    "berufs-org.de",
 )
 
 BLOCKED_WEBSITE_SUFFIXES = (
@@ -275,6 +287,24 @@ def name_from_url_slug(value: str) -> str:
     cleaned = re.sub(r"--[^/]+$", "", cleaned)
     cleaned = cleaned.split("/")[-1]
     return title_case_phrase(cleaned.replace("-", " "))
+
+
+def directory_hyphen_slug(value: str) -> str:
+    cleaned = re.sub(r"\s+", " ", value.strip())
+    if not cleaned:
+        return ""
+    return "-".join(title_case_phrase(part) for part in cleaned.split(" "))
+
+
+def directory_lower_hyphen_slug(value: str) -> str:
+    return directory_hyphen_slug(value).lower()
+
+
+def sanego_path_segment(value: str) -> str:
+    cleaned = re.sub(r"\s+", " ", value.strip())
+    if not cleaned:
+        return ""
+    return urllib.parse.quote(title_case_phrase(cleaned), safe="+")
 
 
 def is_external_business_url(url: str) -> bool:
@@ -444,6 +474,64 @@ def fetch_directory_html(url: str, *, timeout: int = DIRECTORY_ZENROWS_TIMEOUT_S
         return page_html
     if config.allow_direct_fallback:
         return fetch_directory_html_direct(url, timeout=min(timeout, 20))
+    raise DirectoryFetchError(
+        "Branchenverzeichnisse werden ueber die ZenRows API abgefragt. "
+        "Setze ZENROWS_API_KEY oder nutze --provider zenrows mit --source-profile common."
+    )
+
+
+def fetch_directory_post(
+    url: str,
+    data: Mapping[str, str],
+    *,
+    timeout: int = DIRECTORY_ZENROWS_TIMEOUT_SECONDS,
+) -> str:
+    encoded = urllib.parse.urlencode(data).encode("utf-8")
+    config = _fetch_config
+    if config.zenrows_api_key:
+        params = urllib.parse.urlencode(
+            {
+                "apikey": config.zenrows_api_key,
+                "mode": DIRECTORY_ZENROWS_STEALTH_MODE,
+                "proxy_country": config.proxy_country,
+                "url": url,
+            }
+        )
+        request = urllib.request.Request(
+            f"{DIRECTORY_ZENROWS_ENDPOINT}?{params}",
+            data=encoded,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Accept": "text/html,application/xhtml+xml,application/json",
+                "User-Agent": DIRECTORY_USER_AGENT,
+            },
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=timeout) as response:
+                page_html = read_response_text(response)
+        except OSError as exc:
+            message = format_request_error(exc)
+            raise DirectoryFetchError(f"ZenRows directory POST failed for {url}: {message}") from exc
+        time.sleep(DIRECTORY_ZENROWS_DELAY_SECONDS)
+        return page_html
+    if config.allow_direct_fallback:
+        request = urllib.request.Request(
+            url,
+            data=encoded,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Accept": "text/html,application/xhtml+xml,application/json",
+                "Accept-Language": "de-DE,de;q=0.9",
+                "User-Agent": DIRECTORY_USER_AGENT,
+            },
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=min(timeout, 20)) as response:
+                return read_response_text(response)
+        except OSError as exc:
+            raise DirectoryFetchError(f"Directory POST failed for {url}: {format_request_error(exc)}") from exc
     raise DirectoryFetchError(
         "Branchenverzeichnisse werden ueber die ZenRows API abgefragt. "
         "Setze ZENROWS_API_KEY oder nutze --provider zenrows mit --source-profile common."
@@ -1199,6 +1287,304 @@ def parse_indeed_detail_website(page_html: str) -> str:
     return pick_best_embedded_business_url(page_html)
 
 
+def parse_jameda_listing_html(page_html: str, *, location: str) -> list[tuple[str, str]]:
+    location_slug = directory_lower_hyphen_slug(location)
+    listings: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for match in re.finditer(r'href="(https://www\.jameda\.de/[^"#?]+)"', page_html):
+        detail_url = html.unescape(match.group(1)).rstrip("/")
+        path = detail_url.replace("https://www.jameda.de/", "")
+        segments = [segment for segment in path.split("/") if segment]
+        if len(segments) < 2:
+            continue
+        if segments[0] in {"login", "registrierung-arzt", "social-connect", "opensearch"}:
+            continue
+        if len(segments) == 2 and segments[1] == location_slug:
+            continue
+        if detail_url in seen:
+            continue
+        seen.add(detail_url)
+        listings.append((name_from_url_slug(segments[0]), detail_url))
+    return listings
+
+
+def parse_jameda_detail_name(page_html: str) -> str:
+    match = re.search(r"<title>([^<|]+)", page_html)
+    if not match:
+        return ""
+    title = html.unescape(match.group(1).strip())
+    title = re.sub(r"\s+in\s+[^|]+$", "", title, flags=re.IGNORECASE)
+    return title.strip(" -")
+
+
+def parse_jameda_detail_website(page_html: str) -> str:
+    for pattern in (
+        r'data-patient-app-event-name="dp-doctor-website"[\s\S]{0,250}?href="(https?://[^"]+)"',
+        r'data-avo-track="doctor-website-link"[\s\S]{0,250}?href="(https?://[^"]+)"',
+        r'href="(https?://[^"]+)"[^>]*>[^<]*(?:Website|Webseite)',
+    ):
+        match = re.search(pattern, page_html, re.IGNORECASE)
+        if match:
+            candidate = normalize_result_url(html.unescape(match.group(1)))
+            if is_external_business_url(candidate):
+                return candidate
+    return ""
+
+
+def parse_sanego_listing_html(page_html: str) -> list[tuple[str, str]]:
+    listings: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for path in re.findall(r'href="(/Arzt/[^"]+/\d+-[^/]+/[^/]+/\d+-[^/]+/)"', page_html):
+        detail_path = html.unescape(path)
+        detail_url = f"https://www.sanego.de{detail_path}"
+        if detail_url in seen:
+            continue
+        seen.add(detail_url)
+        slug = detail_path.strip("/").split("/")[-1]
+        listings.append((name_from_url_slug(slug), detail_url))
+    return listings
+
+
+def parse_sanego_detail_name(page_html: str) -> str:
+    match = re.search(r"<title>([^<|]+)", page_html)
+    if not match:
+        return ""
+    title = html.unescape(match.group(1).strip())
+    title = re.sub(r"\s+in\s+[^|]+$", "", title, flags=re.IGNORECASE)
+    title = re.sub(r",\s*[^,]+$", "", title)
+    return title.strip()
+
+
+def parse_sanego_detail_website(page_html: str) -> str:
+    for pattern in (
+        r'class="[^"]*website[^"]*"[\s\S]{0,300}?href="(https?://[^"]+)"',
+        r'Homepage hinterlegen[\s\S]{0,500}?href="(https?://[^"]+)"',
+    ):
+        match = re.search(pattern, page_html, re.IGNORECASE)
+        if match:
+            candidate = normalize_result_url(html.unescape(match.group(1)))
+            if is_external_business_url(candidate):
+                return candidate
+    return pick_best_embedded_business_url(page_html)
+
+
+def parse_sanego_detail_phone(page_html: str) -> str:
+    match = re.search(r'href="tel:([^"]+)"', page_html, re.IGNORECASE)
+    return html.unescape(match.group(1)).strip() if match else ""
+
+
+def parse_restaurantguru_listing_html(page_html: str, *, location: str) -> list[tuple[str, str]]:
+    location_slug = directory_hyphen_slug(location)
+    listings: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for path in re.findall(rf'href="(https://de\.restaurantguru\.com/[A-Za-z][^"#?]*-{re.escape(location_slug)})"', page_html):
+        detail_url = html.unescape(path)
+        if "/amp/" in detail_url or detail_url.endswith(f"/{location_slug}"):
+            continue
+        if detail_url in seen:
+            continue
+        seen.add(detail_url)
+        slug = detail_url.rsplit("/", maxsplit=1)[-1]
+        listings.append((name_from_url_slug(slug.removesuffix(f"-{location_slug}")), detail_url))
+    return listings
+
+
+def parse_restaurantguru_detail_name(page_html: str) -> str:
+    match = re.search(r"<title>([^,<|]+)", page_html)
+    if match:
+        return html.unescape(match.group(1).strip())
+    for block in extract_json_ld_blocks(page_html):
+        if isinstance(block, dict) and block.get("@type") == "Restaurant":
+            name = str(block.get("name", "")).strip()
+            if name:
+                return html.unescape(name)
+    return ""
+
+
+def parse_restaurantguru_detail_website(page_html: str) -> str:
+    match = re.search(
+        r'class="website"[\s\S]{0,400}?>\s*([^<\s][^<]{2,120}?)\s*</a>',
+        page_html,
+        re.IGNORECASE,
+    )
+    if match:
+        domain = html.unescape(match.group(1).strip())
+        if domain and "." in domain and "restaurantguru" not in domain.lower():
+            candidate = normalize_result_url(domain if domain.startswith("http") else f"https://{domain}")
+            if is_external_business_url(candidate):
+                return candidate
+    for pattern in (
+        r'href="(https?://[^"]+)"[^>]*>[^<]*(?:Website|Webseite)',
+        r'"url"\s*:\s*"(https?://[^"]+)"',
+    ):
+        match = re.search(pattern, page_html, re.IGNORECASE)
+        if match:
+            candidate = normalize_result_url(html.unescape(match.group(1)))
+            if is_external_business_url(candidate):
+                return candidate
+    return ""
+
+
+def parse_docfinder_listing_html(page_html: str) -> list[tuple[str, str]]:
+    listings: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for block in extract_json_ld_blocks(page_html):
+        if not isinstance(block, dict) or block.get("@type") != "SearchResultsPage":
+            continue
+        main_entity = block.get("mainEntity")
+        if not isinstance(main_entity, dict):
+            continue
+        for item in main_entity.get("itemListElement", []):
+            if not isinstance(item, dict):
+                continue
+            detail_url = str(item.get("url", "")).strip()
+            name = str(item.get("name", "")).strip()
+            if not detail_url.startswith("https://www.docfinder.at/") or not name:
+                continue
+            if detail_url in seen:
+                continue
+            seen.add(detail_url)
+            listings.append((html.unescape(name), detail_url))
+    if listings:
+        return listings
+    for match in re.finditer(r'href="(https://www\.docfinder\.at/[^/]+/\d{4}-[^/]+/[^"#?]+)"', page_html):
+        detail_url = html.unescape(match.group(1)).rstrip("/")
+        if detail_url in seen:
+            continue
+        seen.add(detail_url)
+        slug = detail_url.rsplit("/", maxsplit=1)[-1]
+        listings.append((name_from_url_slug(slug), detail_url))
+    return listings
+
+
+def parse_docfinder_detail_name(page_html: str) -> str:
+    match = re.search(r"<title>([^|<]+)", page_html)
+    if match:
+        return html.unescape(match.group(1).strip())
+    return ""
+
+
+def parse_docfinder_detail_website(page_html: str) -> str:
+    candidates: list[str] = []
+    for pattern in (
+        r'data-t-action="homepage"[^>]*data-t-params="(https?://[^"]+)"',
+        r'data-t-params="(https?://[^"]+)"[^>]*data-t-action="homepage"',
+        r'ga-event-homepage[^>]*href="(https?://[^"]+)"',
+    ):
+        for match in re.finditer(pattern, page_html, re.IGNORECASE):
+            candidate = normalize_result_url(html.unescape(match.group(1)))
+            if candidate and is_external_business_url(candidate):
+                candidates.append(candidate)
+    for candidate in candidates:
+        host = normalized_host(candidate).lower()
+        if any(token in host for token in ("youcanbook.me", "maps.apple.com", "docfinder.at")):
+            continue
+        return candidate
+    return ""
+
+
+def parse_docfinder_detail_email(page_html: str) -> str:
+    match = re.search(r'data-t-action="email"[^>]*data-t-params="([^"]+)"', page_html, re.IGNORECASE)
+    if match:
+        return normalize_directory_email(html.unescape(match.group(1)))
+    return pick_directory_email(page_html)
+
+
+def normalize_directory_website(value: str) -> str:
+    candidate = normalize_result_url(value.strip())
+    if candidate and is_external_business_url(candidate):
+        return candidate
+    if value.strip() and not value.strip().startswith("http"):
+        candidate = normalize_result_url(f"https://{value.strip()}")
+        if candidate and is_external_business_url(candidate):
+            return candidate
+    return ""
+
+
+def parse_anwaltauskunft_json(page_text: str, *, source_url: str) -> list[DirectoryEntry]:
+    try:
+        payload = json.loads(page_text)
+    except json.JSONDecodeError:
+        return []
+    entries: list[DirectoryEntry] = []
+    for item in payload.get("data", []):
+        if not isinstance(item, dict):
+            continue
+        organisation = item.get("organisation") if isinstance(item.get("organisation"), dict) else {}
+        name = str(organisation.get("name") or "").strip()
+        if not name:
+            parts = [str(item.get("akademischer_titel", "")).strip(), str(item.get("vorname", "")).strip(), str(item.get("nachname", "")).strip()]
+            name = " ".join(part for part in parts if part).strip()
+        website = normalize_directory_website(
+            str(item.get("internetadresse_1") or organisation.get("internetadresse_1") or "")
+        )
+        email = normalize_directory_email(str(item.get("e_mail_1") or organisation.get("e_mail_1") or ""))
+        phone = str(item.get("telefon_1") or organisation.get("telefon_1") or "").strip()
+        if not website and not email:
+            continue
+        profile_id = str(item.get("id", "")).strip()
+        profile_url = f"https://anwaltauskunft.de/?profile={profile_id}" if profile_id else source_url
+        entries.append(
+            DirectoryEntry(
+                name=name,
+                website=website,
+                source_url=profile_url,
+                snippet="Anwaltauskunft",
+                email=email,
+                phone=phone,
+            )
+        )
+    return entries
+
+
+def parse_steuerberater_company_filters(page_html: str) -> list[tuple[str, str]]:
+    section = re.search(r'name="nachnameOrFirmennameFilter"[\s\S]*?</select>', page_html, re.IGNORECASE)
+    if not section:
+        return []
+    listings: list[tuple[str, str]] = []
+    for match in re.finditer(r'<option title="([^"]+)"\s+value="([^"]+)"', section.group(0)):
+        value = match.group(2).strip()
+        if not value:
+            continue
+        title = html.unescape(match.group(1).replace("<br>", " ").replace(" - ", ", "))
+        listings.append((title, value))
+    return listings
+
+
+def parse_steuerberater_detail_link(page_html: str) -> str:
+    match = re.search(r'href="(details/[A-F0-9-]+/\?lang=de)"', page_html, re.IGNORECASE)
+    if not match:
+        return ""
+    return f"https://steuerberaterverzeichnis.berufs-org.de/{match.group(1)}"
+
+
+def parse_steuerberater_detail_html(page_html: str, *, name: str, source_url: str) -> DirectoryEntry | None:
+    email = pick_directory_email(page_html)
+    website = ""
+    for match in re.finditer(
+        r"(?:href=\"|>|\s)(https?://[^\"\s<]+|www\.[a-z0-9.-]+\.[a-z]{2,})",
+        page_html,
+        re.IGNORECASE,
+    ):
+        candidate = normalize_directory_website(match.group(1))
+        if candidate:
+            website = candidate
+            break
+    if not website:
+        bare = re.search(r"\b(www\.[a-z0-9.-]+\.[a-z]{2,})\b", page_html, re.IGNORECASE)
+        if bare:
+            website = normalize_directory_website(bare.group(1))
+    if not website and not email:
+        return None
+    return DirectoryEntry(
+        name=name,
+        website=website,
+        source_url=source_url,
+        snippet="Steuerberaterverzeichnis",
+        email=email,
+    )
+
+
 def enrich_detail_name_and_website(
     listings: list[tuple[str, str]],
     *,
@@ -1243,6 +1629,48 @@ def build_indeed_url(category: str, location: str) -> str:
     return f"https://de.indeed.com/jobs?{params}"
 
 
+def build_jameda_url(category: str, location: str) -> str:
+    category_slug = directory_lower_hyphen_slug(category) or "arzt"
+    location_slug = directory_lower_hyphen_slug(location) or "berlin"
+    return f"https://www.jameda.de/{category_slug}/{location_slug}"
+
+
+def build_sanego_url(category: str, location: str) -> str:
+    location_seg = sanego_path_segment(location) or "Berlin"
+    category_seg = sanego_path_segment(category) or "Arzt"
+    return f"https://www.sanego.de/Arzt/{location_seg}/{category_seg}/"
+
+
+def build_restaurantguru_url(category: str, location: str) -> str:
+    location_slug = directory_hyphen_slug(location) or "Berlin"
+    category = category.strip()
+    if category:
+        category_slug = directory_hyphen_slug(category)
+        return f"https://de.restaurantguru.com/{category_slug}-{location_slug}"
+    return f"https://de.restaurantguru.com/{location_slug}"
+
+
+def build_docfinder_url(category: str, location: str) -> str:
+    category_slug = directory_lower_hyphen_slug(category) or "arzt"
+    location_slug = directory_lower_hyphen_slug(location) or "wien"
+    return f"https://www.docfinder.at/suche/{category_slug}/{location_slug}"
+
+
+def build_anwaltauskunft_url(category: str, location: str) -> str:
+    params = urllib.parse.urlencode(
+        {
+            "location": location.strip() or "Berlin",
+            "specialty": category.strip() or "Steuerrecht",
+        }
+    )
+    return f"https://anwaltauskunft.de/wp-json/search/v1/query?{params}"
+
+
+def build_steuerberater_url(category: str, location: str) -> str:
+    _ = category
+    return "https://steuerberaterverzeichnis.berufs-org.de/?lang=de"
+
+
 def scrape_pitchbook(category: str, location: str, limit: int) -> list[DirectoryEntry]:
     source_url = build_pitchbook_url(category, location)
     page_html = fetch_directory_html(source_url)
@@ -1267,6 +1695,132 @@ def scrape_indeed(category: str, location: str, limit: int) -> list[DirectoryEnt
         parse_detail_website=parse_indeed_detail_website,
         source_name="Indeed",
     )[:limit]
+
+
+def scrape_jameda(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    source_url = build_jameda_url(category, location)
+    page_html = fetch_directory_html(source_url)
+    listings = parse_jameda_listing_html(page_html, location=location)
+    return enrich_detail_name_and_website(
+        listings,
+        max_detail_fetches=limit,
+        parse_detail_name=parse_jameda_detail_name,
+        parse_detail_website=parse_jameda_detail_website,
+        source_name="Jameda",
+    )[:limit]
+
+
+def scrape_sanego(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    source_url = build_sanego_url(category, location)
+    page_html = fetch_directory_html(source_url)
+    listings = parse_sanego_listing_html(page_html)
+    max_detail_fetches = cap_directory_detail_fetches(limit)
+    entries: list[DirectoryEntry] = []
+    for fallback_name, detail_url in listings[:max_detail_fetches]:
+        try:
+            detail_html = fetch_directory_html(detail_url)
+        except DirectoryFetchError:
+            continue
+        website = parse_sanego_detail_website(detail_html)
+        email = pick_directory_email(detail_html)
+        phone = parse_sanego_detail_phone(detail_html)
+        if not website and not email:
+            continue
+        name = parse_sanego_detail_name(detail_html) or fallback_name
+        entries.append(
+            DirectoryEntry(
+                name=name,
+                website=website,
+                source_url=detail_url,
+                snippet="Sanego",
+                email=email,
+                phone=phone,
+            )
+        )
+        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+    return entries[:limit]
+
+
+def scrape_restaurantguru(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    source_url = build_restaurantguru_url(category, location)
+    page_html = fetch_directory_html(source_url)
+    listings = parse_restaurantguru_listing_html(page_html, location=location)
+    return enrich_detail_name_and_website(
+        listings,
+        max_detail_fetches=limit,
+        parse_detail_name=parse_restaurantguru_detail_name,
+        parse_detail_website=parse_restaurantguru_detail_website,
+        source_name="Restaurant Guru",
+    )[:limit]
+
+
+def scrape_docfinder(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    source_url = build_docfinder_url(category, location)
+    page_html = fetch_directory_html(source_url)
+    listings = parse_docfinder_listing_html(page_html)
+    max_detail_fetches = cap_directory_detail_fetches(limit)
+    entries: list[DirectoryEntry] = []
+    for fallback_name, detail_url in listings[:max_detail_fetches]:
+        try:
+            detail_html = fetch_directory_html(detail_url)
+        except DirectoryFetchError:
+            continue
+        website = parse_docfinder_detail_website(detail_html)
+        email = parse_docfinder_detail_email(detail_html)
+        if not website and not email:
+            continue
+        name = parse_docfinder_detail_name(detail_html) or fallback_name
+        entries.append(
+            DirectoryEntry(
+                name=name,
+                website=website,
+                source_url=detail_url,
+                snippet="DocFinder",
+                email=email,
+            )
+        )
+        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+    return entries[:limit]
+
+
+def scrape_anwaltauskunft(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    source_url = build_anwaltauskunft_url(category, location)
+    page_text = fetch_directory_html(source_url)
+    return parse_anwaltauskunft_json(page_text, source_url=source_url)[:limit]
+
+
+def scrape_steuerberater(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    _ = category
+    source_url = build_steuerberater_url(category, location)
+    search_data = {
+        "nachnameOrFirmenname": "",
+        "ortFilter": location.strip() or "Berlin",
+        "plzFilter": "",
+    }
+    listing_html = fetch_directory_post(source_url, search_data)
+    companies = parse_steuerberater_company_filters(listing_html)
+    max_detail_fetches = cap_directory_detail_fetches(limit)
+    entries: list[DirectoryEntry] = []
+    for company_name, company_filter in companies[:max_detail_fetches]:
+        filtered_html = fetch_directory_post(
+            source_url,
+            {
+                **search_data,
+                "nachnameOrFirmennameFilter": company_filter,
+            },
+        )
+        detail_link = parse_steuerberater_detail_link(filtered_html)
+        if not detail_link:
+            continue
+        try:
+            detail_html = fetch_directory_html(detail_link)
+        except DirectoryFetchError:
+            continue
+        entry = parse_steuerberater_detail_html(detail_html, name=company_name, source_url=detail_link)
+        if entry:
+            entries.append(entry)
+        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+    return entries[:limit]
 
 
 def enrich_directory_listing_details(
@@ -1507,6 +2061,12 @@ def _directory_scraper_map() -> dict[str, callable]:
         "manta": scrape_manta,
         "pitchbook": scrape_pitchbook,
         "indeed": scrape_indeed,
+        "jameda": scrape_jameda,
+        "sanego": scrape_sanego,
+        "restaurantguru": scrape_restaurantguru,
+        "docfinder": scrape_docfinder,
+        "anwaltauskunft": scrape_anwaltauskunft,
+        "steuerberater": scrape_steuerberater,
     }
 
 

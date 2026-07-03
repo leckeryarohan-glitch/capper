@@ -294,6 +294,194 @@ class DirectoryParserTests(unittest.TestCase):
         name = parse_indeed_detail_name("<title>Beruf und Karriere bei Demo Hotel | Indeed.de</title>")
         self.assertEqual(name, "Demo Hotel")
 
+    def test_parse_jameda_listing_and_detail(self) -> None:
+        from lead_research.directories import (
+            build_jameda_url,
+            parse_jameda_detail_name,
+            parse_jameda_detail_website,
+            parse_jameda_listing_html,
+        )
+
+        self.assertEqual(build_jameda_url("Hausarzt", "Berlin"), "https://www.jameda.de/hausarzt/berlin")
+        listings = parse_jameda_listing_html(
+            """
+            <a href="https://www.jameda.de/hausarzt/berlin">Listing</a>
+            <a href="https://www.jameda.de/philipp-lindemann-2/allgemeinmediziner-hausarzt-internist-hausarzt/berlin">Profil</a>
+            <a href="https://www.jameda.de/gesundheitseinrichtungen/demo-klinik-berlin">Klinik</a>
+            """,
+            location="Berlin",
+        )
+        self.assertEqual(
+            listings[0][1],
+            "https://www.jameda.de/philipp-lindemann-2/allgemeinmediziner-hausarzt-internist-hausarzt/berlin",
+        )
+        self.assertEqual(listings[1][1], "https://www.jameda.de/gesundheitseinrichtungen/demo-klinik-berlin")
+        website = parse_jameda_detail_website(
+            '<a href="https://www.praxis-demo.example" data-patient-app-event-name="dp-doctor-website">Webseite</a>'
+        )
+        self.assertEqual(website, "https://www.praxis-demo.example")
+        name = parse_jameda_detail_name(
+            "<title>Dr. med. Demo Arzt - Hausarzt in Berlin | jameda</title>"
+        )
+        self.assertEqual(name, "Dr. med. Demo Arzt - Hausarzt")
+
+    def test_parse_sanego_listing_and_detail(self) -> None:
+        from lead_research.directories import (
+            build_sanego_url,
+            parse_sanego_detail_name,
+            parse_sanego_detail_phone,
+            parse_sanego_detail_website,
+            parse_sanego_listing_html,
+        )
+
+        self.assertEqual(build_sanego_url("Hausarzt", "Berlin"), "https://www.sanego.de/Arzt/Berlin/Hausarzt/")
+        listings = parse_sanego_listing_html(
+            '<a href="/Arzt/Berlin/2701-Berlin/Allgemeinmedizin/52130-Dr-med-Demo-Arzt/">Profil</a>'
+        )
+        self.assertEqual(
+            listings[0][1],
+            "https://www.sanego.de/Arzt/Berlin/2701-Berlin/Allgemeinmedizin/52130-Dr-med-Demo-Arzt/",
+        )
+        website = parse_sanego_detail_website(
+            '<div class="website"><a href="https://www.praxis-demo.example">Homepage</a></div>'
+        )
+        self.assertEqual(website, "https://www.praxis-demo.example")
+        phone = parse_sanego_detail_phone('<a href="tel:030123456">Anrufen</a>')
+        self.assertEqual(phone, "030123456")
+        name = parse_sanego_detail_name("<title>Dr. med. Demo, Hausarzt in Berlin | sanego</title>")
+        self.assertEqual(name, "Dr. med. Demo")
+
+    def test_parse_restaurantguru_listing_and_detail(self) -> None:
+        from lead_research.directories import (
+            build_restaurantguru_url,
+            parse_restaurantguru_detail_name,
+            parse_restaurantguru_detail_website,
+            parse_restaurantguru_listing_html,
+        )
+
+        self.assertEqual(
+            build_restaurantguru_url("Restaurant", "Berlin"),
+            "https://de.restaurantguru.com/Restaurant-Berlin",
+        )
+        listings = parse_restaurantguru_listing_html(
+            """
+            <a href="https://de.restaurantguru.com/April-Berlin">April</a>
+            <a href="https://de.restaurantguru.com/Berlin">City</a>
+            """,
+            location="Berlin",
+        )
+        self.assertEqual(listings[0][1], "https://de.restaurantguru.com/April-Berlin")
+        website = parse_restaurantguru_detail_website(
+            """
+            <div class="website">
+                <a rel="nofollow" href="https://de.restaurantguru.com/link/123">demo-restaurant.example</a>
+            </div>
+            """
+        )
+        self.assertEqual(website, "https://demo-restaurant.example")
+        name = parse_restaurantguru_detail_name("<title>Demo Restaurant, Berlin - Speisekarte</title>")
+        self.assertEqual(name, "Demo Restaurant")
+
+    def test_parse_docfinder_listing_and_detail(self) -> None:
+        from lead_research.directories import (
+            build_docfinder_url,
+            parse_docfinder_detail_email,
+            parse_docfinder_detail_name,
+            parse_docfinder_detail_website,
+            parse_docfinder_listing_html,
+        )
+
+        self.assertEqual(
+            build_docfinder_url("Hausarzt", "Wien"),
+            "https://www.docfinder.at/suche/hausarzt/wien",
+        )
+        listings = parse_docfinder_listing_html(
+            """
+            <script type="application/ld+json">
+            {"@context":"https://schema.org","@type":"SearchResultsPage","mainEntity":{"@type":"ItemList",
+            "itemListElement":[{"@type":"ListItem","position":1,
+            "url":"https://www.docfinder.at/praktischer-arzt/1090-wien/dr-demo-arzt","name":"Dr. Demo Arzt"}]}}
+            </script>
+            """
+        )
+        self.assertEqual(
+            listings[0],
+            ("Dr. Demo Arzt", "https://www.docfinder.at/praktischer-arzt/1090-wien/dr-demo-arzt"),
+        )
+        website = parse_docfinder_detail_website(
+            '<a data-t-action="homepage" data-t-params="https://www.praxis-demo.example/arzt/demo">Homepage</a>'
+            '<a data-t-action="homepage" data-t-params="https://demo.youcanbook.me/">Buchen</a>'
+        )
+        self.assertEqual(website, "https://www.praxis-demo.example/arzt/demo")
+        email = parse_docfinder_detail_email(
+            '<a data-t-action="email" data-t-params="kontakt@praxis-demo.example">Mail</a>'
+        )
+        self.assertEqual(email, "kontakt@praxis-demo.example")
+        name = parse_docfinder_detail_name(
+            "<title>Dr. Demo Arzt | Praktischer Arzt in 1090 Wien - DocFinder.at</title>"
+        )
+        self.assertEqual(name, "Dr. Demo Arzt")
+
+    def test_parse_anwaltauskunft_json(self) -> None:
+        from lead_research.directories import build_anwaltauskunft_url, parse_anwaltauskunft_json
+
+        self.assertIn(
+            "location=Berlin&specialty=Steuerrecht",
+            build_anwaltauskunft_url("Steuerrecht", "Berlin"),
+        )
+        entries = parse_anwaltauskunft_json(
+            """
+            {
+              "count": 1,
+              "data": [{
+                "id": "demo-1",
+                "vorname": "Max",
+                "nachname": "Muster",
+                "internetadresse_1": "www.demo-kanzlei.example",
+                "e_mail_1": "info@demo-kanzlei.example",
+                "telefon_1": "+49 30 123",
+                "organisation": {"name": "Demo Kanzlei GbR"}
+              }]
+            }
+            """,
+            source_url="https://anwaltauskunft.de/wp-json/search/v1/query?location=Berlin",
+        )
+        self.assertEqual(entries[0].name, "Demo Kanzlei GbR")
+        self.assertEqual(entries[0].website, "https://www.demo-kanzlei.example")
+        self.assertEqual(entries[0].email, "info@demo-kanzlei.example")
+
+    def test_parse_steuerberater_filters_and_detail(self) -> None:
+        from lead_research.directories import (
+            parse_steuerberater_company_filters,
+            parse_steuerberater_detail_html,
+            parse_steuerberater_detail_link,
+        )
+
+        companies = parse_steuerberater_company_filters(
+            """
+            <select name="nachnameOrFirmennameFilter">
+              <option value=""></option>
+              <option title="A&amp;C Steuerberatung GmbH" value="QSZD">A&amp;C Steuerberatung GmbH</option>
+            </select>
+            """
+        )
+        self.assertEqual(companies[0][0], "A&C Steuerberatung GmbH")
+        link = parse_steuerberater_detail_link(
+            '<a class="link-to-detail" href="details/F7-A5-89-CB/?lang=de">'
+        )
+        self.assertEqual(
+            link,
+            "https://steuerberaterverzeichnis.berufs-org.de/details/F7-A5-89-CB/?lang=de",
+        )
+        entry = parse_steuerberater_detail_html(
+            '<a href="mailto:h.demo@steuerberatung-ac.de">Mail</a> www.steuerberatung-ac.de',
+            name="A&C Steuerberatung GmbH",
+            source_url=link,
+        )
+        assert entry is not None
+        self.assertEqual(entry.email, "h.demo@steuerberatung-ac.de")
+        self.assertEqual(entry.website, "https://www.steuerberatung-ac.de")
+
     def test_fetch_directory_html_requires_zenrows_by_default(self) -> None:
         configure_directory_fetch(DirectoryFetchConfig())
         with self.assertRaisesRegex(Exception, "ZenRows"):

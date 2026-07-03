@@ -43,6 +43,33 @@ class DirectoryRegistryTests(unittest.TestCase):
         self.assertIn("pitchbook", implemented_ids)
         self.assertIn("indeed", implemented_ids)
 
+    def test_jameda_sanego_and_restaurantguru_are_implemented(self) -> None:
+        registry = build_directory_source_registry()
+        implemented_ids = {spec.id for spec in registry if spec.implemented}
+
+        self.assertIn("jameda", implemented_ids)
+        self.assertIn("sanego", implemented_ids)
+        self.assertIn("restaurantguru", implemented_ids)
+        self.assertIn("docfinder", implemented_ids)
+        self.assertIn("anwaltauskunft", implemented_ids)
+        self.assertIn("steuerberater", implemented_ids)
+
+    def test_blocked_gastronomie_and_aerzte_sources_marked_unavailable(self) -> None:
+        registry = build_directory_source_registry()
+        unavailable_ids = {spec.id for spec in unavailable_directory_sources(registry)}
+
+        self.assertIn("gastronomie_opentable", unavailable_ids)
+        self.assertIn("gastronomie_tripadvisor", unavailable_ids)
+        self.assertIn("aerzte_doctolib", unavailable_ids)
+        self.assertIn("bewertungen_trustpilot", unavailable_ids)
+        self.assertIn("handwerker_trustatrader", unavailable_ids)
+        self.assertIn("ihk___hwk_mitgliederverzeichnisse", unavailable_ids)
+        self.assertIn("branchen_notare", unavailable_ids)
+        self.assertNotIn("aerzte_docfinder", unavailable_ids)
+        self.assertNotIn("branchen_anwaltauskunft", unavailable_ids)
+        self.assertNotIn("branchen_steuerberater", unavailable_ids)
+        self.assertNotIn("gastronomie_restaurant_guru", unavailable_ids)
+
     def test_logistik_sources_marked_unavailable(self) -> None:
         registry = build_directory_source_registry()
         unavailable_ids = {spec.id for spec in unavailable_directory_sources(registry)}
