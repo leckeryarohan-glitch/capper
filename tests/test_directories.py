@@ -422,6 +422,66 @@ class DirectoryParserTests(unittest.TestCase):
         )
         self.assertEqual(name, "Dr. Demo Arzt")
 
+    def test_parse_anwaltauskunft_json(self) -> None:
+        from lead_research.directories import build_anwaltauskunft_url, parse_anwaltauskunft_json
+
+        self.assertIn(
+            "location=Berlin&specialty=Steuerrecht",
+            build_anwaltauskunft_url("Steuerrecht", "Berlin"),
+        )
+        entries = parse_anwaltauskunft_json(
+            """
+            {
+              "count": 1,
+              "data": [{
+                "id": "demo-1",
+                "vorname": "Max",
+                "nachname": "Muster",
+                "internetadresse_1": "www.demo-kanzlei.example",
+                "e_mail_1": "info@demo-kanzlei.example",
+                "telefon_1": "+49 30 123",
+                "organisation": {"name": "Demo Kanzlei GbR"}
+              }]
+            }
+            """,
+            source_url="https://anwaltauskunft.de/wp-json/search/v1/query?location=Berlin",
+        )
+        self.assertEqual(entries[0].name, "Demo Kanzlei GbR")
+        self.assertEqual(entries[0].website, "https://www.demo-kanzlei.example")
+        self.assertEqual(entries[0].email, "info@demo-kanzlei.example")
+
+    def test_parse_steuerberater_filters_and_detail(self) -> None:
+        from lead_research.directories import (
+            parse_steuerberater_company_filters,
+            parse_steuerberater_detail_html,
+            parse_steuerberater_detail_link,
+        )
+
+        companies = parse_steuerberater_company_filters(
+            """
+            <select name="nachnameOrFirmennameFilter">
+              <option value=""></option>
+              <option title="A&amp;C Steuerberatung GmbH" value="QSZD">A&amp;C Steuerberatung GmbH</option>
+            </select>
+            """
+        )
+        self.assertEqual(companies[0][0], "A&C Steuerberatung GmbH")
+        link = parse_steuerberater_detail_link(
+            '<a class="link-to-detail" href="details/F7-A5-89-CB/?lang=de">'
+        )
+        self.assertEqual(
+            link,
+            "https://steuerberaterverzeichnis.berufs-org.de/details/F7-A5-89-CB/?lang=de",
+        )
+        entry = parse_steuerberater_detail_html(
+            '<a href="mailto:h.demo@steuerberatung-ac.de">Mail</a> www.steuerberatung-ac.de',
+            name="A&C Steuerberatung GmbH",
+            source_url=link,
+        )
+        assert entry is not None
+        self.assertEqual(entry.email, "h.demo@steuerberatung-ac.de")
+        self.assertEqual(entry.website, "https://www.steuerberatung-ac.de")
+
     def test_fetch_directory_html_requires_zenrows_by_default(self) -> None:
         configure_directory_fetch(DirectoryFetchConfig())
         with self.assertRaisesRegex(Exception, "ZenRows"):

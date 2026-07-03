@@ -138,6 +138,8 @@ def build_directory_source_registry(
         ("Aerzte", "sanego", "Sanego", "sanego"),
         ("Aerzte", "docfinder", "DocFinder", "docfinder"),
         ("Gastronomie", "restaurantguru", "Restaurant Guru", "restaurantguru"),
+        ("Branchen", "anwaltauskunft", "Anwaltauskunft", "anwaltauskunft"),
+        ("Branchen", "steuerberater", "Steuerberaterverzeichnis", "steuerberater"),
     )
     active_slugs_by_category: dict[str, set[str]] = {}
     for category, source_id, label, scraper_key in active_category_sources:
@@ -217,6 +219,15 @@ def build_directory_source_registry(
         "Lokale Portale": {
             "golocal",
             "locanto",
+        },
+        "IHK / HWK": {
+            "industrie_und_handelskammern",
+            "handwerkskammern",
+            "mitgliederverzeichnisse",
+        },
+        "Branchen": {
+            "notare",
+            "architekten",
         },
     }
 

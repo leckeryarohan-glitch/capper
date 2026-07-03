@@ -7,7 +7,7 @@ import re
 import time
 import urllib.parse
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from .extract import normalized_host
@@ -133,6 +133,11 @@ DIRECTORY_HOST_SUFFIXES = (
     "openstreetmap.org",
     "docfinder.at",
     "youcanbook.me",
+    "anwaltauskunft.de",
+    "steuerberaterverzeichnis.berufs-org.de",
+    "verzeichnis-steuerberater.de",
+    "bstbk.de",
+    "berufs-org.de",
 )
 
 BLOCKED_WEBSITE_SUFFIXES = (
@@ -469,6 +474,64 @@ def fetch_directory_html(url: str, *, timeout: int = DIRECTORY_ZENROWS_TIMEOUT_S
         return page_html
     if config.allow_direct_fallback:
         return fetch_directory_html_direct(url, timeout=min(timeout, 20))
+    raise DirectoryFetchError(
+        "Branchenverzeichnisse werden ueber die ZenRows API abgefragt. "
+        "Setze ZENROWS_API_KEY oder nutze --provider zenrows mit --source-profile common."
+    )
+
+
+def fetch_directory_post(
+    url: str,
+    data: Mapping[str, str],
+    *,
+    timeout: int = DIRECTORY_ZENROWS_TIMEOUT_SECONDS,
+) -> str:
+    encoded = urllib.parse.urlencode(data).encode("utf-8")
+    config = _fetch_config
+    if config.zenrows_api_key:
+        params = urllib.parse.urlencode(
+            {
+                "apikey": config.zenrows_api_key,
+                "mode": DIRECTORY_ZENROWS_STEALTH_MODE,
+                "proxy_country": config.proxy_country,
+                "url": url,
+            }
+        )
+        request = urllib.request.Request(
+            f"{DIRECTORY_ZENROWS_ENDPOINT}?{params}",
+            data=encoded,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Accept": "text/html,application/xhtml+xml,application/json",
+                "User-Agent": DIRECTORY_USER_AGENT,
+            },
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=timeout) as response:
+                page_html = read_response_text(response)
+        except OSError as exc:
+            message = format_request_error(exc)
+            raise DirectoryFetchError(f"ZenRows directory POST failed for {url}: {message}") from exc
+        time.sleep(DIRECTORY_ZENROWS_DELAY_SECONDS)
+        return page_html
+    if config.allow_direct_fallback:
+        request = urllib.request.Request(
+            url,
+            data=encoded,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Accept": "text/html,application/xhtml+xml,application/json",
+                "Accept-Language": "de-DE,de;q=0.9",
+                "User-Agent": DIRECTORY_USER_AGENT,
+            },
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=min(timeout, 20)) as response:
+                return read_response_text(response)
+        except OSError as exc:
+            raise DirectoryFetchError(f"Directory POST failed for {url}: {format_request_error(exc)}") from exc
     raise DirectoryFetchError(
         "Branchenverzeichnisse werden ueber die ZenRows API abgefragt. "
         "Setze ZENROWS_API_KEY oder nutze --provider zenrows mit --source-profile common."
@@ -1427,6 +1490,101 @@ def parse_docfinder_detail_email(page_html: str) -> str:
     return pick_directory_email(page_html)
 
 
+def normalize_directory_website(value: str) -> str:
+    candidate = normalize_result_url(value.strip())
+    if candidate and is_external_business_url(candidate):
+        return candidate
+    if value.strip() and not value.strip().startswith("http"):
+        candidate = normalize_result_url(f"https://{value.strip()}")
+        if candidate and is_external_business_url(candidate):
+            return candidate
+    return ""
+
+
+def parse_anwaltauskunft_json(page_text: str, *, source_url: str) -> list[DirectoryEntry]:
+    try:
+        payload = json.loads(page_text)
+    except json.JSONDecodeError:
+        return []
+    entries: list[DirectoryEntry] = []
+    for item in payload.get("data", []):
+        if not isinstance(item, dict):
+            continue
+        organisation = item.get("organisation") if isinstance(item.get("organisation"), dict) else {}
+        name = str(organisation.get("name") or "").strip()
+        if not name:
+            parts = [str(item.get("akademischer_titel", "")).strip(), str(item.get("vorname", "")).strip(), str(item.get("nachname", "")).strip()]
+            name = " ".join(part for part in parts if part).strip()
+        website = normalize_directory_website(
+            str(item.get("internetadresse_1") or organisation.get("internetadresse_1") or "")
+        )
+        email = normalize_directory_email(str(item.get("e_mail_1") or organisation.get("e_mail_1") or ""))
+        phone = str(item.get("telefon_1") or organisation.get("telefon_1") or "").strip()
+        if not website and not email:
+            continue
+        profile_id = str(item.get("id", "")).strip()
+        profile_url = f"https://anwaltauskunft.de/?profile={profile_id}" if profile_id else source_url
+        entries.append(
+            DirectoryEntry(
+                name=name,
+                website=website,
+                source_url=profile_url,
+                snippet="Anwaltauskunft",
+                email=email,
+                phone=phone,
+            )
+        )
+    return entries
+
+
+def parse_steuerberater_company_filters(page_html: str) -> list[tuple[str, str]]:
+    section = re.search(r'name="nachnameOrFirmennameFilter"[\s\S]*?</select>', page_html, re.IGNORECASE)
+    if not section:
+        return []
+    listings: list[tuple[str, str]] = []
+    for match in re.finditer(r'<option title="([^"]+)"\s+value="([^"]+)"', section.group(0)):
+        value = match.group(2).strip()
+        if not value:
+            continue
+        title = html.unescape(match.group(1).replace("<br>", " ").replace(" - ", ", "))
+        listings.append((title, value))
+    return listings
+
+
+def parse_steuerberater_detail_link(page_html: str) -> str:
+    match = re.search(r'href="(details/[A-F0-9-]+/\?lang=de)"', page_html, re.IGNORECASE)
+    if not match:
+        return ""
+    return f"https://steuerberaterverzeichnis.berufs-org.de/{match.group(1)}"
+
+
+def parse_steuerberater_detail_html(page_html: str, *, name: str, source_url: str) -> DirectoryEntry | None:
+    email = pick_directory_email(page_html)
+    website = ""
+    for match in re.finditer(
+        r"(?:href=\"|>|\s)(https?://[^\"\s<]+|www\.[a-z0-9.-]+\.[a-z]{2,})",
+        page_html,
+        re.IGNORECASE,
+    ):
+        candidate = normalize_directory_website(match.group(1))
+        if candidate:
+            website = candidate
+            break
+    if not website:
+        bare = re.search(r"\b(www\.[a-z0-9.-]+\.[a-z]{2,})\b", page_html, re.IGNORECASE)
+        if bare:
+            website = normalize_directory_website(bare.group(1))
+    if not website and not email:
+        return None
+    return DirectoryEntry(
+        name=name,
+        website=website,
+        source_url=source_url,
+        snippet="Steuerberaterverzeichnis",
+        email=email,
+    )
+
+
 def enrich_detail_name_and_website(
     listings: list[tuple[str, str]],
     *,
@@ -1496,6 +1654,21 @@ def build_docfinder_url(category: str, location: str) -> str:
     category_slug = directory_lower_hyphen_slug(category) or "arzt"
     location_slug = directory_lower_hyphen_slug(location) or "wien"
     return f"https://www.docfinder.at/suche/{category_slug}/{location_slug}"
+
+
+def build_anwaltauskunft_url(category: str, location: str) -> str:
+    params = urllib.parse.urlencode(
+        {
+            "location": location.strip() or "Berlin",
+            "specialty": category.strip() or "Steuerrecht",
+        }
+    )
+    return f"https://anwaltauskunft.de/wp-json/search/v1/query?{params}"
+
+
+def build_steuerberater_url(category: str, location: str) -> str:
+    _ = category
+    return "https://steuerberaterverzeichnis.berufs-org.de/?lang=de"
 
 
 def scrape_pitchbook(category: str, location: str, limit: int) -> list[DirectoryEntry]:
@@ -1606,6 +1779,46 @@ def scrape_docfinder(category: str, location: str, limit: int) -> list[Directory
                 email=email,
             )
         )
+        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+    return entries[:limit]
+
+
+def scrape_anwaltauskunft(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    source_url = build_anwaltauskunft_url(category, location)
+    page_text = fetch_directory_html(source_url)
+    return parse_anwaltauskunft_json(page_text, source_url=source_url)[:limit]
+
+
+def scrape_steuerberater(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    _ = category
+    source_url = build_steuerberater_url(category, location)
+    search_data = {
+        "nachnameOrFirmenname": "",
+        "ortFilter": location.strip() or "Berlin",
+        "plzFilter": "",
+    }
+    listing_html = fetch_directory_post(source_url, search_data)
+    companies = parse_steuerberater_company_filters(listing_html)
+    max_detail_fetches = cap_directory_detail_fetches(limit)
+    entries: list[DirectoryEntry] = []
+    for company_name, company_filter in companies[:max_detail_fetches]:
+        filtered_html = fetch_directory_post(
+            source_url,
+            {
+                **search_data,
+                "nachnameOrFirmennameFilter": company_filter,
+            },
+        )
+        detail_link = parse_steuerberater_detail_link(filtered_html)
+        if not detail_link:
+            continue
+        try:
+            detail_html = fetch_directory_html(detail_link)
+        except DirectoryFetchError:
+            continue
+        entry = parse_steuerberater_detail_html(detail_html, name=company_name, source_url=detail_link)
+        if entry:
+            entries.append(entry)
         time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
     return entries[:limit]
 
@@ -1852,6 +2065,8 @@ def _directory_scraper_map() -> dict[str, callable]:
         "sanego": scrape_sanego,
         "restaurantguru": scrape_restaurantguru,
         "docfinder": scrape_docfinder,
+        "anwaltauskunft": scrape_anwaltauskunft,
+        "steuerberater": scrape_steuerberater,
     }
 
 
