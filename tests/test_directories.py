@@ -294,6 +294,68 @@ class DirectoryParserTests(unittest.TestCase):
         name = parse_indeed_detail_name("<title>Beruf und Karriere bei Demo Hotel | Indeed.de</title>")
         self.assertEqual(name, "Demo Hotel")
 
+    def test_parse_stepstone_listing_and_detail(self) -> None:
+        from lead_research.directories import (
+            build_stepstone_url,
+            parse_stepstone_detail_name,
+            parse_stepstone_detail_website,
+            parse_stepstone_listing_html,
+        )
+
+        self.assertEqual(
+            build_stepstone_url("Steuerberater", "Berlin", 2),
+            "https://www.stepstone.de/jobs/steuerberater/in-berlin?page=2&action=paging_next",
+        )
+        listings = parse_stepstone_listing_html(
+            """
+            "companyName":"Demo Steuer GmbH","companyUrl":"https://www.stepstone.de/cmp/de/demo-steuer-gmbh-123/jobs"
+            <a href="https://www.stepstone.de/cmp/de/fallback-buero-456/jobs">Fallback</a>
+            """
+        )
+        self.assertEqual(
+            listings[0],
+            ("Demo Steuer GmbH", "https://www.stepstone.de/cmp/de/demo-steuer-gmbh-123/jobs"),
+        )
+        website = parse_stepstone_detail_website('"website":"https://www.demo-steuer.example"')
+        self.assertEqual(website, "https://www.demo-steuer.example")
+        name = parse_stepstone_detail_name("<title>12 Aktuelle Jobs bei Demo Steuer GmbH | Stepstone</title>")
+        self.assertEqual(name, "Demo Steuer GmbH")
+
+    def test_parse_treatwell_listing_and_detail(self) -> None:
+        from lead_research.directories import (
+            build_treatwell_url,
+            parse_treatwell_detail_html,
+            parse_treatwell_listing_html,
+            treatwell_location_slug,
+        )
+
+        self.assertEqual(treatwell_location_slug("München"), "muenchen")
+        self.assertEqual(
+            build_treatwell_url("Friseur", "Köln", 2),
+            "https://www.treatwell.de/orte/friseur/angebot-typ-lokal/in-koeln-de/seite-2/",
+        )
+        listings = parse_treatwell_listing_html(
+            """
+            <a href="https://www.treatwell.de/ort/berlin/">City</a>
+            <a href="https://www.treatwell.de/ort/demo-salon-berlin/">Salon</a>
+            <a href="https://www.treatwell.de/ort/demo-salon-berlin/?serviceIds=1">Salon</a>
+            """,
+            location="Berlin",
+        )
+        self.assertEqual(
+            listings[0],
+            ("Demo Salon Berlin", "https://www.treatwell.de/ort/demo-salon-berlin/"),
+        )
+        entry = parse_treatwell_detail_html(
+            '"email":"kontakt@demo-salon.example"\n<title>Demo Salon | Treatwell</title>',
+            name="Demo Salon Berlin",
+            source_url="https://www.treatwell.de/ort/demo-salon-berlin/",
+        )
+        self.assertIsNotNone(entry)
+        assert entry is not None
+        self.assertEqual(entry.email, "kontakt@demo-salon.example")
+        self.assertEqual(entry.name, "Demo Salon")
+
     def test_parse_jameda_listing_and_detail(self) -> None:
         from lead_research.directories import (
             build_jameda_url,

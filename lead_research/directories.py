@@ -68,6 +68,8 @@ DIRECTORY_HOST_SUFFIXES = (
     "youtube.com",
     "vimeo.com",
     "golocal.de",
+    "treatwell.de",
+    "treatwell.net",
     "ekomi.de",
     "consentmanager.net",
     "yext-wrap.com",
@@ -115,6 +117,8 @@ DIRECTORY_HOST_SUFFIXES = (
     "pitchbook.",
     "indeed.com",
     "indeed.de",
+    "stepstone.de",
+    "stepstone.",
     "hiringlab.org",
     "hrtechprivacy.com",
     "deloi.tt",
@@ -305,6 +309,13 @@ def directory_hyphen_slug(value: str) -> str:
 
 def directory_lower_hyphen_slug(value: str) -> str:
     return directory_hyphen_slug(value).lower()
+
+
+def treatwell_location_slug(location: str) -> str:
+    slug = directory_lower_hyphen_slug(location) or "berlin"
+    for old, new in (("ä", "ae"), ("ö", "oe"), ("ü", "ue"), ("ß", "ss")):
+        slug = slug.replace(old, new)
+    return slug
 
 
 def sanego_path_segment(value: str) -> str:
@@ -1294,6 +1305,92 @@ def parse_indeed_detail_website(page_html: str) -> str:
     return pick_best_embedded_business_url(page_html)
 
 
+def parse_stepstone_listing_html(page_html: str) -> list[tuple[str, str]]:
+    listings: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    names = re.findall(r'"companyName"\s*:\s*"((?:\\.|[^"\\])*)"', page_html)
+    urls = re.findall(r'"companyUrl"\s*:\s*"(https://www\.stepstone\.de/cmp/[^"]+)"', page_html)
+    for raw_name, raw_url in zip(names, urls):
+        name = html.unescape(raw_name).strip()
+        detail_url = html.unescape(raw_url).rstrip("/")
+        if not detail_url.endswith("/jobs"):
+            detail_url = f"{detail_url}/jobs"
+        if detail_url in seen:
+            continue
+        seen.add(detail_url)
+        listings.append((name, detail_url))
+    if listings:
+        return listings
+    for match in re.finditer(r'href="(https://www\.stepstone\.de/cmp/de/[^"?]+/jobs)"', page_html):
+        detail_url = html.unescape(match.group(1)).rstrip("/")
+        if detail_url in seen:
+            continue
+        seen.add(detail_url)
+        slug = detail_url.rsplit("/", 2)[-2]
+        listings.append((name_from_url_slug(slug), detail_url))
+    return listings
+
+
+def parse_stepstone_detail_name(page_html: str) -> str:
+    match = re.search(
+        r"<title>(?:\d+\s+Aktuelle Jobs bei\s+)?([^|<]+?)(?:\s*\||\s+–|\s+-)",
+        page_html,
+        re.IGNORECASE,
+    )
+    if match:
+        return html.unescape(match.group(1).strip())
+    return ""
+
+
+def parse_stepstone_detail_website(page_html: str) -> str:
+    return parse_indeed_detail_website(page_html)
+
+
+def parse_treatwell_listing_html(page_html: str, *, location: str) -> list[tuple[str, str]]:
+    location_slug = treatwell_location_slug(location)
+    listings: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for raw in re.findall(r"https://www\.treatwell\.de/ort/[a-z0-9-]+/", page_html):
+        detail_url = html.unescape(raw.split("?", 1)[0])
+        slug = detail_url.rstrip("/").rsplit("/", 1)[-1]
+        if slug == location_slug:
+            continue
+        if detail_url in seen:
+            continue
+        seen.add(detail_url)
+        listings.append((name_from_url_slug(slug), detail_url))
+    return listings
+
+
+def parse_treatwell_detail_name(page_html: str) -> str:
+    match = re.search(r"<title>([^|<]+)", page_html)
+    if match:
+        return html.unescape(match.group(1).strip())
+    return ""
+
+
+def parse_treatwell_detail_email(page_html: str) -> str:
+    for match in re.finditer(r'"email"\s*:\s*"([^"]+)"', page_html):
+        email = normalize_directory_email(match.group(1))
+        if email and not email.endswith("@treatwell.de") and not email.endswith("@treatwell.net"):
+            return email
+    return pick_directory_email(page_html)
+
+
+def parse_treatwell_detail_html(page_html: str, *, name: str, source_url: str) -> DirectoryEntry | None:
+    email = parse_treatwell_detail_email(page_html)
+    if not email:
+        return None
+    resolved_name = parse_treatwell_detail_name(page_html) or name
+    return DirectoryEntry(
+        name=resolved_name,
+        website="",
+        source_url=source_url,
+        snippet="Treatwell",
+        email=email,
+    )
+
+
 def parse_jameda_listing_html(page_html: str, *, location: str) -> list[tuple[str, str]]:
     location_slug = directory_lower_hyphen_slug(location)
     listings: list[tuple[str, str]] = []
@@ -1880,6 +1977,16 @@ def build_indeed_url(category: str, location: str) -> str:
     return f"https://de.indeed.com/jobs?{params}"
 
 
+def build_stepstone_url(category: str, location: str, page: int) -> str:
+    category_slug = directory_lower_hyphen_slug(category) or "unternehmen"
+    location_slug = directory_lower_hyphen_slug(location) or "berlin"
+    base = f"https://www.stepstone.de/jobs/{category_slug}/in-{location_slug}"
+    if page <= 1:
+        return base
+    params = urllib.parse.urlencode({"page": str(page), "action": "paging_next"})
+    return f"{base}?{params}"
+
+
 def build_jameda_url(category: str, location: str) -> str:
     category_slug = directory_lower_hyphen_slug(category) or "arzt"
     location_slug = directory_lower_hyphen_slug(location) or "berlin"
@@ -1953,6 +2060,15 @@ def build_wlw_url(category: str, location: str, page: int) -> str:
     return f"https://www.wlw.de/de/suche?{urllib.parse.urlencode(params)}"
 
 
+def build_treatwell_url(category: str, location: str, page: int) -> str:
+    category_slug = directory_lower_hyphen_slug(category) or "friseur"
+    location_slug = treatwell_location_slug(location)
+    base = f"https://www.treatwell.de/orte/{category_slug}/angebot-typ-lokal/in-{location_slug}-de"
+    if page <= 1:
+        return f"{base}/"
+    return f"{base}/seite-{page}/"
+
+
 def scrape_pitchbook(category: str, location: str, limit: int) -> list[DirectoryEntry]:
     source_url = build_pitchbook_url(category, location)
     page_html = fetch_directory_html(source_url)
@@ -1976,6 +2092,30 @@ def scrape_indeed(category: str, location: str, limit: int) -> list[DirectoryEnt
         parse_detail_name=parse_indeed_detail_name,
         parse_detail_website=parse_indeed_detail_website,
         source_name="Indeed",
+    )[:limit]
+
+
+def scrape_stepstone(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    listings: list[tuple[str, str]] = []
+    page = 1
+    while len(listings) < limit and page <= 3:
+        source_url = build_stepstone_url(category, location, page)
+        page_html = fetch_directory_html(source_url)
+        page_listings = parse_stepstone_listing_html(page_html)
+        if not page_listings:
+            break
+        listings.extend(page_listings)
+        next_page = page + 1
+        if f"page={next_page}" not in page_html:
+            break
+        page = next_page
+        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+    return enrich_detail_name_and_website(
+        listings,
+        max_detail_fetches=limit,
+        parse_detail_name=parse_stepstone_detail_name,
+        parse_detail_website=parse_stepstone_detail_website,
+        source_name="StepStone",
     )[:limit]
 
 
@@ -2172,6 +2312,39 @@ def scrape_wlw(category: str, location: str, limit: int) -> list[DirectoryEntry]
         page += 1
         time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
     return enrich_wlw_entries(listings, max_detail_fetches=limit)[:limit]
+
+
+def enrich_treatwell_entries(listings: list[tuple[str, str]], *, max_detail_fetches: int) -> list[DirectoryEntry]:
+    entries: list[DirectoryEntry] = []
+    max_detail_fetches = cap_directory_detail_fetches(max_detail_fetches)
+    for name, detail_url in listings[:max_detail_fetches]:
+        try:
+            detail_html = fetch_directory_html(detail_url)
+        except DirectoryFetchError:
+            continue
+        parsed = parse_treatwell_detail_html(detail_html, name=name, source_url=detail_url)
+        if parsed is not None:
+            entries.append(parsed)
+        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+    return entries
+
+
+def scrape_treatwell(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    listings: list[tuple[str, str]] = []
+    page = 1
+    while len(listings) < limit and page <= 3:
+        source_url = build_treatwell_url(category, location, page)
+        page_html = fetch_directory_html(source_url)
+        page_listings = parse_treatwell_listing_html(page_html, location=location)
+        if not page_listings:
+            break
+        listings.extend(page_listings)
+        next_page = page + 1
+        if f"seite-{next_page}" not in page_html:
+            break
+        page = next_page
+        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+    return enrich_treatwell_entries(listings, max_detail_fetches=limit)[:limit]
 
 
 def scrape_steuerberater(category: str, location: str, limit: int) -> list[DirectoryEntry]:
@@ -2446,6 +2619,7 @@ def _directory_scraper_map() -> dict[str, callable]:
         "manta": scrape_manta,
         "pitchbook": scrape_pitchbook,
         "indeed": scrape_indeed,
+        "stepstone": scrape_stepstone,
         "jameda": scrape_jameda,
         "sanego": scrape_sanego,
         "restaurantguru": scrape_restaurantguru,
@@ -2456,6 +2630,7 @@ def _directory_scraper_map() -> dict[str, callable]:
         "wko": scrape_wko,
         "golocal": scrape_golocal,
         "wlw": scrape_wlw,
+        "treatwell": scrape_treatwell,
     }
 
 
