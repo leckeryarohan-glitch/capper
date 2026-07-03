@@ -8,15 +8,19 @@ from lead_research.google_maps import (
     GoogleMapsFetchError,
     build_google_maps_search_url,
     build_zenrows_google_maps_request_url,
+    css_extractor_place_urls,
     css_extractor_values,
+    diagnose_maps_page,
     discover_google_maps_results,
     extract_place_urls_from_html,
+    extract_place_urls_from_text,
     fetch_google_maps_place_urls,
     google_maps_cities_budget,
     google_maps_location_plans,
     google_maps_places_per_city,
     parse_google_maps_listing_html,
     parse_website_from_detail_html,
+    parse_zenrows_full_response,
     search_result_from_detail_payload,
 )
 from lead_research.search import GoogleMapsSearchProvider, SearchProviderError, combined_provider, source_label
@@ -80,6 +84,7 @@ class GoogleMapsParserTests(unittest.TestCase):
         self.assertIn("js_render=true", url)
         self.assertIn("premium_proxy=true", url)
         self.assertIn("custom_headers=true", url)
+        self.assertIn("json_response=true", url)
         self.assertIn("css_extractor=", url)
         self.assertIn("hfpxzc", url)
         self.assertIn("js_instructions", url)
@@ -123,6 +128,43 @@ class GoogleMapsParserTests(unittest.TestCase):
         urls = extract_place_urls_from_html(html)
         self.assertEqual(len(urls), 2)
 
+    def test_extract_place_urls_from_embedded_json(self) -> None:
+        blob = (
+            '{"results":["https://www.google.de/maps/place/Hotel+Gamma/data=xyz",'
+            '"\\/maps\\/place\\/Hotel+Delta\\/data=uvw"]}'
+        )
+        urls = extract_place_urls_from_text(blob)
+        self.assertEqual(len(urls), 2)
+        self.assertTrue(any("Hotel+Gamma" in url for url in urls))
+        self.assertTrue(any("Hotel+Delta" in url for url in urls))
+
+    def test_parse_zenrows_full_response_json_envelope(self) -> None:
+        raw = json.dumps(
+            {
+                "html": '<a class="hfpxzc" href="https://www.google.de/maps/place/Hotel+X/data=1">X</a>',
+                "xhr": [{"body": '"/maps/place/Hotel+Y/data=2"'}],
+                "place_urls": [],
+            }
+        )
+        payload, html, xhr_bodies = parse_zenrows_full_response(raw)
+        self.assertIn("hfpxzc", html)
+        self.assertEqual(xhr_bodies, ['"/maps/place/Hotel+Y/data=2"'])
+        self.assertEqual(payload.get("place_urls"), [])
+
+    def test_css_extractor_place_urls_splits_js_collected_urls(self) -> None:
+        urls = css_extractor_place_urls(
+            {
+                "place_urls": [],
+                "js_place_urls": "https://www.google.de/maps/place/A/data=1\nhttps://www.google.de/maps/place/B/data=2",
+            }
+        )
+        self.assertEqual(len(urls), 2)
+
+    def test_diagnose_maps_page(self) -> None:
+        self.assertEqual(diagnose_maps_page("https://consent.google.com/ml"), "consent_wall")
+        self.assertEqual(diagnose_maps_page('<a class="hfpxzc" href="/maps/place/x">'), "listings_present")
+        self.assertEqual(diagnose_maps_page(""), "empty")
+
     def test_parse_website_from_detail_html(self) -> None:
         html = '<a data-item-id="authority" href="https://www.hotel-demo.example">Website</a>'
         self.assertEqual(parse_website_from_detail_html(html), "https://www.hotel-demo.example")
@@ -151,11 +193,26 @@ class GoogleMapsParserTests(unittest.TestCase):
                 "Google Maps ZenRows request failed: HTTP Error 422: Unprocessable Entity"
             ),
         ):
-            urls = fetch_google_maps_place_urls(
+            urls, hint = fetch_google_maps_place_urls(
                 "key",
                 "https://www.google.de/maps/search/hotel+Dresden?hl=de",
             )
         self.assertEqual(urls, [])
+        self.assertEqual(hint, "zenrows_422")
+
+    def test_fetch_google_maps_place_urls_falls_back_when_css_extractor_empty(self) -> None:
+        html = '<a class="hfpxzc" href="https://www.google.de/maps/place/Hotel+Fallback/data=abc">X</a>'
+        with patch(
+            "lead_research.google_maps.fetch_zenrows_css_payload",
+            return_value={"place_urls": [], "_html": html},
+        ):
+            urls, hint = fetch_google_maps_place_urls(
+                "key",
+                "https://www.google.de/maps/search/hotel+Dresden?hl=de",
+            )
+        self.assertEqual(len(urls), 1)
+        self.assertIn("Hotel+Fallback", urls[0])
+        self.assertEqual(hint, "listings_present")
 
     def test_discover_google_maps_results_fetches_listings_then_details(self) -> None:
         def fake_css_payload(api_key, target_url, *, css_extractor, **_kwargs):

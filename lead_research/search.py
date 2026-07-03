@@ -725,9 +725,10 @@ class GoogleMapsSearchProvider(SearchProvider):
                     f"({stats.place_urls} Listings, {stats.websites_found} mit Website)"
                 )
             else:
+                hint = f", Seite: {stats.page_hint}" if stats.page_hint else ""
                 self._report(
                     f"Google Maps: 0 Websites aus {plan_location} "
-                    f"({stats.place_urls} Listings gefunden, {stats.details_checked} Details geprueft)"
+                    f"({stats.place_urls} Listings gefunden, {stats.details_checked} Details geprueft{hint})"
                 )
 
             return plan_index, plan_location, plan_results, False
