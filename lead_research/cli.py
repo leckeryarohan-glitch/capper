@@ -164,8 +164,31 @@ def build_parser() -> argparse.ArgumentParser:
     batch.add_argument(
         "--query-delay",
         type=float,
-        default=2.0,
+        default=0.0,
         help="Delay in seconds between search provider queries.",
+    )
+    batch.add_argument(
+        "--query-parallel",
+        type=int,
+        default=4,
+        help="Number of category/location queries to run in parallel.",
+    )
+    batch.add_argument(
+        "--directory-fast-mode",
+        action="store_true",
+        help="Faster directory scraping: fewer pages, fewer detail fetches, no artificial delays.",
+    )
+    batch.add_argument(
+        "--directory-parallel",
+        type=int,
+        default=40,
+        help="Parallel Branchenverzeichnis sources per query (ZenRows).",
+    )
+    batch.add_argument(
+        "--directory-detail-parallel",
+        type=int,
+        default=8,
+        help="Parallel detail-page fetches within each directory source.",
     )
     batch.add_argument(
         "--include-personal-review",
@@ -271,9 +294,23 @@ def run_batch(args: argparse.Namespace) -> int:
     if args.max_pages_per_site < 1:
         raise ValueError("--max-pages-per-site must be at least 1")
 
+    import os
+
+    if args.directory_fast_mode:
+        os.environ["DIRECTORY_FAST_MODE"] = "1"
+    os.environ["DIRECTORY_DETAIL_PARALLEL"] = str(args.directory_detail_parallel)
+
     categories = read_terms(args.categories_file)
     locations = read_terms(args.locations_file) if args.locations_file else [""]
-    provider = provider_from_name(args.provider, args.seed_file)
+    if args.provider in {"directories", "directory", "verzeichnis", "branchenbuch"}:
+        from .search import DirectorySearchProvider
+
+        provider = DirectorySearchProvider(
+            parallel_requests=args.directory_parallel,
+            detail_parallel_requests=args.directory_detail_parallel,
+        )
+    else:
+        provider = provider_from_name(args.provider, args.seed_file)
     count = run_batch_discovery(
         provider=provider,
         categories=categories,
@@ -291,6 +328,7 @@ def run_batch(args: argparse.Namespace) -> int:
         checkpoint=args.checkpoint,
         resume=args.resume,
         query_delay=args.query_delay,
+        query_parallel=args.query_parallel,
     )
 
     print(f"Discovered {count} reviewable lead(s). Wrote {args.output}.")

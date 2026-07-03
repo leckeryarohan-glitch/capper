@@ -154,7 +154,7 @@ class GuiArgumentTests(unittest.TestCase):
         self.assertTrue(captured["use_directories"])
         self.assertFalse(captured["use_zenrows_google"])
         self.assertFalse(captured["use_serpapi"])
-        self.assertEqual(captured["directory_parallel_requests"], 20)
+        self.assertEqual(captured["directory_parallel_requests"], 40)
 
     def test_run_gui_discovery_passes_directory_parallel_requests(self) -> None:
         events: "queue.Queue[tuple]" = queue.Queue()

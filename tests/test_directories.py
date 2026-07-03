@@ -897,6 +897,47 @@ class DirectoryParserTests(unittest.TestCase):
         self.assertEqual(entry.email, "h.demo@steuerberatung-ac.de")
         self.assertEqual(entry.website, "https://www.steuerberatung-ac.de")
 
+    def test_fast_mode_reduces_detail_and_listing_caps(self) -> None:
+        from lead_research.directories import (
+            DIRECTORY_FAST_DETAIL_FETCH_CAP,
+            DIRECTORY_FAST_LISTING_PAGE_CAP,
+            build_directory_fetch_config,
+            cap_directory_detail_fetches,
+            configure_directory_fetch,
+            directory_listing_page_limit,
+        )
+
+        configure_directory_fetch(build_directory_fetch_config(fast_mode=True))
+        self.assertEqual(cap_directory_detail_fetches(100), DIRECTORY_FAST_DETAIL_FETCH_CAP)
+        self.assertEqual(directory_listing_page_limit(), DIRECTORY_FAST_LISTING_PAGE_CAP)
+
+    def test_parallel_detail_fetch_uses_multiple_workers(self) -> None:
+        from lead_research.directories import (
+            DirectoryEntry,
+            build_directory_fetch_config,
+            configure_directory_fetch,
+            enrich_named_listing_details,
+        )
+
+        calls: list[str] = []
+
+        def fake_fetch(url: str, *, timeout: int = 60) -> str:
+            calls.append(url)
+            return f'<a href="https://www.demo-{len(calls)}.example">Home</a>'
+
+        configure_directory_fetch(
+            build_directory_fetch_config(detail_parallel_requests=4, fast_mode=True)
+        )
+        with patch("lead_research.directories.fetch_directory_html", side_effect=fake_fetch):
+            entries = enrich_named_listing_details(
+                [(f"Demo {index}", f"https://example.com/{index}") for index in range(1, 5)],
+                max_detail_fetches=4,
+                parse_detail_website=lambda html: "https://www.demo.example",
+                source_name="Test",
+            )
+        self.assertEqual(len(entries), 4)
+        self.assertEqual(len(calls), 4)
+
     def test_fetch_directory_html_requires_zenrows_by_default(self) -> None:
         configure_directory_fetch(DirectoryFetchConfig())
         with self.assertRaisesRegex(Exception, "ZenRows"):

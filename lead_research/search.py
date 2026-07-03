@@ -147,7 +147,7 @@ CATEGORY_SEARCH_VARIANTS: dict[str, tuple[str, ...]] = {
 
 ZENROWS_MASS_MODE_LIMIT = 500
 ZENROWS_MAX_PARALLEL_REQUESTS = 6
-DEFAULT_DIRECTORY_PARALLEL_REQUESTS = 20
+DEFAULT_DIRECTORY_PARALLEL_REQUESTS = 40
 DIRECTORY_MAX_PARALLEL_REQUESTS = 100
 ZENROWS_DEEP_PAGINATION_START = 90
 ZENROWS_MEDIUM_PAGINATION_START = 40
@@ -1424,12 +1424,14 @@ class DirectorySearchProvider(SearchProvider):
         proxy_country: str = "de",
         enabled_directory_sources: set[str] | None = None,
         parallel_requests: int | None = None,
+        detail_parallel_requests: int | None = None,
     ):
         self.zenrows_api_key = _resolve_api_key(zenrows_api_key, "ZENROWS_API_KEY")
         self.allow_direct_fetch = allow_direct_fetch
         self.proxy_country = proxy_country
         self.enabled_directory_sources = enabled_directory_sources
         self.parallel_requests = parallel_requests
+        self.detail_parallel_requests = detail_parallel_requests
 
     def search(
         self,
@@ -1442,8 +1444,8 @@ class DirectorySearchProvider(SearchProvider):
         on_location_complete: Callable[[DirectoryResumeState], None] | None = None,
     ) -> list[SearchResult]:
         from .directories import (
-            DirectoryFetchConfig,
             DirectoryFetchError,
+            build_directory_fetch_config,
             cap_directory_source_limit,
             configure_directory_fetch,
             directory_entries_to_results,
@@ -1467,10 +1469,12 @@ class DirectorySearchProvider(SearchProvider):
             )
 
         configure_directory_fetch(
-            DirectoryFetchConfig(
-                zenrows_api_key=self.zenrows_api_key,
+            build_directory_fetch_config(
+                zenrows_api_key=self.zenrows_api_key or "",
                 proxy_country=self.proxy_country,
                 allow_direct_fallback=self.allow_direct_fetch,
+                scraper_parallel_requests=self.parallel_requests,
+                detail_parallel_requests=self.detail_parallel_requests,
             )
         )
 
@@ -1658,6 +1662,7 @@ def combined_provider(
     zenrows_key: str | None = None,
     enabled_directory_sources: set[str] | None = None,
     directory_parallel_requests: int | None = None,
+    directory_detail_parallel_requests: int | None = None,
 ) -> SearchProvider:
     """Combine the selected no-key and key-based sources for maximum coverage."""
     providers: list[SearchProvider] = []
@@ -1674,6 +1679,7 @@ def combined_provider(
                     allow_direct_fetch=os.getenv("DIRECTORY_ALLOW_DIRECT_FETCH") == "1",
                     enabled_directory_sources=enabled_directory_sources,
                     parallel_requests=directory_parallel_requests,
+                    detail_parallel_requests=directory_detail_parallel_requests,
                 )
             )
     if os.getenv("GOOGLE_SEARCH_API_KEY") and os.getenv("GOOGLE_SEARCH_ENGINE_ID"):

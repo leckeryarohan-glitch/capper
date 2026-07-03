@@ -7,7 +7,11 @@ from pathlib import Path
 from typing import Mapping
 
 from .concurrency import recommended_workers
-from .directories import build_directory_source_registry
+from .directories import (
+    DEFAULT_DIRECTORY_DETAIL_PARALLEL,
+    DIRECTORY_MAX_DETAIL_PARALLEL,
+    build_directory_source_registry,
+)
 from .directory_registry import directory_sources_by_category
 from .locations import DEFAULT_COUNTRIES
 from .checkpoint import load_discovery_checkpoint, checkpoint_progress_summary
@@ -29,6 +33,7 @@ DEFAULT_DELAY = "0.3"
 DEFAULT_MAX_LEADS = "20000"
 DEFAULT_WORKERS_TEXT = str(recommended_workers())
 DEFAULT_DIRECTORY_PARALLEL_TEXT = str(DEFAULT_DIRECTORY_PARALLEL_REQUESTS)
+DEFAULT_DIRECTORY_DETAIL_PARALLEL_TEXT = str(DEFAULT_DIRECTORY_DETAIL_PARALLEL)
 DEFAULT_PROVIDER = "all"
 
 
@@ -124,6 +129,10 @@ def collect_gui_settings(values: Mapping[str, str | bool]) -> dict[str, object]:
         "workers": str(values.get("workers", DEFAULT_WORKERS_TEXT)).strip() or DEFAULT_WORKERS_TEXT,
         "directory_parallel": str(values.get("directory_parallel", DEFAULT_DIRECTORY_PARALLEL_TEXT)).strip()
         or DEFAULT_DIRECTORY_PARALLEL_TEXT,
+        "directory_detail_parallel": str(
+            values.get("directory_detail_parallel", DEFAULT_DIRECTORY_DETAIL_PARALLEL_TEXT)
+        ).strip()
+        or DEFAULT_DIRECTORY_DETAIL_PARALLEL_TEXT,
         "use_osm": bool(values.get("use_osm", True)),
         "use_duckduckgo": bool(values.get("use_duckduckgo", True)),
         "use_directories": bool(values.get("use_directories", True)),
@@ -149,6 +158,9 @@ def checkpoint_settings_for_gui(path: Path) -> dict[str, object] | None:
         "max_leads": int(config.get("max_leads", gui_settings.get("max_leads", DEFAULT_MAX_LEADS))),
         "workers": str(gui_settings.get("workers", DEFAULT_WORKERS_TEXT)),
         "directory_parallel": str(gui_settings.get("directory_parallel", DEFAULT_DIRECTORY_PARALLEL_TEXT)),
+        "directory_detail_parallel": str(
+            gui_settings.get("directory_detail_parallel", DEFAULT_DIRECTORY_DETAIL_PARALLEL_TEXT)
+        ),
         "use_osm": bool(gui_settings.get("use_osm", True)),
         "use_duckduckgo": bool(gui_settings.get("use_duckduckgo", True)),
         "use_directories": bool(gui_settings.get("use_directories", True)),
@@ -170,6 +182,9 @@ def apply_gui_settings(values: dict[str, object], settings: Mapping[str, object]
     values["max_leads"] = str(settings.get("max_leads", DEFAULT_MAX_LEADS))
     values["workers"] = str(settings.get("workers", DEFAULT_WORKERS_TEXT))
     values["directory_parallel"] = str(settings.get("directory_parallel", DEFAULT_DIRECTORY_PARALLEL_TEXT))
+    values["directory_detail_parallel"] = str(
+        settings.get("directory_detail_parallel", DEFAULT_DIRECTORY_DETAIL_PARALLEL_TEXT)
+    )
     values["use_osm"] = bool(settings.get("use_osm", True))
     values["use_duckduckgo"] = bool(settings.get("use_duckduckgo", True))
     values["use_directories"] = bool(settings.get("use_directories", True))
@@ -200,6 +215,11 @@ def run_gui_discovery(
         DEFAULT_DIRECTORY_PARALLEL_REQUESTS,
     )
     directory_parallel = max(1, min(directory_parallel, DIRECTORY_MAX_PARALLEL_REQUESTS))
+    directory_detail_parallel = parse_positive_int(
+        values.get("directory_detail_parallel"),
+        DEFAULT_DIRECTORY_DETAIL_PARALLEL,
+    )
+    directory_detail_parallel = max(1, min(directory_detail_parallel, DIRECTORY_MAX_DETAIL_PARALLEL))
     checkpoint = Path(str(values.get("checkpoint", DEFAULT_CHECKPOINT)).strip() or DEFAULT_CHECKPOINT)
     resume = bool(values.get("resume", False))
 
@@ -237,6 +257,7 @@ def run_gui_discovery(
         zenrows_key=zenrows_key,
         enabled_directory_sources=enabled_directory_sources if use_directories else None,
         directory_parallel_requests=directory_parallel if use_directories else None,
+        directory_detail_parallel_requests=directory_detail_parallel if use_directories else None,
     )
     if not getattr(provider, "providers", None):
         raise SearchProviderError(
@@ -298,6 +319,7 @@ def run_gui() -> int:
             self.limit = tk.StringVar(value=DEFAULT_LIMIT)
             self.workers = tk.StringVar(value=DEFAULT_WORKERS_TEXT)
             self.directory_parallel = tk.StringVar(value=DEFAULT_DIRECTORY_PARALLEL_TEXT)
+            self.directory_detail_parallel = tk.StringVar(value=DEFAULT_DIRECTORY_DETAIL_PARALLEL_TEXT)
             self.serpapi_key = tk.StringVar(value=os.environ.get("SERPAPI_API_KEY", ""))
             self.zenrows_key = tk.StringVar(value=os.environ.get("ZENROWS_API_KEY", ""))
             self.use_osm = tk.BooleanVar(value=True)
@@ -386,11 +408,15 @@ def run_gui() -> int:
             ttk.Entry(limits_frame, textvariable=self.workers, width=6).grid(row=0, column=5, padx=(4, 16))
             ttk.Label(limits_frame, text="ZenRows parallel").grid(row=1, column=0, sticky="w", pady=(4, 0))
             ttk.Entry(limits_frame, textvariable=self.directory_parallel, width=6).grid(row=1, column=1, padx=(4, 16), pady=(4, 0))
+            ttk.Label(limits_frame, text="Detail parallel").grid(row=1, column=2, sticky="w", pady=(4, 0))
+            ttk.Entry(limits_frame, textvariable=self.directory_detail_parallel, width=6).grid(
+                row=1, column=3, padx=(4, 16), pady=(4, 0)
+            )
             ttk.Label(
                 limits_frame,
-                text=f"(Branchenverzeichnisse gleichzeitig; Crawling-Threads oben; max {DIRECTORY_MAX_PARALLEL_REQUESTS})",
+                text=f"(Quellen / Detailseiten; max {DIRECTORY_MAX_PARALLEL_REQUESTS}/{DIRECTORY_MAX_DETAIL_PARALLEL})",
                 foreground="#555",
-            ).grid(row=1, column=2, columnspan=4, sticky="w", pady=(4, 0))
+            ).grid(row=1, column=4, columnspan=2, sticky="w", pady=(4, 0))
             ttk.Label(
                 limits_frame,
                 text="(Crawling; mehr = schneller, Standard auto)",
@@ -608,6 +634,7 @@ def run_gui() -> int:
                 "limit": self.limit.get(),
                 "workers": self.workers.get(),
                 "directory_parallel": self.directory_parallel.get(),
+                "directory_detail_parallel": self.directory_detail_parallel.get(),
                 "use_osm": self.use_osm.get(),
                 "use_duckduckgo": self.use_duckduckgo.get(),
                 "use_directories": self.use_directories.get(),
@@ -629,6 +656,9 @@ def run_gui() -> int:
             self.limit.set(str(values["limit"]))
             self.workers.set(str(values["workers"]))
             self.directory_parallel.set(str(values["directory_parallel"]))
+            self.directory_detail_parallel.set(
+                str(values.get("directory_detail_parallel", DEFAULT_DIRECTORY_DETAIL_PARALLEL_TEXT))
+            )
             self.use_osm.set(bool(values["use_osm"]))
             self.use_duckduckgo.set(bool(values["use_duckduckgo"]))
             self.use_directories.set(bool(values["use_directories"]))
@@ -678,6 +708,7 @@ def run_gui() -> int:
                 "limit": self.limit.get(),
                 "workers": self.workers.get(),
                 "directory_parallel": self.directory_parallel.get(),
+                "directory_detail_parallel": self.directory_detail_parallel.get(),
                 "serpapi_key": self.serpapi_key.get(),
                 "zenrows_key": self.zenrows_key.get(),
                 "use_osm": self.use_osm.get(),
