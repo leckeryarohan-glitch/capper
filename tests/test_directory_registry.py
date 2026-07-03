@@ -59,12 +59,30 @@ class DirectoryRegistryTests(unittest.TestCase):
         self.assertIn("wko", implemented_ids)
         self.assertIn("golocal", implemented_ids)
         self.assertIn("wlw", implemented_ids)
+        self.assertIn("treatwell", implemented_ids)
+
+    def test_lieferanten_europages_is_implemented(self) -> None:
+        registry = build_directory_source_registry()
+        implemented_ids = {spec.id for spec in registry if spec.implemented}
+
+        self.assertIn("lieferanten_europages", implemented_ids)
+        self.assertIn("europages", implemented_ids)
 
     def test_stepstone_not_marked_unavailable(self) -> None:
         registry = build_directory_source_registry()
         unavailable_ids = {spec.id for spec in unavailable_directory_sources(registry)}
 
         self.assertNotIn("jobboersen_stepstone", unavailable_ids)
+
+    def test_treatwell_not_marked_unavailable(self) -> None:
+        registry = build_directory_source_registry()
+        unavailable_ids = {spec.id for spec in unavailable_directory_sources(registry)}
+
+        self.assertNotIn("branchen_treatwell", unavailable_ids)
+        self.assertIn("jobboersen_monster", unavailable_ids)
+        self.assertIn("immobilien_idealista", unavailable_ids)
+        self.assertIn("lieferanten_thomasnet", unavailable_ids)
+        self.assertIn("branchen_physiotherapeuten", unavailable_ids)
 
     def test_blocked_gastronomie_and_aerzte_sources_marked_unavailable(self) -> None:
         registry = build_directory_source_registry()

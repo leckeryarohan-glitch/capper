@@ -321,6 +321,41 @@ class DirectoryParserTests(unittest.TestCase):
         name = parse_stepstone_detail_name("<title>12 Aktuelle Jobs bei Demo Steuer GmbH | Stepstone</title>")
         self.assertEqual(name, "Demo Steuer GmbH")
 
+    def test_parse_treatwell_listing_and_detail(self) -> None:
+        from lead_research.directories import (
+            build_treatwell_url,
+            parse_treatwell_detail_html,
+            parse_treatwell_listing_html,
+            treatwell_location_slug,
+        )
+
+        self.assertEqual(treatwell_location_slug("München"), "muenchen")
+        self.assertEqual(
+            build_treatwell_url("Friseur", "Köln", 2),
+            "https://www.treatwell.de/orte/friseur/angebot-typ-lokal/in-koeln-de/seite-2/",
+        )
+        listings = parse_treatwell_listing_html(
+            """
+            <a href="https://www.treatwell.de/ort/berlin/">City</a>
+            <a href="https://www.treatwell.de/ort/demo-salon-berlin/">Salon</a>
+            <a href="https://www.treatwell.de/ort/demo-salon-berlin/?serviceIds=1">Salon</a>
+            """,
+            location="Berlin",
+        )
+        self.assertEqual(
+            listings[0],
+            ("Demo Salon Berlin", "https://www.treatwell.de/ort/demo-salon-berlin/"),
+        )
+        entry = parse_treatwell_detail_html(
+            '"email":"kontakt@demo-salon.example"\n<title>Demo Salon | Treatwell</title>',
+            name="Demo Salon Berlin",
+            source_url="https://www.treatwell.de/ort/demo-salon-berlin/",
+        )
+        self.assertIsNotNone(entry)
+        assert entry is not None
+        self.assertEqual(entry.email, "kontakt@demo-salon.example")
+        self.assertEqual(entry.name, "Demo Salon")
+
     def test_parse_jameda_listing_and_detail(self) -> None:
         from lead_research.directories import (
             build_jameda_url,

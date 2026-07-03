@@ -142,8 +142,10 @@ def build_directory_source_registry(
         ("Gastronomie", "restaurantguru", "Restaurant Guru", "restaurantguru"),
         ("Branchen", "anwaltauskunft", "Anwaltauskunft", "anwaltauskunft"),
         ("Branchen", "steuerberater", "Steuerberaterverzeichnis", "steuerberater"),
+        ("Branchen", "treatwell", "Treatwell", "treatwell"),
         ("Lokale Portale", "golocal", "GoLocal", "golocal"),
         ("Lieferanten", "wlw", "Wer liefert was (WLW)", "wlw"),
+        ("Lieferanten", "lieferanten_europages", "Europages", "europages"),
     )
     active_slugs_by_category: dict[str, set[str]] = {}
     for category, source_id, label, scraper_key in active_category_sources:
@@ -176,6 +178,7 @@ def build_directory_source_registry(
             "opencorporates",
         },
         "Jobboersen": {
+            "monster",
             "linkedin_jobs",
             "xing_jobs",
             "monster",
@@ -206,6 +209,7 @@ def build_directory_source_registry(
             "trustatrader",
         },
         "Immobilien": {
+            "idealista",
             "immobilienscout24",
             "immowelt",
             "immonet",
@@ -218,6 +222,12 @@ def build_directory_source_registry(
         },
         "Bewertungen": {
             "trustpilot",
+        },
+        "Lieferanten": {
+            "thomasnet",
+            "global_sources",
+            "india_mart",
+            "made_in_china",
         },
         "Lokale Portale": {
             "locanto",
@@ -232,6 +242,8 @@ def build_directory_source_registry(
         "Branchen": {
             "notare",
             "architekten",
+            "physiotherapeuten",
+            "zahnaerzte",
         },
     }
 
