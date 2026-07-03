@@ -148,6 +148,34 @@ class GuiArgumentTests(unittest.TestCase):
         self.assertFalse(captured["use_zenrows_google"])
         self.assertFalse(captured["use_serpapi"])
 
+    def test_run_gui_discovery_passes_directory_parallel_requests(self) -> None:
+        events: "queue.Queue[tuple]" = queue.Queue()
+        captured: dict[str, object] = {}
+
+        def fake_combined_provider(**kwargs):
+            captured.update(kwargs)
+            return FakeProvider()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "leads.csv"
+            with patch("lead_research.gui.combined_provider", side_effect=fake_combined_provider), patch(
+                "lead_research.pipeline.LeadCrawler", FakeCrawler
+            ):
+                run_gui_discovery(
+                    {
+                        "category": "hotel",
+                        "output": str(output),
+                        "use_directories": True,
+                        "use_zenrows_google": False,
+                        "use_serpapi": False,
+                        "zenrows_key": "zr-key",
+                        "directory_parallel": "50",
+                    },
+                    events,
+                )
+
+        self.assertEqual(captured["directory_parallel_requests"], 50)
+
     def test_run_gui_discovery_passes_directory_source_ids(self) -> None:
         from lead_research.directories import build_directory_source_registry
         from lead_research.directory_registry import implemented_directory_sources

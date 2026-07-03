@@ -11,7 +11,12 @@ from .directories import build_directory_source_registry
 from .directory_registry import directory_sources_by_category
 from .locations import DEFAULT_COUNTRIES
 from .pipeline import DEFAULT_WORKERS, DiscoveryConfig, LeadStats, run_discovery
-from .search import SearchProviderError, combined_provider
+from .search import (
+    DEFAULT_DIRECTORY_PARALLEL_REQUESTS,
+    DIRECTORY_MAX_PARALLEL_REQUESTS,
+    SearchProviderError,
+    combined_provider,
+)
 from .suppression import SuppressionList
 
 
@@ -22,6 +27,7 @@ DEFAULT_MAX_PAGES = "5"
 DEFAULT_DELAY = "0.3"
 DEFAULT_MAX_LEADS = "20000"
 DEFAULT_WORKERS_TEXT = str(recommended_workers())
+DEFAULT_DIRECTORY_PARALLEL_TEXT = str(DEFAULT_DIRECTORY_PARALLEL_REQUESTS)
 DEFAULT_PROVIDER = "all"
 
 
@@ -111,6 +117,11 @@ def run_gui_discovery(
     max_leads = parse_positive_int(values.get("max_leads"), int(DEFAULT_MAX_LEADS))
     limit = parse_positive_int(values.get("limit"), int(DEFAULT_LIMIT))
     workers = parse_positive_int(values.get("workers"), DEFAULT_WORKERS)
+    directory_parallel = parse_positive_int(
+        values.get("directory_parallel"),
+        DEFAULT_DIRECTORY_PARALLEL_REQUESTS,
+    )
+    directory_parallel = max(1, min(directory_parallel, DIRECTORY_MAX_PARALLEL_REQUESTS))
     checkpoint = Path(str(values.get("checkpoint", DEFAULT_CHECKPOINT)).strip() or DEFAULT_CHECKPOINT)
     resume = bool(values.get("resume", False))
 
@@ -147,6 +158,7 @@ def run_gui_discovery(
         serpapi_key=serpapi_key,
         zenrows_key=zenrows_key,
         enabled_directory_sources=enabled_directory_sources if use_directories else None,
+        directory_parallel_requests=directory_parallel if use_directories else None,
     )
     if not getattr(provider, "providers", None):
         raise SearchProviderError(
@@ -206,6 +218,7 @@ def run_gui() -> int:
             self.max_leads = tk.StringVar(value=DEFAULT_MAX_LEADS)
             self.limit = tk.StringVar(value=DEFAULT_LIMIT)
             self.workers = tk.StringVar(value=DEFAULT_WORKERS_TEXT)
+            self.directory_parallel = tk.StringVar(value=DEFAULT_DIRECTORY_PARALLEL_TEXT)
             self.serpapi_key = tk.StringVar(value=os.environ.get("SERPAPI_API_KEY", ""))
             self.zenrows_key = tk.StringVar(value=os.environ.get("ZENROWS_API_KEY", ""))
             self.use_osm = tk.BooleanVar(value=True)
@@ -346,16 +359,25 @@ def run_gui() -> int:
                 text="Branchenverzeichnisse via ZenRows aktivieren",
                 variable=self.use_directories,
             ).grid(row=0, column=0, sticky="w")
+            directory_parallel_frame = ttk.Frame(api_checks)
+            directory_parallel_frame.grid(row=1, column=0, sticky="w", pady=(4, 0))
+            ttk.Label(directory_parallel_frame, text="ZenRows parallel").grid(row=0, column=0, sticky="w", padx=(12, 4))
+            ttk.Entry(directory_parallel_frame, textvariable=self.directory_parallel, width=6).grid(row=0, column=1, sticky="w")
+            ttk.Label(
+                directory_parallel_frame,
+                text=f"(Branchenquellen gleichzeitig; Standard {DEFAULT_DIRECTORY_PARALLEL_REQUESTS}, max {DIRECTORY_MAX_PARALLEL_REQUESTS})",
+                foreground="#555",
+            ).grid(row=0, column=2, sticky="w", padx=(8, 0))
             ttk.Checkbutton(
                 api_checks,
                 text="Google-Suche via ZenRows",
                 variable=self.use_zenrows_google,
-            ).grid(row=1, column=0, sticky="w", pady=(4, 0))
+            ).grid(row=2, column=0, sticky="w", pady=(4, 0))
             ttk.Checkbutton(
                 api_checks,
                 text="Google-Suche via SerpAPI",
                 variable=self.use_serpapi,
-            ).grid(row=2, column=0, sticky="w", pady=(4, 0))
+            ).grid(row=3, column=0, sticky="w", pady=(4, 0))
 
             directory_frame = ttk.LabelFrame(content, text="Branchenquellen (ZenRows Universal API)", padding=8)
             directory_frame.grid(row=9, column=0, columnspan=3, sticky="ew", pady=(8, 4))
@@ -511,6 +533,7 @@ def run_gui() -> int:
                 "max_leads": self.max_leads.get(),
                 "limit": self.limit.get(),
                 "workers": self.workers.get(),
+                "directory_parallel": self.directory_parallel.get(),
                 "serpapi_key": self.serpapi_key.get(),
                 "zenrows_key": self.zenrows_key.get(),
                 "use_osm": self.use_osm.get(),

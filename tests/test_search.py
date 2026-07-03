@@ -546,9 +546,24 @@ class SearchTests(unittest.TestCase):
 
 class DirectoryParallelismTests(unittest.TestCase):
     def test_directory_parallel_workers_caps_zenrows_requests(self) -> None:
-        self.assertEqual(directory_parallel_workers(15, use_zenrows=True), 6)
+        self.assertEqual(directory_parallel_workers(15, use_zenrows=True), 15)
+        self.assertEqual(directory_parallel_workers(15, use_zenrows=True, requested_parallel=6), 6)
+        self.assertEqual(directory_parallel_workers(15, use_zenrows=True, requested_parallel=100), 15)
         self.assertEqual(directory_parallel_workers(3, use_zenrows=True), 3)
         self.assertEqual(directory_parallel_workers(15, use_zenrows=False), 15)
+
+    def test_combined_provider_passes_directory_parallel_requests(self) -> None:
+        provider = combined_provider(
+            use_osm=False,
+            use_duckduckgo=False,
+            use_directories=True,
+            use_zenrows_google=False,
+            zenrows_key="test-key",
+            directory_parallel_requests=50,
+        )
+
+        directory_provider = provider.providers[0]
+        self.assertEqual(directory_provider.parallel_requests, 50)
 
 
 if __name__ == "__main__":
