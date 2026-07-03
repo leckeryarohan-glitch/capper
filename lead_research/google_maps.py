@@ -18,6 +18,7 @@ class GoogleMapsDiscoveryStats:
     place_urls: int = 0
     details_checked: int = 0
     websites_found: int = 0
+    page_hint: str = ""
 
 
 GOOGLE_MAPS_ZENROWS_ENDPOINT = "https://api.zenrows.com/v1/"
@@ -32,11 +33,29 @@ GOOGLE_MAPS_DETAIL_PARALLEL = 4
 GOOGLE_MAPS_INITIAL_WAIT_MS = 10000
 GOOGLE_MAPS_FALLBACK_WAIT_MS = 15000
 GOOGLE_MAPS_SIDEBAR_SCROLL_WAIT_MS = 2000
+GOOGLE_MAPS_CONSENT_JS = (
+    "(function(){"
+    "var s=['#L2AGLb','button[jsname=\"V67aGc\"]','form[action*=\"consent\"] button',"
+    "'button[aria-label*=\"Alle akzeptieren\"]','button[aria-label*=\"Accept all\"]'];"
+    "for(var i=0;i<s.length;i++){var e=document.querySelector(s[i]);if(e){e.click();return;}}"
+    "})();"
+)
 GOOGLE_MAPS_SIDEBAR_SCROLL_JS = (
     "var el=document.querySelectorAll('.m6QErb.DxyBCb.kA9KIf.dS8AEf.XiKgde.ecceSd')[1]; "
     "if(el){ el.scrollTop += el.scrollHeight; }"
 )
-GOOGLE_MAPS_LISTING_CSS_EXTRACTOR = {"place_urls": "a.hfpxzc @href", "url": "a.hfpxzc @href"}
+GOOGLE_MAPS_LISTING_COLLECT_JS = (
+    "(function(){"
+    "var u=[];"
+    "document.querySelectorAll('a.hfpxzc').forEach(function(a){if(a.href)u.push(a.href);});"
+    "if(u.length){document.documentElement.setAttribute('data-cap-place-urls',u.join('\\n'));}"
+    "})();"
+)
+GOOGLE_MAPS_LISTING_CSS_EXTRACTOR = {
+    "place_urls": "a.hfpxzc @href",
+    "url": "a.hfpxzc @href",
+    "js_place_urls": "html @data-cap-place-urls",
+}
 GOOGLE_MAPS_DETAIL_CSS_EXTRACTOR = {
     "name": "h1.DUwDvf",
     "website": 'a[data-item-id="authority"] @href',
@@ -72,6 +91,27 @@ _AUTHORITY_HREF_RE = re.compile(
 _AUTHORITY_HREF_RE_ALT = re.compile(
     r'href="([^"]+)"[^>]*data-item-id="authority"',
     re.IGNORECASE,
+)
+_LOOSE_PLACE_URL_RE = re.compile(
+    r"https?://(?:www\.)?google\.[a-z.]+/maps/place/[^\s\"'<>\\]+",
+    re.IGNORECASE,
+)
+_RELATIVE_PLACE_PATH_RE = re.compile(
+    r'"(/maps/place/[^"]+)"',
+    re.IGNORECASE,
+)
+_ZENROWS_JSON_ENVELOPE_KEYS = frozenset(
+    {
+        "html",
+        "xhr",
+        "js_instructions_report",
+        "metadata",
+        "status_code",
+        "headers",
+        "cookies",
+        "screenshot",
+        "cost",
+    }
 )
 
 
@@ -183,6 +223,21 @@ def zenrows_error_detail(exc: BaseException) -> str:
     return format_request_error(exc)
 
 
+def google_maps_bootstrap_instructions() -> list[dict[str, object]]:
+    return [
+        {"evaluate": GOOGLE_MAPS_CONSENT_JS},
+        {"wait": 3000},
+    ]
+
+
+def maps_js_instructions(scroll_steps: int) -> list[dict[str, object]]:
+    instructions = google_maps_bootstrap_instructions()
+    instructions.extend(sidebar_scroll_instructions(scroll_steps))
+    instructions.append({"evaluate": GOOGLE_MAPS_LISTING_COLLECT_JS})
+    instructions.append({"wait": 1000})
+    return instructions
+
+
 def sidebar_scroll_instructions(scrolls: int, *, wait_ms: int = GOOGLE_MAPS_SIDEBAR_SCROLL_WAIT_MS) -> list[dict[str, object]]:
     if scrolls <= 0:
         return []
@@ -202,6 +257,7 @@ def build_zenrows_google_maps_request_url(
     js_instructions: list[dict[str, object]] | None = None,
     wait_ms: int = GOOGLE_MAPS_INITIAL_WAIT_MS,
     wait_for: str = "",
+    json_response: bool = True,
 ) -> str:
     params: dict[str, str] = {
         "apikey": api_key,
@@ -210,6 +266,8 @@ def build_zenrows_google_maps_request_url(
         "proxy_country": proxy_country,
         "custom_headers": "true",
     }
+    if json_response:
+        params["json_response"] = "true"
     if wait_ms > 0:
         params["wait"] = str(wait_ms)
     if wait_for:
@@ -232,6 +290,80 @@ def parse_zenrows_css_payload(raw_text: str) -> dict:
     except json.JSONDecodeError:
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def parse_zenrows_full_response(raw_text: str) -> tuple[dict, str, list[str]]:
+    """Parse ZenRows css_extractor JSON or json_response envelope."""
+    text = raw_text.strip()
+    if not text:
+        return {}, "", []
+    if text.startswith("<"):
+        return {}, text, []
+
+    try:
+        envelope = json.loads(text)
+    except json.JSONDecodeError:
+        return {}, text, []
+
+    if not isinstance(envelope, dict):
+        return {}, text, []
+
+    if "html" in envelope or "xhr" in envelope:
+        html = str(envelope.get("html") or "")
+        xhr_bodies: list[str] = []
+        for entry in envelope.get("xhr") or []:
+            if not isinstance(entry, dict):
+                continue
+            body = entry.get("body") or entry.get("response") or ""
+            if body:
+                xhr_bodies.append(str(body))
+        css_payload = {
+            key: value
+            for key, value in envelope.items()
+            if key not in _ZENROWS_JSON_ENVELOPE_KEYS
+        }
+        return css_payload, html, xhr_bodies
+
+    return envelope, "", []
+
+
+def css_extractor_place_urls(payload: dict) -> list[str]:
+    urls = css_extractor_values(payload, "place_urls", "url")
+    js_urls = payload.get("js_place_urls")
+    if isinstance(js_urls, str) and js_urls.strip():
+        urls.extend(line.strip() for line in js_urls.splitlines() if line.strip())
+    elif isinstance(js_urls, list):
+        urls.extend(str(item).strip() for item in js_urls if str(item).strip())
+    return urls
+
+
+def css_payload_has_extractor_hits(payload: dict, css_extractor: dict[str, str] | None) -> bool:
+    if not css_extractor or not payload:
+        return False
+    if css_extractor_place_urls(payload):
+        return True
+    for key in css_extractor:
+        value = payload.get(key)
+        if isinstance(value, list) and any(str(item).strip() for item in value):
+            return True
+        if isinstance(value, str) and value.strip():
+            return True
+    return False
+
+
+def diagnose_maps_page(page_html: str) -> str:
+    lower = page_html.lower()
+    if "consent.google" in lower or "bevor sie zu google weitergehen" in lower:
+        return "consent_wall"
+    if "unusual traffic" in lower or "captcha" in lower or "/sorry/" in lower:
+        return "captcha"
+    if "hfpxzc" in lower or "/maps/place/" in lower:
+        return "listings_present"
+    if "maps/search" in lower or ("suche" in lower and "maps" in lower):
+        return "search_loaded_no_listings"
+    if not page_html.strip():
+        return "empty"
+    return "unknown"
 
 
 def css_extractor_values(payload: dict, *keys: str) -> list[str]:
@@ -283,20 +415,35 @@ def place_name_from_url(place_url: str) -> str:
     return decode_maps_place_name(match.group(1).split("/")[0])
 
 
-def extract_place_urls_from_html(page_html: str) -> list[str]:
+def extract_place_urls_from_text(text: str) -> list[str]:
+    text = text.replace("\\/", "/").replace("\\u002f", "/")
     seen: set[str] = set()
     urls: list[str] = []
-    for pattern in (_HFPXZC_HREF_RE, _PLACE_HREF_RE):
-        for match in pattern.finditer(page_html):
-            candidate = match.group(1).strip()
-            if "/maps/place/" not in candidate:
-                continue
-            key = candidate.lower().split("?", 1)[0]
-            if key in seen:
-                continue
-            seen.add(key)
-            urls.append(candidate)
+
+    def add(candidate: str) -> None:
+        cleaned = candidate.strip().replace("\\/", "/").replace("\\u0026", "&")
+        if not cleaned:
+            return
+        if cleaned.startswith("/maps/place/"):
+            cleaned = "https://www.google.com" + cleaned
+        if "/maps/place/" not in cleaned:
+            return
+        key = cleaned.lower().split("?", 1)[0]
+        if key in seen:
+            return
+        seen.add(key)
+        urls.append(cleaned)
+
+    for pattern in (_HFPXZC_HREF_RE, _PLACE_HREF_RE, _LOOSE_PLACE_URL_RE):
+        for match in pattern.finditer(text):
+            add(match.group(1) if pattern is not _LOOSE_PLACE_URL_RE else match.group(0))
+    for match in _RELATIVE_PLACE_PATH_RE.finditer(text):
+        add(match.group(1))
     return urls
+
+
+def extract_place_urls_from_html(page_html: str) -> list[str]:
+    return extract_place_urls_from_text(page_html)
 
 
 def parse_website_from_detail_html(page_html: str) -> str:
@@ -414,6 +561,7 @@ def _fetch_zenrows_text_once(
     js_instructions: list[dict[str, object]] | None = None,
     wait_ms: int = GOOGLE_MAPS_INITIAL_WAIT_MS,
     wait_for: str = "",
+    json_response: bool = True,
     timeout: int = GOOGLE_MAPS_DEFAULT_TIMEOUT_SECONDS,
 ) -> str:
     request_url = build_zenrows_google_maps_request_url(
@@ -424,6 +572,7 @@ def _fetch_zenrows_text_once(
         js_instructions=js_instructions,
         wait_ms=wait_ms,
         wait_for=wait_for,
+        json_response=json_response,
     )
     request = urllib.request.Request(
         request_url,
@@ -459,17 +608,20 @@ def _fetch_zenrows_maps_with_fallbacks(
     wait_ms: int = GOOGLE_MAPS_INITIAL_WAIT_MS,
 ) -> str:
     """Fetch Maps HTML/JSON without wait_for (wait_for causes 422 when selectors are absent)."""
-    instructions = sidebar_scroll_instructions(scroll_steps)
-    profiles: list[tuple[dict[str, str] | None, list[dict[str, object]] | None, int]] = [
-        (css_extractor, instructions or None, wait_ms),
-        (css_extractor, None, GOOGLE_MAPS_FALLBACK_WAIT_MS),
-        (None, instructions or None, GOOGLE_MAPS_FALLBACK_WAIT_MS),
-        (None, None, GOOGLE_MAPS_FALLBACK_WAIT_MS),
+    instructions = maps_js_instructions(scroll_steps)
+    profiles: list[tuple[dict[str, str] | None, list[dict[str, object]] | None, int, bool]] = [
+        (css_extractor, instructions, wait_ms, True),
+        (css_extractor, instructions, GOOGLE_MAPS_FALLBACK_WAIT_MS, True),
+        (css_extractor, google_maps_bootstrap_instructions(), GOOGLE_MAPS_FALLBACK_WAIT_MS, True),
+        (None, instructions, GOOGLE_MAPS_FALLBACK_WAIT_MS, True),
+        (None, google_maps_bootstrap_instructions(), GOOGLE_MAPS_FALLBACK_WAIT_MS, True),
+        (css_extractor, instructions, wait_ms, False),
+        (None, None, GOOGLE_MAPS_FALLBACK_WAIT_MS, False),
     ]
     last_error: GoogleMapsFetchError | None = None
-    seen: set[tuple[bool, bool, int]] = set()
-    for css, js, wait in profiles:
-        key = (css is not None, js is not None, wait)
+    seen: set[tuple[bool, bool, int, bool]] = set()
+    for css, js, wait, use_json in profiles:
+        key = (css is not None, js is not None, wait, use_json)
         if key in seen:
             continue
         seen.add(key)
@@ -483,6 +635,7 @@ def _fetch_zenrows_maps_with_fallbacks(
                 js_instructions=js,
                 wait_ms=wait,
                 wait_for="",
+                json_response=use_json,
             )
         except GoogleMapsFetchError as exc:
             last_error = exc
@@ -515,12 +668,20 @@ def fetch_zenrows_css_payload(
         scroll_steps=scroll_steps,
         wait_ms=wait_ms,
     )
-    payload = parse_zenrows_css_payload(raw_text)
-    if payload:
+    payload, html_text, xhr_bodies = parse_zenrows_full_response(raw_text)
+    if css_payload_has_extractor_hits(payload, css_extractor):
+        return payload
+    if html_text.strip():
+        payload = dict(payload)
+        payload["_html"] = html_text
         return payload
     if css_extractor and raw_text.strip().startswith("<"):
         return {"_html": raw_text}
-    return {}
+    # Keep xhr bodies for callers that parse place URLs from network payloads.
+    if xhr_bodies:
+        payload = dict(payload)
+        payload["_xhr"] = xhr_bodies
+    return payload
 
 
 def fetch_google_maps_search_html(
@@ -542,40 +703,16 @@ def fetch_google_maps_search_html(
     )
 
 
-def fetch_google_maps_place_urls(
-    api_key: str,
-    search_url: str,
-    *,
-    proxy_country: str = "de",
-    country_code: str = "DE",
-    scroll_steps: int | None = None,
-) -> list[str]:
-    steps = google_maps_scroll_steps() if scroll_steps is None else max(0, min(scroll_steps, GOOGLE_MAPS_MAX_SCROLL_STEPS))
-    try:
-        payload = fetch_zenrows_css_payload(
-            api_key,
-            search_url,
-            proxy_country=proxy_country,
-            country_code=country_code,
-            css_extractor=GOOGLE_MAPS_LISTING_CSS_EXTRACTOR,
-            scroll_steps=steps,
-        )
-    except GoogleMapsFetchError as exc:
-        if "HTTP Error 422" in str(exc):
-            return []
-        raise
-    urls = css_extractor_values(payload, "place_urls", "url")
-    if not urls:
-        html = payload.get("_html")
-        if not isinstance(html, str) or not html.strip():
-            html = fetch_google_maps_search_html(
-                api_key,
-                search_url,
-                proxy_country=proxy_country,
-                country_code=country_code,
-                scroll_steps=steps,
-            )
-        urls = extract_place_urls_from_html(html)
+def _collect_place_urls_from_payload(payload: dict) -> list[str]:
+    urls = css_extractor_place_urls(payload)
+    html = payload.get("_html")
+    if isinstance(html, str) and html.strip():
+        urls.extend(extract_place_urls_from_text(html))
+    xhr_bodies = payload.get("_xhr")
+    if isinstance(xhr_bodies, list):
+        for body in xhr_bodies:
+            if isinstance(body, str) and body.strip():
+                urls.extend(extract_place_urls_from_text(body))
     seen: set[str] = set()
     unique: list[str] = []
     for place_url in urls:
@@ -588,6 +725,47 @@ def fetch_google_maps_place_urls(
         seen.add(key)
         unique.append(normalized)
     return unique
+
+
+def fetch_google_maps_place_urls(
+    api_key: str,
+    search_url: str,
+    *,
+    proxy_country: str = "de",
+    country_code: str = "DE",
+    scroll_steps: int | None = None,
+) -> tuple[list[str], str]:
+    steps = google_maps_scroll_steps() if scroll_steps is None else max(0, min(scroll_steps, GOOGLE_MAPS_MAX_SCROLL_STEPS))
+    page_hint = ""
+    try:
+        payload = fetch_zenrows_css_payload(
+            api_key,
+            search_url,
+            proxy_country=proxy_country,
+            country_code=country_code,
+            css_extractor=GOOGLE_MAPS_LISTING_CSS_EXTRACTOR,
+            scroll_steps=steps,
+        )
+    except GoogleMapsFetchError as exc:
+        if "HTTP Error 422" in str(exc):
+            return [], "zenrows_422"
+        raise
+    unique = _collect_place_urls_from_payload(payload)
+    html = payload.get("_html")
+    if isinstance(html, str) and html.strip():
+        page_hint = diagnose_maps_page(html)
+    if not unique:
+        if not isinstance(html, str) or not html.strip():
+            html = fetch_google_maps_search_html(
+                api_key,
+                search_url,
+                proxy_country=proxy_country,
+                country_code=country_code,
+                scroll_steps=steps,
+            )
+        unique = extract_place_urls_from_text(html)
+        page_hint = diagnose_maps_page(html)
+    return unique, page_hint
 
 
 def fetch_google_maps_place_result(
@@ -654,14 +832,15 @@ def discover_google_maps_results(
 ) -> tuple[list[SearchResult], GoogleMapsDiscoveryStats]:
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    place_urls = fetch_google_maps_place_urls(
+    place_urls, page_hint = fetch_google_maps_place_urls(
         api_key,
         search_url,
         proxy_country=proxy_country,
         country_code=country_code,
         scroll_steps=scroll_steps,
-    )[: max(places_limit, 0)]
-    stats = GoogleMapsDiscoveryStats(place_urls=len(place_urls))
+    )
+    place_urls = place_urls[: max(places_limit, 0)]
+    stats = GoogleMapsDiscoveryStats(place_urls=len(place_urls), page_hint=page_hint)
     if not place_urls:
         return [], stats
 
@@ -688,6 +867,7 @@ def discover_google_maps_results(
         place_urls=len(place_urls),
         details_checked=details_checked,
         websites_found=len(results),
+        page_hint=page_hint,
     )
     return results, stats
 
