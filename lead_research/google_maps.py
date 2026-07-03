@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 import re
+import urllib.error
 import urllib.parse
 import urllib.request
 
 from .extract import normalized_host
 from .http import format_request_error, read_response_text, urlopen
-from .locations import SUPPORTED_COUNTRIES, cities_for_mass_web_search, country_label, top_cities_for_web_search
+from .locations import SUPPORTED_COUNTRIES, ZENROWS_LOCALE, cities_for_mass_web_search, country_label, top_cities_for_web_search
 from .models import SearchResult
 
 
@@ -17,6 +18,8 @@ GOOGLE_MAPS_MAX_SCROLL_STEPS = 5
 GOOGLE_MAPS_DEFAULT_TIMEOUT_SECONDS = 240
 GOOGLE_MAPS_DEFAULT_PARALLEL = 12
 GOOGLE_MAPS_MAX_PARALLEL = 40
+GOOGLE_MAPS_INITIAL_WAIT_MS = 5000
+GOOGLE_MAPS_FALLBACK_WAIT_MS = 10000
 GOOGLE_MAPS_HOST_MARKERS = (
     "google.com",
     "google.de",
@@ -58,10 +61,12 @@ def normalize_maps_result_url(url: str) -> str:
     return cleaned.rstrip("/")
 
 
-def build_google_maps_search_url(category: str, location: str) -> str:
+def build_google_maps_search_url(category: str, location: str, *, country_code: str = "DE") -> str:
     query = " ".join(part for part in (category.strip(), location.strip()) if part)
     encoded = urllib.parse.quote_plus(query or "unternehmen")
-    return f"https://www.google.com/maps/search/{encoded}"
+    _locale_country, tld = ZENROWS_LOCALE.get(country_code, ZENROWS_LOCALE["DE"])
+    host = f"www.google{tld}"
+    return f"https://{host}/maps/search/{encoded}"
 
 
 def google_maps_scroll_steps() -> int:
@@ -119,6 +124,7 @@ def build_zenrows_google_maps_request_url(
     *,
     proxy_country: str = "de",
     scroll_steps: int | None = None,
+    wait_ms: int = GOOGLE_MAPS_INITIAL_WAIT_MS,
 ) -> str:
     steps = GOOGLE_MAPS_DEFAULT_SCROLL_STEPS if scroll_steps is None else max(0, min(scroll_steps, GOOGLE_MAPS_MAX_SCROLL_STEPS))
     params: dict[str, str] = {
@@ -126,7 +132,10 @@ def build_zenrows_google_maps_request_url(
         "js_render": "true",
         "premium_proxy": "true",
         "proxy_country": proxy_country,
+        "custom_headers": "true",
     }
+    if wait_ms > 0:
+        params["wait"] = str(wait_ms)
     if steps > 0:
         instructions: list[dict[str, int]] = []
         for _ in range(steps):
@@ -136,6 +145,22 @@ def build_zenrows_google_maps_request_url(
     encoded_target = urllib.parse.quote(target_url, safe="")
     query = urllib.parse.urlencode(params)
     return f"{GOOGLE_MAPS_ZENROWS_ENDPOINT}?{query}&url={encoded_target}"
+
+
+def google_maps_referer_for_country(country_code: str) -> str:
+    _locale_country, tld = ZENROWS_LOCALE.get(country_code, ZENROWS_LOCALE["DE"])
+    return f"https://www.google{tld}/maps/"
+
+
+def zenrows_error_detail(exc: BaseException) -> str:
+    if isinstance(exc, urllib.error.HTTPError):
+        try:
+            body = read_response_text(exc, max_bytes=4000).strip()
+        except Exception:
+            body = ""
+        if body:
+            return f"{format_request_error(exc)} | {body[:500]}"
+    return format_request_error(exc)
 
 
 def is_external_maps_website(url: str) -> bool:
@@ -270,14 +295,51 @@ def fetch_google_maps_html(
     target_url: str,
     *,
     proxy_country: str = "de",
+    country_code: str = "DE",
     timeout: int = GOOGLE_MAPS_DEFAULT_TIMEOUT_SECONDS,
     scroll_steps: int | None = None,
+) -> str:
+    steps = google_maps_scroll_steps() if scroll_steps is None else max(0, min(scroll_steps, GOOGLE_MAPS_MAX_SCROLL_STEPS))
+    try:
+        return _fetch_google_maps_html_once(
+            api_key,
+            target_url,
+            proxy_country=proxy_country,
+            country_code=country_code,
+            timeout=timeout,
+            scroll_steps=steps,
+            wait_ms=GOOGLE_MAPS_INITIAL_WAIT_MS,
+        )
+    except GoogleMapsFetchError as exc:
+        if "HTTP Error 422" not in str(exc) or steps <= 0:
+            raise
+        return _fetch_google_maps_html_once(
+            api_key,
+            target_url,
+            proxy_country=proxy_country,
+            country_code=country_code,
+            timeout=timeout,
+            scroll_steps=0,
+            wait_ms=GOOGLE_MAPS_FALLBACK_WAIT_MS,
+        )
+
+
+def _fetch_google_maps_html_once(
+    api_key: str,
+    target_url: str,
+    *,
+    proxy_country: str = "de",
+    country_code: str = "DE",
+    timeout: int = GOOGLE_MAPS_DEFAULT_TIMEOUT_SECONDS,
+    scroll_steps: int = GOOGLE_MAPS_DEFAULT_SCROLL_STEPS,
+    wait_ms: int = GOOGLE_MAPS_INITIAL_WAIT_MS,
 ) -> str:
     request_url = build_zenrows_google_maps_request_url(
         api_key,
         target_url,
         proxy_country=proxy_country,
         scroll_steps=scroll_steps,
+        wait_ms=wait_ms,
     )
     request = urllib.request.Request(
         request_url,
@@ -285,6 +347,7 @@ def fetch_google_maps_html(
             "Accept": "text/html,application/xhtml+xml,application/json",
             "User-Agent": "Mozilla/5.0 (compatible; capper-lead-research/0.1)",
             "Connection": "close",
+            "Referer": google_maps_referer_for_country(country_code),
         },
         method="GET",
     )
@@ -292,7 +355,7 @@ def fetch_google_maps_html(
         with urlopen(request, timeout=timeout) as response:
             return read_response_text(response)
     except OSError as exc:
-        message = format_request_error(exc)
+        message = zenrows_error_detail(exc)
         if "HTTP Error 401" in message or "HTTP Error 403" in message:
             raise GoogleMapsFetchError(
                 "ZenRows API-Key ungueltig oder ohne Berechtigung fuer Google Maps. "

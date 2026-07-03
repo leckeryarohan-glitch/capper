@@ -699,7 +699,7 @@ class GoogleMapsSearchProvider(SearchProvider):
             if stop.is_set():
                 return plan_index, plan_location, [], False
             locale_country, _tld = ZENROWS_LOCALE.get(country_code, ZENROWS_LOCALE["DE"])
-            target_url = self._build_google_maps_search_url(category, plan_location)
+            target_url = self._build_google_maps_search_url(category, plan_location, country_code=country_code)
             self._report(
                 f"Google Maps: {category} in {plan_location} "
                 f"({plan_index}/{len(plans)}) ..."
@@ -709,6 +709,7 @@ class GoogleMapsSearchProvider(SearchProvider):
                     self.zenrows_api_key,
                     target_url,
                     proxy_country=locale_country,
+                    country_code=country_code,
                     scroll_steps=scroll_steps,
                 )
             except self._fetch_error as exc:
