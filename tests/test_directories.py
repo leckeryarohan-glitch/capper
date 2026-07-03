@@ -783,6 +783,88 @@ class DirectoryParserTests(unittest.TestCase):
         self.assertEqual(entry.email, "kontakt@demo-supplier.example")
         self.assertEqual(entry.website, "https://www.demo-supplier.example")
 
+    def test_parse_alibaba_listing_and_detail(self) -> None:
+        from lead_research.directories import (
+            build_alibaba_url,
+            parse_alibaba_detail_name,
+            parse_alibaba_detail_website,
+            parse_alibaba_listing_html,
+        )
+
+        self.assertIn(
+            "SearchText=packaging+machine",
+            build_alibaba_url("packaging machine", "", 1),
+        )
+        listings = parse_alibaba_listing_html(
+            """
+            <a title="Demo Packaging Co., Ltd."
+               href="//demo-pack.en.alibaba.com/de_DE/company_profile.html">Profile</a>
+            """
+        )
+        self.assertEqual(
+            listings[0],
+            (
+                "Demo Packaging Co., Ltd.",
+                "https://demo-pack.en.alibaba.com/company_profile.html",
+            ),
+        )
+        website = parse_alibaba_detail_website(
+            '<link rel="canonical" href="https://demo-pack.en.alibaba.com/de_DE/company_profile.html">'
+        )
+        self.assertEqual(website, "https://demo-pack.en.alibaba.com/")
+        name = parse_alibaba_detail_name("<title>Demo Packaging Co., Ltd. - Alibaba.com</title>")
+        self.assertEqual(name, "Demo Packaging Co., Ltd.")
+
+    def test_parse_indiamart_listing_and_detail(self) -> None:
+        from lead_research.directories import (
+            build_indiamart_url,
+            parse_indiamart_detail_name,
+            parse_indiamart_detail_website,
+            parse_indiamart_listing_html,
+        )
+
+        self.assertIn(
+            "ss=packaging+machinery",
+            build_indiamart_url("packaging machinery", "",),
+        )
+        listings = parse_indiamart_listing_html(
+            '<a href="/company/demo-supplier/?&pos=1">Demo Supplier GmbH</a>'
+        )
+        self.assertEqual(
+            listings[0],
+            (
+                "Demo Supplier GmbH",
+                "https://export.indiamart.com/company/demo-supplier/",
+            ),
+        )
+        website = parse_indiamart_detail_website(
+            '"url":"https://export.indiamart.com/company/demo-supplier/"'
+        )
+        self.assertEqual(website, "https://export.indiamart.com/company/demo-supplier/")
+        name = parse_indiamart_detail_name("<title>Demo Supplier GmbH - IndiaMART</title>")
+        self.assertEqual(name, "Demo Supplier GmbH")
+
+    def test_parse_made_in_china_listing(self) -> None:
+        from lead_research.directories import (
+            build_made_in_china_url,
+            parse_made_in_china_listing_html,
+        )
+
+        self.assertIn(
+            "word=packaging+machine",
+            build_made_in_china_url("packaging machine", ""),
+        )
+        listings = parse_made_in_china_listing_html(
+            '<a href="//demo-pack.en.made-in-china.com">Demo Packaging Machinery Co., Ltd.</a>'
+        )
+        self.assertEqual(
+            listings[0],
+            (
+                "Demo Packaging Machinery Co., Ltd.",
+                "https://demo-pack.en.made-in-china.com",
+            ),
+        )
+
     def test_parse_steuerberater_filters_and_detail(self) -> None:
         from lead_research.directories import (
             parse_steuerberater_company_filters,

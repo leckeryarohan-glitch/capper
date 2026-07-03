@@ -165,6 +165,10 @@ def build_directory_source_registry(
         ("Lokale Portale", "golocal", "GoLocal", "golocal"),
         ("Lieferanten", "wlw", "Wer liefert was (WLW)", "wlw"),
         ("Lieferanten", "lieferanten_europages", "Europages", "europages"),
+        ("Lieferanten", "alibaba", "Alibaba", "alibaba"),
+        ("Lieferanten", "india_mart", "IndiaMART", "indiamart"),
+        ("Lieferanten", "made_in_china", "Made-in-China", "made_in_china"),
+        ("Marktplaetze", "marktplaetze_alibaba", "Alibaba", "alibaba"),
     )
     active_slugs_by_category: dict[str, set[str]] = {}
     for category, source_id, label, scraper_key in active_category_sources:
@@ -248,8 +252,15 @@ def build_directory_source_registry(
         "Lieferanten": {
             "thomasnet",
             "global_sources",
-            "india_mart",
-            "made_in_china",
+        },
+        "Marktplaetze": {
+            "amazon_seller",
+            "ebay_shops",
+            "aliexpress",
+            "etsy",
+            "kaufland_marketplace",
+            "faire",
+            "ankorstore",
         },
         "Lokale Portale": {
             "locanto",
