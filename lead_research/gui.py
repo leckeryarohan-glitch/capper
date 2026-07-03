@@ -138,6 +138,7 @@ def collect_gui_settings(values: Mapping[str, str | bool]) -> dict[str, object]:
         "use_duckduckgo": bool(values.get("use_duckduckgo", True)),
         "use_directories": bool(values.get("use_directories", True)),
         "use_zenrows_google": bool(values.get("use_zenrows_google", True)),
+        "use_google_maps": bool(values.get("use_google_maps", False)),
         "use_serpapi": bool(values.get("use_serpapi", True)),
         "directory_sources": sorted(selected_directory_source_ids(values)),
     }
@@ -166,6 +167,7 @@ def checkpoint_settings_for_gui(path: Path) -> dict[str, object] | None:
         "use_duckduckgo": bool(gui_settings.get("use_duckduckgo", True)),
         "use_directories": bool(gui_settings.get("use_directories", True)),
         "use_zenrows_google": bool(gui_settings.get("use_zenrows_google", True)),
+        "use_google_maps": bool(gui_settings.get("use_google_maps", False)),
         "use_serpapi": bool(gui_settings.get("use_serpapi", False)),
         "directory_sources": list(gui_settings.get("directory_sources", [])),
         "progress_summary": checkpoint_progress_summary(checkpoint),
@@ -190,6 +192,7 @@ def apply_gui_settings(values: dict[str, object], settings: Mapping[str, object]
     values["use_duckduckgo"] = bool(settings.get("use_duckduckgo", True))
     values["use_directories"] = bool(settings.get("use_directories", True))
     values["use_zenrows_google"] = bool(settings.get("use_zenrows_google", True))
+    values["use_google_maps"] = bool(settings.get("use_google_maps", False))
     values["use_serpapi"] = bool(settings.get("use_serpapi", False))
 
     directory_sources = settings.get("directory_sources")
@@ -231,11 +234,15 @@ def run_gui_discovery(
     use_duckduckgo = bool(values.get("use_duckduckgo", True))
     use_directories = bool(values.get("use_directories", True))
     use_zenrows_google = bool(values.get("use_zenrows_google", True))
+    use_google_maps = bool(values.get("use_google_maps", False))
     use_serpapi = bool(values.get("use_serpapi", True))
 
-    if use_directories and not zenrows_key and os.getenv("DIRECTORY_ALLOW_DIRECT_FETCH") != "1":
+    needs_zenrows = use_directories or use_zenrows_google or use_google_maps
+    if needs_zenrows and not zenrows_key and not (
+        use_directories and os.getenv("DIRECTORY_ALLOW_DIRECT_FETCH") == "1"
+    ):
         raise SearchProviderError(
-            "Branchenverzeichnisse benoetigen einen ZenRows-Key (Universal API)."
+            "ZenRows-Quellen (Branchenverzeichnisse, Google, Google Maps) benoetigen einen ZenRows-Key."
         )
     if use_directories:
         selected_sources = selected_directory_source_ids(values)
@@ -246,6 +253,8 @@ def run_gui_discovery(
         enabled_directory_sources = set()
     if use_zenrows_google and not zenrows_key:
         raise SearchProviderError("Google-Suche via ZenRows benoetigt einen ZenRows-Key.")
+    if use_google_maps and not zenrows_key:
+        raise SearchProviderError("Google Maps via ZenRows benoetigt einen ZenRows-Key.")
     if use_serpapi and not serpapi_key:
         raise SearchProviderError("Google-Suche via SerpAPI benoetigt einen SerpAPI-Key.")
 
@@ -254,6 +263,7 @@ def run_gui_discovery(
         use_duckduckgo=use_duckduckgo,
         use_directories=use_directories,
         use_zenrows_google=use_zenrows_google,
+        use_google_maps=use_google_maps,
         use_serpapi=use_serpapi,
         serpapi_key=serpapi_key,
         zenrows_key=zenrows_key,
@@ -329,6 +339,7 @@ def run_gui() -> int:
             self.use_duckduckgo = tk.BooleanVar(value=True)
             self.use_directories = tk.BooleanVar(value=True)
             self.use_zenrows_google = tk.BooleanVar(value=True)
+            self.use_google_maps = tk.BooleanVar(value=False)
             self.use_serpapi = tk.BooleanVar(value=True)
             self.directory_source_vars: dict[str, tk.BooleanVar] = {}
             for spec in build_directory_source_registry():
@@ -484,9 +495,14 @@ def run_gui() -> int:
             ).grid(row=1, column=0, sticky="w", pady=(4, 0))
             ttk.Checkbutton(
                 api_checks,
+                text="Google Maps via ZenRows (experimentell)",
+                variable=self.use_google_maps,
+            ).grid(row=2, column=0, sticky="w", pady=(4, 0))
+            ttk.Checkbutton(
+                api_checks,
                 text="Google-Suche via SerpAPI",
                 variable=self.use_serpapi,
-            ).grid(row=2, column=0, sticky="w", pady=(4, 0))
+            ).grid(row=3, column=0, sticky="w", pady=(4, 0))
 
             directory_frame = ttk.LabelFrame(content, text="Branchenquellen (ZenRows Universal API)", padding=8)
             directory_frame.grid(row=9, column=0, columnspan=3, sticky="ew", pady=(8, 4))
@@ -642,6 +658,7 @@ def run_gui() -> int:
                 "use_duckduckgo": self.use_duckduckgo.get(),
                 "use_directories": self.use_directories.get(),
                 "use_zenrows_google": self.use_zenrows_google.get(),
+                "use_google_maps": self.use_google_maps.get(),
                 "use_serpapi": self.use_serpapi.get(),
                 "country_de": self.country_de.get(),
                 "country_at": self.country_at.get(),
@@ -666,6 +683,7 @@ def run_gui() -> int:
             self.use_duckduckgo.set(bool(values["use_duckduckgo"]))
             self.use_directories.set(bool(values["use_directories"]))
             self.use_zenrows_google.set(bool(values["use_zenrows_google"]))
+            self.use_google_maps.set(bool(values.get("use_google_maps", False)))
             self.use_serpapi.set(bool(values["use_serpapi"]))
             self.country_de.set(bool(values["country_de"]))
             self.country_at.set(bool(values["country_at"]))
@@ -718,6 +736,7 @@ def run_gui() -> int:
                 "use_duckduckgo": self.use_duckduckgo.get(),
                 "use_directories": self.use_directories.get(),
                 "use_zenrows_google": self.use_zenrows_google.get(),
+                "use_google_maps": self.use_google_maps.get(),
                 "use_serpapi": self.use_serpapi.get(),
                 **{f"dir_source_{source_id}": var.get() for source_id, var in self.directory_source_vars.items()},
                 "country_de": self.country_de.get(),
