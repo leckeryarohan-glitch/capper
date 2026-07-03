@@ -2502,6 +2502,16 @@ def scrape_treatwell_fitness(category: str, location: str, limit: int) -> list[D
     return scrape_treatwell(query_category, location, limit)
 
 
+def scrape_jameda_physio(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    query_category = category.strip() or "physiotherapie"
+    return scrape_jameda(query_category, location, limit)
+
+
+def scrape_jameda_zahn(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    query_category = category.strip() or "zahnarzt"
+    return scrape_jameda(query_category, location, limit)
+
+
 def scrape_steuerberater(category: str, location: str, limit: int) -> list[DirectoryEntry]:
     _ = category
     source_url = build_steuerberater_url(category, location)
@@ -2788,6 +2798,8 @@ def _directory_scraper_map() -> dict[str, callable]:
         "wlw": scrape_wlw,
         "treatwell": scrape_treatwell,
         "treatwell_fitness": scrape_treatwell_fitness,
+        "jameda_physio": scrape_jameda_physio,
+        "jameda_zahn": scrape_jameda_zahn,
     }
 
 

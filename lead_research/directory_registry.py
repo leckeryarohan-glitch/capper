@@ -159,6 +159,8 @@ def build_directory_source_registry(
         ("Branchen", "branchen_dachdecker", "Dachdecker", "gelbeseiten"),
         ("Branchen", "branchen_solarfirmen", "Solarfirmen", "gelbeseiten"),
         ("Branchen", "branchen_fitnessstudios", "Fitnessstudios", "treatwell_fitness"),
+        ("Branchen", "branchen_physiotherapeuten", "Physiotherapeuten", "jameda_physio"),
+        ("Branchen", "branchen_zahnaerzte", "Zahnaerzte", "jameda_zahn"),
         ("Lokale Portale", "golocal", "GoLocal", "golocal"),
         ("Lieferanten", "wlw", "Wer liefert was (WLW)", "wlw"),
         ("Lieferanten", "lieferanten_europages", "Europages", "europages"),
@@ -261,8 +263,6 @@ def build_directory_source_registry(
         "Branchen": {
             "notare",
             "architekten",
-            "physiotherapeuten",
-            "zahnaerzte",
         },
     }
 
