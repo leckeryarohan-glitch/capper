@@ -938,6 +938,14 @@ class DirectoryParserTests(unittest.TestCase):
         self.assertEqual(len(entries), 4)
         self.assertEqual(len(calls), 4)
 
+    def test_build_wlw_url_uses_austrian_host_for_wien(self) -> None:
+        from lead_research.directories import build_europages_url, build_wlw_url, is_austrian_location
+
+        self.assertTrue(is_austrian_location("Wien"))
+        self.assertIn("www.wlw.at", build_wlw_url("Verpackung", "Wien", 1))
+        self.assertIn("www.europages.at", build_europages_url("Verpackung", "Wien"))
+        self.assertIn("www.wlw.de", build_wlw_url("Verpackung", "Berlin", 1))
+
     def test_fetch_directory_html_requires_zenrows_by_default(self) -> None:
         configure_directory_fetch(DirectoryFetchConfig())
         with self.assertRaisesRegex(Exception, "ZenRows"):

@@ -431,6 +431,42 @@ def directory_lower_hyphen_slug(value: str) -> str:
     return directory_hyphen_slug(value).lower()
 
 
+AUSTRIAN_LOCATION_HINTS = (
+    "wien",
+    "graz",
+    "linz",
+    "salzburg",
+    "innsbruck",
+    "klagenfurt",
+    "villach",
+    "wels",
+    "steyr",
+    "dornbirn",
+    "bregenz",
+    "eisenstadt",
+    "oesterreich",
+    "österreich",
+    "austria",
+    "niederoesterreich",
+    "niederösterreich",
+    "oberoesterreich",
+    "oberösterreich",
+    "steiermark",
+    "tirol",
+    "kaernten",
+    "kärnten",
+    "vorarlberg",
+    "burgenland",
+)
+
+
+def is_austrian_location(location: str) -> bool:
+    normalized = location.strip().casefold().replace("ß", "ss")
+    if normalized in {"at", "aut"}:
+        return True
+    return any(hint in normalized for hint in AUSTRIAN_LOCATION_HINTS)
+
+
 def treatwell_location_slug(location: str) -> str:
     slug = directory_lower_hyphen_slug(location) or "berlin"
     for old, new in (("ä", "ae"), ("ö", "oe"), ("ü", "ue"), ("ß", "ss")):
@@ -1072,7 +1108,8 @@ def build_kompass_url(category: str, location: str) -> str:
 def build_europages_url(category: str, location: str) -> str:
     category_slug = slug_for_directory_path(category).lower()
     location_slug = slug_for_directory_path(location)
-    return f"https://www.europages.de/unternehmen/{category_slug}.html?loc={location_slug}"
+    host = "www.europages.at" if is_austrian_location(location) else "www.europages.de"
+    return f"https://{host}/unternehmen/{category_slug}.html?loc={location_slug}"
 
 
 def build_yelp_url(category: str, location: str) -> str:
@@ -2425,7 +2462,8 @@ def build_wlw_url(category: str, location: str, page: int) -> str:
         "ort": location.strip() or "Berlin",
         "page": str(max(page, 1)),
     }
-    return f"https://www.wlw.de/de/suche?{urllib.parse.urlencode(params)}"
+    host = "www.wlw.at" if is_austrian_location(location) else "www.wlw.de"
+    return f"https://{host}/de/suche?{urllib.parse.urlencode(params)}"
 
 
 def build_alibaba_url(category: str, location: str, page: int) -> str:
@@ -2826,6 +2864,11 @@ def scrape_treatwell_fitness(category: str, location: str, limit: int) -> list[D
     return scrape_treatwell(query_category, location, limit)
 
 
+def scrape_treatwell_friseur(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    query_category = category.strip() or "friseur"
+    return scrape_treatwell(query_category, location, limit)
+
+
 def scrape_jameda_physio(category: str, location: str, limit: int) -> list[DirectoryEntry]:
     query_category = category.strip() or "physiotherapie"
     return scrape_jameda(query_category, location, limit)
@@ -3129,6 +3172,7 @@ def _directory_scraper_map() -> dict[str, callable]:
         "made_in_china": scrape_made_in_china,
         "treatwell": scrape_treatwell,
         "treatwell_fitness": scrape_treatwell_fitness,
+        "treatwell_friseur": scrape_treatwell_friseur,
         "jameda_physio": scrape_jameda_physio,
         "jameda_zahn": scrape_jameda_zahn,
         "docfinder_zahn": scrape_docfinder_zahn,
