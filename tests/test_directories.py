@@ -897,6 +897,7 @@ class DirectoryParserTests(unittest.TestCase):
         self.assertEqual(entry.email, "h.demo@steuerberatung-ac.de")
         self.assertEqual(entry.website, "https://www.steuerberatung-ac.de")
 
+    @patch.dict("os.environ", {"DIRECTORY_MASS_MODE": "", "DIRECTORY_FAST_MODE": ""})
     def test_fast_mode_reduces_detail_and_listing_caps(self) -> None:
         from lead_research.directories import (
             DIRECTORY_FAST_DETAIL_FETCH_CAP,
@@ -910,6 +911,23 @@ class DirectoryParserTests(unittest.TestCase):
         configure_directory_fetch(build_directory_fetch_config(fast_mode=True))
         self.assertEqual(cap_directory_detail_fetches(100), DIRECTORY_FAST_DETAIL_FETCH_CAP)
         self.assertEqual(directory_listing_page_limit(), DIRECTORY_FAST_LISTING_PAGE_CAP)
+
+    def test_mass_mode_increases_detail_listing_and_source_caps(self) -> None:
+        from lead_research.directories import (
+            DIRECTORY_MASS_DETAIL_FETCH_CAP,
+            DIRECTORY_MASS_LISTING_PAGE_CAP,
+            DIRECTORY_MASS_RESULTS_PER_SOURCE,
+            build_directory_fetch_config,
+            cap_directory_detail_fetches,
+            cap_directory_source_limit,
+            configure_directory_fetch,
+            directory_listing_page_limit,
+        )
+
+        configure_directory_fetch(build_directory_fetch_config(mass_mode=True))
+        self.assertEqual(cap_directory_detail_fetches(500), DIRECTORY_MASS_DETAIL_FETCH_CAP)
+        self.assertEqual(cap_directory_source_limit(500), DIRECTORY_MASS_RESULTS_PER_SOURCE)
+        self.assertEqual(directory_listing_page_limit(), DIRECTORY_MASS_LISTING_PAGE_CAP)
 
     def test_parallel_detail_fetch_uses_multiple_workers(self) -> None:
         from lead_research.directories import (
@@ -985,6 +1003,10 @@ class DirectoryProviderTests(unittest.TestCase):
 
 
 class DirectoryLimitCapTests(unittest.TestCase):
+    def setUp(self) -> None:
+        configure_directory_fetch(DirectoryFetchConfig())
+
+    @patch.dict("os.environ", {"DIRECTORY_MASS_MODE": "", "DIRECTORY_FAST_MODE": ""})
     def test_caps_per_source_limit(self) -> None:
         self.assertEqual(cap_directory_source_limit(250_000), 120)
         self.assertEqual(cap_directory_source_limit(10), 10)
@@ -995,6 +1017,7 @@ class DirectoryLimitCapTests(unittest.TestCase):
         self.assertGreater(len(plans), 500)
         self.assertIn("Berlin", plans)
 
+    @patch.dict("os.environ", {"DIRECTORY_MASS_MODE": "", "DIRECTORY_FAST_MODE": ""})
     def test_caps_detail_fetches_in_enrichment(self) -> None:
         listings = [(f"Firma {index}", f"https://example.test/{index}") for index in range(50)]
         fetch_calls = 0

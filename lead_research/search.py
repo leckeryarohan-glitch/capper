@@ -11,6 +11,7 @@ import urllib.parse
 import urllib.request
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextvars import copy_context
 from dataclasses import dataclass
 from math import ceil
 from pathlib import Path
@@ -1425,6 +1426,7 @@ class DirectorySearchProvider(SearchProvider):
         enabled_directory_sources: set[str] | None = None,
         parallel_requests: int | None = None,
         detail_parallel_requests: int | None = None,
+        mass_mode: bool = False,
     ):
         self.zenrows_api_key = _resolve_api_key(zenrows_api_key, "ZENROWS_API_KEY")
         self.allow_direct_fetch = allow_direct_fetch
@@ -1432,6 +1434,7 @@ class DirectorySearchProvider(SearchProvider):
         self.enabled_directory_sources = enabled_directory_sources
         self.parallel_requests = parallel_requests
         self.detail_parallel_requests = detail_parallel_requests
+        self.mass_mode = mass_mode
 
     def search(
         self,
@@ -1475,6 +1478,7 @@ class DirectorySearchProvider(SearchProvider):
                 allow_direct_fallback=self.allow_direct_fetch,
                 scraper_parallel_requests=self.parallel_requests,
                 detail_parallel_requests=self.detail_parallel_requests,
+                mass_mode=self.mass_mode,
             )
         )
 
@@ -1532,7 +1536,7 @@ class DirectorySearchProvider(SearchProvider):
                     return label, []
 
             with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="capper-directories") as executor:
-                futures = [executor.submit(run_scraper, item) for item in active_scrapers]
+                futures = [executor.submit(copy_context().run, run_scraper, item) for item in active_scrapers]
                 for future in as_completed(futures):
                     label, entries = future.result()
                     added = directory_entries_to_results(entries, limit=limit - len(results), seen=seen)
