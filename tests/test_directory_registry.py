@@ -44,6 +44,7 @@ class DirectoryRegistryTests(unittest.TestCase):
         self.assertIn("pitchbook", implemented_ids)
         self.assertIn("indeed", implemented_ids)
         self.assertIn("stepstone", implemented_ids)
+        self.assertIn("arbeitsagentur", implemented_ids)
 
     def test_jameda_sanego_and_restaurantguru_are_implemented(self) -> None:
         registry = build_directory_source_registry()
@@ -73,6 +74,7 @@ class DirectoryRegistryTests(unittest.TestCase):
         unavailable_ids = {spec.id for spec in unavailable_directory_sources(registry)}
 
         self.assertNotIn("jobboersen_stepstone", unavailable_ids)
+        self.assertNotIn("jobboersen_arbeitsagentur", unavailable_ids)
 
     def test_treatwell_not_marked_unavailable(self) -> None:
         registry = build_directory_source_registry()

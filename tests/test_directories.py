@@ -321,6 +321,64 @@ class DirectoryParserTests(unittest.TestCase):
         name = parse_stepstone_detail_name("<title>12 Aktuelle Jobs bei Demo Steuer GmbH | Stepstone</title>")
         self.assertEqual(name, "Demo Steuer GmbH")
 
+    def test_parse_arbeitsagentur_listing_and_detail(self) -> None:
+        from lead_research.directories import (
+            build_arbeitsagentur_url,
+            parse_arbeitsagentur_detail_html,
+            parse_arbeitsagentur_detail_website,
+            parse_arbeitsagentur_listing_html,
+        )
+
+        self.assertIn(
+            "was=Steuerberater&wo=Berlin&page=2",
+            build_arbeitsagentur_url("Steuerberater", "Berlin", 2),
+        )
+        listings = parse_arbeitsagentur_listing_html(
+            """
+            <script id="ng-state" type="application/json">{
+              "suchergebnis": {
+                "ergebnisliste": [
+                  {
+                    "firma": "Demo Steuer GmbH",
+                    "referenznummer": "10000-123-S",
+                    "arbeitgeberKundennummerHash": "hash-1"
+                  },
+                  {
+                    "firma": "Demo Steuer GmbH",
+                    "referenznummer": "10000-124-S",
+                    "arbeitgeberKundennummerHash": "hash-1"
+                  }
+                ]
+              }
+            }</script>
+            """
+        )
+        self.assertEqual(
+            listings[0],
+            ("Demo Steuer GmbH", "https://www.arbeitsagentur.de/jobsuche/jobdetail/10000-123-S"),
+        )
+        self.assertEqual(len(listings), 1)
+        detail_html = """
+        <script id="ng-state" type="application/json">{
+          "jobdetail": {"firma": "Demo Steuer GmbH"},
+          "arbeitgeberdarstellung": {
+            "firma": "Demo Steuer GmbH",
+            "links": [{"url": "https://www.demo-steuer.example", "art": "Homepage"}],
+            "kontaktinformationen": "E-Mail: bewerbung@demo-steuer.example"
+          }
+        }</script>
+        """
+        website = parse_arbeitsagentur_detail_website(detail_html)
+        self.assertEqual(website, "https://www.demo-steuer.example")
+        entry = parse_arbeitsagentur_detail_html(
+            detail_html,
+            name="Demo Steuer GmbH",
+            source_url="https://www.arbeitsagentur.de/jobsuche/jobdetail/10000-123-S",
+        )
+        self.assertIsNotNone(entry)
+        assert entry is not None
+        self.assertEqual(entry.email, "bewerbung@demo-steuer.example")
+
     def test_parse_treatwell_listing_and_detail(self) -> None:
         from lead_research.directories import (
             build_treatwell_url,
