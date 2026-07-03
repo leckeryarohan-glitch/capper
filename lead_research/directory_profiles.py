@@ -220,6 +220,57 @@ CATEGORY_SOURCE_PROFILES: dict[str, tuple[str, ...]] = {
         "europages",
         "gelbeseiten",
     ),
+    "versand": (
+        "wlw",
+        "lieferanten_europages",
+        "lieferanten_kompass",
+        "kompass",
+        "europages",
+        "gelbeseiten",
+        "herold",
+        "11880",
+        "das_oertliche",
+        "telefonbuch",
+        "auskunft",
+        "goyellow",
+        "wko",
+        "indeed",
+        "stepstone",
+        "arbeitsagentur",
+    ),
+    "logistik": (
+        "wlw",
+        "lieferanten_europages",
+        "lieferanten_kompass",
+        "kompass",
+        "europages",
+        "gelbeseiten",
+        "herold",
+        "11880",
+        "das_oertliche",
+        "telefonbuch",
+        "auskunft",
+        "goyellow",
+        "wko",
+        "indeed",
+        "stepstone",
+        "arbeitsagentur",
+    ),
+    "spedition": (
+        "wlw",
+        "lieferanten_europages",
+        "lieferanten_kompass",
+        "kompass",
+        "europages",
+        "gelbeseiten",
+        "herold",
+        "11880",
+        "das_oertliche",
+        "telefonbuch",
+        "auskunft",
+        "goyellow",
+        "wko",
+    ),
 }
 
 
@@ -256,3 +307,17 @@ def resolve_mass_directory_sources(category: str) -> set[str]:
         if sources:
             return sources
     return _filter_valid_source_ids(DEFAULT_MASS_DIRECTORY_SOURCES)
+
+
+def resolve_category_directory_sources(
+    category: str,
+    selected: set[str] | None = None,
+) -> set[str]:
+    """Return directory source IDs for a category, optionally intersected with GUI selection."""
+    profile = resolve_mass_directory_sources(category)
+    if selected is None:
+        return profile
+    if match_category_profile_key(category):
+        filtered = selected & profile
+        return filtered if filtered else profile
+    return selected

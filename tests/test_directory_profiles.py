@@ -30,6 +30,21 @@ class DirectoryProfileTests(unittest.TestCase):
         self.assertIn("steuerberater", sources)
         self.assertIn("gelbeseiten", sources)
 
+    def test_resolve_mass_directory_sources_for_versand_excludes_irrelevant(self) -> None:
+        sources = resolve_mass_directory_sources("versand")
+
+        self.assertIn("wlw", sources)
+        self.assertIn("gelbeseiten", sources)
+        self.assertNotIn("jameda", sources)
+        self.assertNotIn("treatwell", sources)
+        self.assertNotIn("branchen_restaurants", sources)
+
+    def test_resolve_category_directory_sources_intersects_gui_selection(self) -> None:
+        from lead_research.directory_profiles import resolve_category_directory_sources
+
+        sources = resolve_category_directory_sources("versand", {"gelbeseiten", "jameda", "wlw"})
+        self.assertEqual(sources, {"gelbeseiten", "wlw"})
+
     def test_resolve_mass_directory_sources_falls_back_to_default(self) -> None:
         sources = resolve_mass_directory_sources("Unbekannte Nische XYZ")
         valid = default_enabled_directory_source_ids(build_directory_source_registry())

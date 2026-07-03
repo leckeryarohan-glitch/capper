@@ -288,6 +288,69 @@ class GuiArgumentTests(unittest.TestCase):
 
         self.assertEqual(captured["enabled_directory_sources"], {"gelbeseiten"})
 
+    def test_run_gui_discovery_filters_directory_sources_by_category_profile(self) -> None:
+        events: "queue.Queue[tuple]" = queue.Queue()
+        captured: dict[str, object] = {}
+
+        def fake_combined_provider(**kwargs):
+            captured.update(kwargs)
+            return FakeProvider()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "leads.csv"
+            with patch("lead_research.gui.combined_provider", side_effect=fake_combined_provider), patch(
+                "lead_research.pipeline.LeadCrawler", FakeCrawler
+            ):
+                run_gui_discovery(
+                    {
+                        "category": "versand",
+                        "output": str(output),
+                        "use_osm": False,
+                        "use_duckduckgo": False,
+                        "use_directories": True,
+                        "use_zenrows_google": False,
+                        "use_serpapi": False,
+                        "zenrows_key": "zr-key",
+                    },
+                    events,
+                )
+
+        enabled = captured["enabled_directory_sources"]
+        self.assertIn("wlw", enabled)
+        self.assertIn("gelbeseiten", enabled)
+        self.assertNotIn("jameda", enabled)
+        self.assertNotIn("treatwell", enabled)
+        self.assertTrue(captured["directory_mass_mode"])
+
+    def test_run_gui_discovery_uses_env_zenrows_key_when_field_empty(self) -> None:
+        events: "queue.Queue[tuple]" = queue.Queue()
+        captured: dict[str, object] = {}
+
+        def fake_combined_provider(**kwargs):
+            captured.update(kwargs)
+            return FakeProvider()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "leads.csv"
+            with patch.dict("os.environ", {"ZENROWS_API_KEY": "env-key"}, clear=False), patch(
+                "lead_research.gui.combined_provider", side_effect=fake_combined_provider
+            ), patch("lead_research.pipeline.LeadCrawler", FakeCrawler):
+                run_gui_discovery(
+                    {
+                        "category": "hotel",
+                        "output": str(output),
+                        "use_osm": False,
+                        "use_duckduckgo": False,
+                        "use_directories": True,
+                        "use_zenrows_google": False,
+                        "use_serpapi": False,
+                        "zenrows_key": "",
+                    },
+                    events,
+                )
+
+        self.assertEqual(captured["zenrows_key"], "env-key")
+
     def test_run_gui_discovery_requires_zenrows_key_for_directories(self) -> None:
         events: "queue.Queue[tuple]" = queue.Queue()
         with tempfile.TemporaryDirectory() as tmp:
