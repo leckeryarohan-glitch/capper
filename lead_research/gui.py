@@ -177,13 +177,11 @@ def apply_gui_settings(values: dict[str, object], settings: Mapping[str, object]
     values["use_serpapi"] = bool(settings.get("use_serpapi", False))
 
     directory_sources = settings.get("directory_sources")
-    if isinstance(directory_sources, list) and directory_sources:
+    if isinstance(directory_sources, list):
         enabled_ids = {str(source_id) for source_id in directory_sources}
         for spec in build_directory_source_registry():
             if spec.implemented:
-                key = f"dir_source_{spec.id}"
-                if key in values:
-                    values[key] = spec.id in enabled_ids
+                values[f"dir_source_{spec.id}"] = spec.id in enabled_ids
 
 
 def run_gui_discovery(

@@ -81,7 +81,11 @@ def checkpoint_progress_summary(checkpoint: DiscoveryCheckpoint) -> str:
         f"{len(checkpoint.leads)} Leads",
     ]
     if checkpoint.directory_completed_locations and not checkpoint.search_complete:
-        parts.append(f"{len(checkpoint.directory_completed_locations)} Branchenorte")
+        completed = checkpoint.directory_completed_locations
+        if len(completed) <= 3:
+            parts.append(f"{len(completed)} Branchenorte ({', '.join(completed)})")
+        else:
+            parts.append(f"{len(completed)} Branchenorte")
     return ", ".join(parts)
 
 
