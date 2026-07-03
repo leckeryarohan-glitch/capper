@@ -120,7 +120,6 @@ def build_directory_source_registry(
         active(cat, "manta", "Manta", "manta"),
         active(cat, "herold", "Herold", "herold"),
         active(cat, "wko", "WKO Firmen A-Z", "wko"),
-        _unavailable(cat, "wlw", "Wer liefert was (WLW)"),
         _unavailable(cat, "firmenabc", "FirmenABC"),
         _unavailable(cat, "business_branchenbuch", "Business Branchenbuch"),
         _unavailable(cat, "brownbook", "Brownbook"),
@@ -143,6 +142,7 @@ def build_directory_source_registry(
         ("Branchen", "anwaltauskunft", "Anwaltauskunft", "anwaltauskunft"),
         ("Branchen", "steuerberater", "Steuerberaterverzeichnis", "steuerberater"),
         ("Lokale Portale", "golocal", "GoLocal", "golocal"),
+        ("Lieferanten", "wlw", "Wer liefert was (WLW)", "wlw"),
     )
     active_slugs_by_category: dict[str, set[str]] = {}
     for category, source_id, label, scraper_key in active_category_sources:
@@ -221,6 +221,7 @@ def build_directory_source_registry(
         },
         "Lokale Portale": {
             "locanto",
+            "kennstdueinen",
         },
         "IHK / HWK": {
             "industrie_und_handelskammern",
@@ -303,7 +304,7 @@ def build_directory_source_registry(
             "Etsy",
             "Kaufland Marketplace",
         ],
-        "Lieferanten": ["Thomasnet", "GlobalSources", "IndiaMART", "Made-in-China", "Europages"],
+        "Lieferanten": ["Thomasnet", "GlobalSources", "IndiaMART", "Made-in-China", "Europages", "Wer liefert was (WLW)"],
         "Startups": ["Crunchbase", "AngelList", "Dealroom", "Product Hunt", "Wellfound"],
         "Software": ["G2", "Capterra", "GetApp", "AlternativeTo"],
         "SaaS": ["Product Hunt", "StackShare", "SaaSHub"],
@@ -363,7 +364,7 @@ def build_directory_source_registry(
         "Foerderprogramme": ["Exist", "EU Foerderprojekte", "Innovationsnetzwerke"],
         "GitHub": ["Organisationen", "Repositories", "Contributors"],
         "APIs": ["OpenCorporates API", "Clearbit", "People Data Labs", "FullContact"],
-        "Lokale Portale": ["Stadtportale", "Gemeindeverzeichnisse", "Tourismusportale", "Gewerbeverzeichnisse", "GoLocal"],
+        "Lokale Portale": ["Stadtportale", "Gemeindeverzeichnisse", "Tourismusportale", "Gewerbeverzeichnisse", "GoLocal", "KennstDuEinen"],
         "Sonstige": [
             "Wikipedia Unternehmenslisten",
             "Verbandslisten",

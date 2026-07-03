@@ -584,6 +584,48 @@ class DirectoryParserTests(unittest.TestCase):
         name = parse_golocal_detail_name('<meta itemprop="name" content="Demo Steuerberatung" />')
         self.assertEqual(name, "Demo Steuerberatung")
 
+    def test_parse_wlw_listing_and_detail(self) -> None:
+        from lead_research.directories import (
+            build_wlw_url,
+            parse_wlw_detail_html,
+            parse_wlw_detail_website,
+            parse_wlw_listing_html,
+        )
+
+        self.assertIn(
+            "qs=Steuerberater&ort=Berlin&page=2",
+            build_wlw_url("Steuerberater", "Berlin", 2),
+        )
+        listings = parse_wlw_listing_html(
+            """
+            <script type="application/ld+json">
+            {"@context":"https://schema.org","@graph":[{"@type":"ItemList","itemListElement":[
+              {"@type":"ListItem","position":1,"item":{
+                "@type":"Organization","name":"Demo Supplier GmbH",
+                "url":"https://www.wlw.de/de/firma/demo-supplier-gmbh-123456"
+              }}
+            ]}]}
+            </script>
+            """
+        )
+        self.assertEqual(
+            listings[0],
+            (
+                "Demo Supplier GmbH",
+                "https://www.wlw.de/de/firma/demo-supplier-gmbh-123456",
+            ),
+        )
+        website = parse_wlw_detail_website('"homepage":"https://www.demo-supplier.example"')
+        self.assertEqual(website, "https://www.demo-supplier.example")
+        entry = parse_wlw_detail_html(
+            '"homepage":"https://www.demo-supplier.example" "email":"kontakt@demo-supplier.example"',
+            name="Demo Supplier GmbH",
+            source_url="https://www.wlw.de/de/firma/demo-supplier-gmbh-123456",
+        )
+        assert entry is not None
+        self.assertEqual(entry.email, "kontakt@demo-supplier.example")
+        self.assertEqual(entry.website, "https://www.demo-supplier.example")
+
     def test_parse_steuerberater_filters_and_detail(self) -> None:
         from lead_research.directories import (
             parse_steuerberater_company_filters,
