@@ -38,6 +38,7 @@ class DirectoryProfileTests(unittest.TestCase):
         self.assertNotIn("jameda", sources)
         self.assertNotIn("treatwell", sources)
         self.assertNotIn("branchen_restaurants", sources)
+        self.assertNotIn("telefonbuch", sources)
 
     def test_resolve_category_directory_sources_intersects_gui_selection(self) -> None:
         from lead_research.directory_profiles import resolve_category_directory_sources

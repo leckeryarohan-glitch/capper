@@ -29,7 +29,7 @@ easy opt-out.
 - Website crawling with `robots.txt` checks enabled by default.
 - Contact and imprint page discovery, including automatically trying common
   `Impressum`/`Kontakt` paths (German sites must publish contact details there).
-- Public email and phone extraction.
+- Public email extraction from websites and directory listings.
 - Role-address preference (`info@`, `kontakt@`, `sales@`, etc.).
 - Personal-looking emails are excluded by default and can only be exported with
   an explicit review flag.
@@ -268,7 +268,6 @@ The CSV export contains:
 - `category`
 - `company_name`
 - `email`
-- `phone`
 - `website`
 - `source_url`
 - `page_title`
