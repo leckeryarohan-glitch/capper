@@ -34,7 +34,7 @@ class DirectoryRegistryTests(unittest.TestCase):
         implemented = [
             spec for spec in registry if spec.category == "Firmenverzeichnisse" and spec.implemented
         ]
-        self.assertEqual(len(implemented), 14)
+        self.assertEqual(len(implemented), 15)
 
     def test_pitchbook_and_indeed_are_implemented(self) -> None:
         registry = build_directory_source_registry()
@@ -54,6 +54,8 @@ class DirectoryRegistryTests(unittest.TestCase):
         self.assertIn("anwaltauskunft", implemented_ids)
         self.assertIn("steuerberater", implemented_ids)
         self.assertIn("herold", implemented_ids)
+        self.assertIn("wko", implemented_ids)
+        self.assertIn("golocal", implemented_ids)
 
     def test_blocked_gastronomie_and_aerzte_sources_marked_unavailable(self) -> None:
         registry = build_directory_source_registry()
@@ -65,6 +67,8 @@ class DirectoryRegistryTests(unittest.TestCase):
         self.assertIn("bewertungen_trustpilot", unavailable_ids)
         self.assertIn("handwerker_trustatrader", unavailable_ids)
         self.assertIn("ihk___hwk_mitgliederverzeichnisse", unavailable_ids)
+        self.assertIn("ihk___hwk_amtliches_verzeichnis", unavailable_ids)
+        self.assertNotIn("lokale_portale_golocal", unavailable_ids)
         self.assertIn("branchen_notare", unavailable_ids)
         self.assertNotIn("aerzte_docfinder", unavailable_ids)
         self.assertNotIn("branchen_anwaltauskunft", unavailable_ids)

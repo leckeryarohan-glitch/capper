@@ -499,6 +499,91 @@ class DirectoryParserTests(unittest.TestCase):
         self.assertEqual(entry.email, "office@demo-steuerberatung.example")
         self.assertEqual(entry.website, "https://www.demo-steuerberatung.example")
 
+    def test_parse_wko_listing_and_detail(self) -> None:
+        from lead_research.directories import (
+            build_wko_url,
+            parse_wko_detail_html,
+            parse_wko_listing_html,
+        )
+
+        self.assertEqual(
+            build_wko_url("Steuerberater", "Wien", 2),
+            "https://firmen.wko.at/steuerberater/wien/?page=2",
+        )
+        ready, pending = parse_wko_listing_html(
+            """
+            <article class='search-result-article'>
+              <a class="title-link" href="/demo-steuerberatung/wien/?firmaid=1">
+                <h3>Demo Steuerberatung GmbH</h3>
+              </a>
+              <a data-gtm-event="kontaktinfo-mail-click" href='mailto:office@demo-steuerberatung.example'>
+                <span>office@demo-steuerberatung.example</span>
+              </a>
+              <a data-gtm-event="kontaktinfo-web-click" href='https://www.demo-steuerberatung.example/'>
+                <span>https://www.demo-steuerberatung.example/</span>
+              </a>
+            </article>
+            <article class='search-result-article'>
+              <a class="title-link" href="/ohne-kontakt/wien/?firmaid=2"><h3>Ohne Kontakt KG</h3></a>
+            </article>
+            """,
+            source_url="https://firmen.wko.at/steuerberater/wien/",
+        )
+        self.assertEqual(len(ready), 1)
+        self.assertEqual(ready[0].email, "office@demo-steuerberatung.example")
+        self.assertEqual(ready[0].website.rstrip("/"), "https://www.demo-steuerberatung.example")
+        self.assertEqual(
+            pending[0],
+            ("Ohne Kontakt KG", "https://firmen.wko.at/ohne-kontakt/wien/?firmaid=2"),
+        )
+        entry = parse_wko_detail_html(
+            "<h1 class='detail-heading h3'>Ohne Kontakt KG</h1>"
+            "<a data-gtm-event='kontaktinfo-mail-click' href='mailto:kontakt@ohne-kontakt.example'>",
+            name="Ohne Kontakt KG",
+            source_url="https://firmen.wko.at/ohne-kontakt/wien/",
+        )
+        assert entry is not None
+        self.assertEqual(entry.email, "kontakt@ohne-kontakt.example")
+
+    def test_parse_golocal_listing_and_detail(self) -> None:
+        from lead_research.directories import (
+            build_golocal_url,
+            parse_golocal_detail_name,
+            parse_golocal_detail_website,
+            parse_golocal_listing_html,
+        )
+
+        self.assertEqual(
+            build_golocal_url("Steuerberater", "Berlin", 2),
+            "https://www.golocal.de/berlin/steuerberater/?p=2",
+        )
+        listings = parse_golocal_listing_html(
+            """
+            <li class="listEntry ">
+              <meta itemprop="name" content="Demo Steuerberatung" />
+              <h2 class="title">
+                <a href="https://www.golocal.de/berlin/steuerberater/demo-steuerberatung-abc/">
+                  Demo Steuerberatung
+                </a>
+              </h2>
+            </li>
+            <li class="listEntry ui-droppable gl-adsbygoogle"></li>
+            """
+        )
+        self.assertEqual(
+            listings[0],
+            (
+                "Demo Steuerberatung",
+                "https://www.golocal.de/berlin/steuerberater/demo-steuerberatung-abc/",
+            ),
+        )
+        website = parse_golocal_detail_website(
+            '<a href="https://www.demo-steuerberatung.example" itemprop=url target=_blank>Homepage</a>'
+        )
+        self.assertEqual(website, "https://www.demo-steuerberatung.example")
+        name = parse_golocal_detail_name('<meta itemprop="name" content="Demo Steuerberatung" />')
+        self.assertEqual(name, "Demo Steuerberatung")
+
     def test_parse_steuerberater_filters_and_detail(self) -> None:
         from lead_research.directories import (
             parse_steuerberater_company_filters,
