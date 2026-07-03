@@ -115,6 +115,8 @@ DIRECTORY_HOST_SUFFIXES = (
     "pitchbook.",
     "indeed.com",
     "indeed.de",
+    "stepstone.de",
+    "stepstone.",
     "hiringlab.org",
     "hrtechprivacy.com",
     "deloi.tt",
@@ -1294,6 +1296,47 @@ def parse_indeed_detail_website(page_html: str) -> str:
     return pick_best_embedded_business_url(page_html)
 
 
+def parse_stepstone_listing_html(page_html: str) -> list[tuple[str, str]]:
+    listings: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    names = re.findall(r'"companyName"\s*:\s*"((?:\\.|[^"\\])*)"', page_html)
+    urls = re.findall(r'"companyUrl"\s*:\s*"(https://www\.stepstone\.de/cmp/[^"]+)"', page_html)
+    for raw_name, raw_url in zip(names, urls):
+        name = html.unescape(raw_name).strip()
+        detail_url = html.unescape(raw_url).rstrip("/")
+        if not detail_url.endswith("/jobs"):
+            detail_url = f"{detail_url}/jobs"
+        if detail_url in seen:
+            continue
+        seen.add(detail_url)
+        listings.append((name, detail_url))
+    if listings:
+        return listings
+    for match in re.finditer(r'href="(https://www\.stepstone\.de/cmp/de/[^"?]+/jobs)"', page_html):
+        detail_url = html.unescape(match.group(1)).rstrip("/")
+        if detail_url in seen:
+            continue
+        seen.add(detail_url)
+        slug = detail_url.rsplit("/", 2)[-2]
+        listings.append((name_from_url_slug(slug), detail_url))
+    return listings
+
+
+def parse_stepstone_detail_name(page_html: str) -> str:
+    match = re.search(
+        r"<title>(?:\d+\s+Aktuelle Jobs bei\s+)?([^|<]+?)(?:\s*\||\s+–|\s+-)",
+        page_html,
+        re.IGNORECASE,
+    )
+    if match:
+        return html.unescape(match.group(1).strip())
+    return ""
+
+
+def parse_stepstone_detail_website(page_html: str) -> str:
+    return parse_indeed_detail_website(page_html)
+
+
 def parse_jameda_listing_html(page_html: str, *, location: str) -> list[tuple[str, str]]:
     location_slug = directory_lower_hyphen_slug(location)
     listings: list[tuple[str, str]] = []
@@ -1880,6 +1923,16 @@ def build_indeed_url(category: str, location: str) -> str:
     return f"https://de.indeed.com/jobs?{params}"
 
 
+def build_stepstone_url(category: str, location: str, page: int) -> str:
+    category_slug = directory_lower_hyphen_slug(category) or "unternehmen"
+    location_slug = directory_lower_hyphen_slug(location) or "berlin"
+    base = f"https://www.stepstone.de/jobs/{category_slug}/in-{location_slug}"
+    if page <= 1:
+        return base
+    params = urllib.parse.urlencode({"page": str(page), "action": "paging_next"})
+    return f"{base}?{params}"
+
+
 def build_jameda_url(category: str, location: str) -> str:
     category_slug = directory_lower_hyphen_slug(category) or "arzt"
     location_slug = directory_lower_hyphen_slug(location) or "berlin"
@@ -1976,6 +2029,30 @@ def scrape_indeed(category: str, location: str, limit: int) -> list[DirectoryEnt
         parse_detail_name=parse_indeed_detail_name,
         parse_detail_website=parse_indeed_detail_website,
         source_name="Indeed",
+    )[:limit]
+
+
+def scrape_stepstone(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    listings: list[tuple[str, str]] = []
+    page = 1
+    while len(listings) < limit and page <= 3:
+        source_url = build_stepstone_url(category, location, page)
+        page_html = fetch_directory_html(source_url)
+        page_listings = parse_stepstone_listing_html(page_html)
+        if not page_listings:
+            break
+        listings.extend(page_listings)
+        next_page = page + 1
+        if f"page={next_page}" not in page_html:
+            break
+        page = next_page
+        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+    return enrich_detail_name_and_website(
+        listings,
+        max_detail_fetches=limit,
+        parse_detail_name=parse_stepstone_detail_name,
+        parse_detail_website=parse_stepstone_detail_website,
+        source_name="StepStone",
     )[:limit]
 
 
@@ -2446,6 +2523,7 @@ def _directory_scraper_map() -> dict[str, callable]:
         "manta": scrape_manta,
         "pitchbook": scrape_pitchbook,
         "indeed": scrape_indeed,
+        "stepstone": scrape_stepstone,
         "jameda": scrape_jameda,
         "sanego": scrape_sanego,
         "restaurantguru": scrape_restaurantguru,

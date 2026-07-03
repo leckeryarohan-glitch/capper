@@ -135,6 +135,7 @@ def build_directory_source_registry(
     active_category_sources: tuple[tuple[str, str, str, str], ...] = (
         ("Unternehmensdatenbanken", "pitchbook", "PitchBook", "pitchbook"),
         ("Jobboersen", "indeed", "Indeed", "indeed"),
+        ("Jobboersen", "stepstone", "StepStone", "stepstone"),
         ("Aerzte", "jameda", "Jameda", "jameda"),
         ("Aerzte", "sanego", "Sanego", "sanego"),
         ("Aerzte", "docfinder", "DocFinder", "docfinder"),
@@ -175,7 +176,6 @@ def build_directory_source_registry(
             "opencorporates",
         },
         "Jobboersen": {
-            "stepstone",
             "linkedin_jobs",
             "xing_jobs",
             "monster",

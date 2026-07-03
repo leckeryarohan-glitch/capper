@@ -294,6 +294,33 @@ class DirectoryParserTests(unittest.TestCase):
         name = parse_indeed_detail_name("<title>Beruf und Karriere bei Demo Hotel | Indeed.de</title>")
         self.assertEqual(name, "Demo Hotel")
 
+    def test_parse_stepstone_listing_and_detail(self) -> None:
+        from lead_research.directories import (
+            build_stepstone_url,
+            parse_stepstone_detail_name,
+            parse_stepstone_detail_website,
+            parse_stepstone_listing_html,
+        )
+
+        self.assertEqual(
+            build_stepstone_url("Steuerberater", "Berlin", 2),
+            "https://www.stepstone.de/jobs/steuerberater/in-berlin?page=2&action=paging_next",
+        )
+        listings = parse_stepstone_listing_html(
+            """
+            "companyName":"Demo Steuer GmbH","companyUrl":"https://www.stepstone.de/cmp/de/demo-steuer-gmbh-123/jobs"
+            <a href="https://www.stepstone.de/cmp/de/fallback-buero-456/jobs">Fallback</a>
+            """
+        )
+        self.assertEqual(
+            listings[0],
+            ("Demo Steuer GmbH", "https://www.stepstone.de/cmp/de/demo-steuer-gmbh-123/jobs"),
+        )
+        website = parse_stepstone_detail_website('"website":"https://www.demo-steuer.example"')
+        self.assertEqual(website, "https://www.demo-steuer.example")
+        name = parse_stepstone_detail_name("<title>12 Aktuelle Jobs bei Demo Steuer GmbH | Stepstone</title>")
+        self.assertEqual(name, "Demo Steuer GmbH")
+
     def test_parse_jameda_listing_and_detail(self) -> None:
         from lead_research.directories import (
             build_jameda_url,
