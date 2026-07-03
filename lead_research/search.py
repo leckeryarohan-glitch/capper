@@ -10,7 +10,7 @@ import time
 import urllib.parse
 import urllib.request
 from abc import ABC, abstractmethod
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, as_completed, wait
 from contextvars import copy_context
 from dataclasses import dataclass
 from math import ceil
@@ -724,45 +724,51 @@ class GoogleMapsSearchProvider(SearchProvider):
                 plan_results.append(result)
             return plan_index, plan_location, plan_results, False
 
+        pending_plans = list(enumerate(plans, start=1))
         with ThreadPoolExecutor(max_workers=parallel_workers, thread_name_prefix="capper-gmaps") as executor:
-            futures = [
-                executor.submit(run_plan, plan_index, plan_location, country_code)
-                for plan_index, (plan_location, country_code) in enumerate(plans, start=1)
-            ]
-            for future in as_completed(futures):
-                if stop.is_set():
+            in_flight: dict = {}
+            while (pending_plans or in_flight) and not stop.is_set():
+                while pending_plans and len(in_flight) < parallel_workers and not stop.is_set():
+                    plan_index, (plan_location, country_code) = pending_plans.pop(0)
+                    future = executor.submit(run_plan, plan_index, plan_location, country_code)
+                    in_flight[future] = plan_index
+                if not in_flight:
                     break
-                _plan_index, plan_location, plan_results, auth_error = future.result()
-                if auth_error:
-                    stop.set()
-                    self._report(
-                        "Google Maps: Suche abgebrochen. Bitte den ZenRows API-Key pruefen."
-                    )
-                    break
-                added = 0
-                with state_lock:
-                    for result in plan_results:
-                        key = google_maps_result_key(result)
-                        if not key or key in seen:
-                            continue
-                        seen.add(key)
-                        results.append(result)
-                        added += 1
-                        if len(results) >= limit:
-                            stop.set()
-                            break
-                    completed_count += 1
-                if added:
-                    self._report(
-                        f"Google Maps: +{added} aus {plan_location} (gesamt {len(results)})"
-                    )
-                if completed_count % 25 == 0:
-                    self._report(
-                        f"Google Maps: {len(results)}/{limit} Websites — "
-                        f"{completed_count}/{len(plans)} Orte erledigt ..."
-                    )
-                if len(results) >= limit:
-                    break
+                done, _pending = wait(in_flight, return_when=FIRST_COMPLETED)
+                for future in done:
+                    in_flight.pop(future, None)
+                    _plan_index, plan_location, plan_results, auth_error = future.result()
+                    if auth_error:
+                        stop.set()
+                        self._report(
+                            "Google Maps: Suche abgebrochen. Bitte den ZenRows API-Key pruefen."
+                        )
+                        break
+                    added = 0
+                    with state_lock:
+                        for result in plan_results:
+                            key = google_maps_result_key(result)
+                            if not key or key in seen:
+                                continue
+                            seen.add(key)
+                            results.append(result)
+                            added += 1
+                            if len(results) >= limit:
+                                stop.set()
+                                break
+                        completed_count += 1
+                    if added:
+                        self._report(
+                            f"Google Maps: +{added} aus {plan_location} (gesamt {len(results)})"
+                        )
+                    if completed_count % 25 == 0:
+                        self._report(
+                            f"Google Maps: {len(results)}/{limit} Websites — "
+                            f"{completed_count}/{len(plans)} Orte erledigt ..."
+                        )
+                    if len(results) >= limit:
+                        stop.set()
+                        break
 
         self._report(f"Google Maps: {len(results)} Websites gefunden")
         return results[:limit]
