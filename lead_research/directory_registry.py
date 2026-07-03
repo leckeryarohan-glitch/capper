@@ -168,7 +168,9 @@ def build_directory_source_registry(
         ("Lieferanten", "alibaba", "Alibaba", "alibaba"),
         ("Lieferanten", "india_mart", "IndiaMART", "indiamart"),
         ("Lieferanten", "made_in_china", "Made-in-China", "made_in_china"),
+        ("Lieferanten", "lieferanten_kompass", "Kompass", "kompass"),
         ("Marktplaetze", "marktplaetze_alibaba", "Alibaba", "alibaba"),
+        ("Branchen", "branchen_friseure", "Friseure", "treatwell_friseur"),
     )
     active_slugs_by_category: dict[str, set[str]] = {}
     for category, source_id, label, scraper_key in active_category_sources:
@@ -252,6 +254,7 @@ def build_directory_source_registry(
         "Lieferanten": {
             "thomasnet",
             "global_sources",
+            "globalsources",
         },
         "Marktplaetze": {
             "amazon_seller",

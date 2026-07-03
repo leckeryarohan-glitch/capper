@@ -85,6 +85,14 @@ class DirectoryRegistryTests(unittest.TestCase):
         self.assertIn("marktplaetze_ankorstore", unavailable_ids)
         self.assertIn("marktplaetze_ebay_shops", unavailable_ids)
 
+    def test_lieferanten_kompass_and_branchen_friseure_are_implemented(self) -> None:
+        registry = build_directory_source_registry()
+        implemented_ids = {spec.id for spec in registry if spec.implemented}
+
+        self.assertIn("lieferanten_kompass", implemented_ids)
+        self.assertIn("branchen_friseure", implemented_ids)
+        self.assertIn("lieferanten_globalsources", {spec.id for spec in unavailable_directory_sources(registry)})
+
     def test_stepstone_not_marked_unavailable(self) -> None:
         registry = build_directory_source_registry()
         unavailable_ids = {spec.id for spec in unavailable_directory_sources(registry)}
