@@ -22,7 +22,8 @@ class DirectoryRegistryTests(unittest.TestCase):
         self.assertIn("goyellow", implemented_ids)
         self.assertIn("yelp", implemented_ids)
         unavailable_ids = {spec.id for spec in unavailable_directory_sources(registry)}
-        self.assertIn("firmenverzeichnisse_wlw", unavailable_ids)
+        self.assertNotIn("firmenverzeichnisse_wlw", unavailable_ids)
+        self.assertIn("lokale_portale_kennstdueinen", unavailable_ids)
         self.assertIn("unternehmensdatenbanken_north_data", unavailable_ids)
         self.assertIn("unternehmensdatenbanken_crunchbase", unavailable_ids)
         self.assertIn("unternehmensdatenbanken_dun_and_bradstreet", unavailable_ids)
@@ -56,6 +57,7 @@ class DirectoryRegistryTests(unittest.TestCase):
         self.assertIn("herold", implemented_ids)
         self.assertIn("wko", implemented_ids)
         self.assertIn("golocal", implemented_ids)
+        self.assertIn("wlw", implemented_ids)
 
     def test_blocked_gastronomie_and_aerzte_sources_marked_unavailable(self) -> None:
         registry = build_directory_source_registry()

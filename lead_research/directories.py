@@ -1740,6 +1740,75 @@ def parse_golocal_detail_website(page_html: str) -> str:
     return next((link for link in extract_external_links(page_html) if is_external_business_url(link)), "")
 
 
+def parse_wlw_listing_html(page_html: str) -> list[tuple[str, str]]:
+    listings: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for block in extract_json_ld_blocks(page_html):
+        if not isinstance(block, dict):
+            continue
+        graph = block.get("@graph", [block])
+        if not isinstance(graph, list):
+            graph = [graph]
+        for node in graph:
+            if not isinstance(node, dict) or node.get("@type") != "ItemList":
+                continue
+            for element in node.get("itemListElement", []):
+                if not isinstance(element, dict):
+                    continue
+                item = element.get("item")
+                if not isinstance(item, dict):
+                    continue
+                name = html.unescape(str(item.get("name", "")).strip())
+                detail_url = normalize_result_url(str(item.get("url", "")))
+                if not name or not detail_url or "/de/firma/" not in detail_url:
+                    continue
+                if detail_url in seen:
+                    continue
+                seen.add(detail_url)
+                listings.append((name, detail_url))
+    return listings
+
+
+def parse_wlw_detail_website(page_html: str) -> str:
+    homepage_match = re.search(r'"homepage":"(https?://[^"]+)"', page_html)
+    if homepage_match:
+        candidate = normalize_directory_website(homepage_match.group(1))
+        if candidate:
+            return candidate
+    for pattern in (
+        r'data-test="company-website"[^>]*href="(https?://[^"]+)"',
+        r'href="(https?://[^"]+)"[^>]*data-test="company-website"',
+    ):
+        match = re.search(pattern, page_html, re.IGNORECASE)
+        if match:
+            candidate = normalize_directory_website(match.group(1))
+            if candidate:
+                return candidate
+    return next((link for link in extract_external_links(page_html) if is_external_business_url(link)), "")
+
+
+def parse_wlw_detail_email(page_html: str) -> str:
+    for match in re.finditer(r'"email":"([^"]+)"', page_html):
+        email = normalize_directory_email(match.group(1))
+        if email and not email.endswith("@wlw.de"):
+            return email
+    return pick_directory_email(page_html)
+
+
+def parse_wlw_detail_html(page_html: str, *, name: str, source_url: str) -> DirectoryEntry | None:
+    website = parse_wlw_detail_website(page_html)
+    email = parse_wlw_detail_email(page_html)
+    if not website and not email:
+        return None
+    return DirectoryEntry(
+        name=name,
+        website=website,
+        source_url=source_url,
+        snippet="WLW",
+        email=email,
+    )
+
+
 def parse_steuerberater_detail_html(page_html: str, *, name: str, source_url: str) -> DirectoryEntry | None:
     email = pick_directory_email(page_html)
     website = ""
@@ -1873,6 +1942,15 @@ def build_golocal_url(category: str, location: str, page: int) -> str:
     if page <= 1:
         return f"https://www.golocal.de/{location_slug}/{category_slug}/"
     return f"https://www.golocal.de/{location_slug}/{category_slug}/?p={page}"
+
+
+def build_wlw_url(category: str, location: str, page: int) -> str:
+    params = {
+        "qs": category.strip() or "unternehmen",
+        "ort": location.strip() or "Berlin",
+        "page": str(max(page, 1)),
+    }
+    return f"https://www.wlw.de/de/suche?{urllib.parse.urlencode(params)}"
 
 
 def scrape_pitchbook(category: str, location: str, limit: int) -> list[DirectoryEntry]:
@@ -2064,6 +2142,36 @@ def scrape_golocal(category: str, location: str, limit: int) -> list[DirectoryEn
         parse_detail_website=parse_golocal_detail_website,
         source_name="GoLocal",
     )[:limit]
+
+
+def enrich_wlw_entries(listings: list[tuple[str, str]], *, max_detail_fetches: int) -> list[DirectoryEntry]:
+    entries: list[DirectoryEntry] = []
+    max_detail_fetches = cap_directory_detail_fetches(max_detail_fetches)
+    for name, detail_url in listings[:max_detail_fetches]:
+        try:
+            detail_html = fetch_directory_html(detail_url)
+        except DirectoryFetchError:
+            continue
+        parsed = parse_wlw_detail_html(detail_html, name=name, source_url=detail_url)
+        if parsed is not None:
+            entries.append(parsed)
+        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+    return entries
+
+
+def scrape_wlw(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    listings: list[tuple[str, str]] = []
+    page = 1
+    while len(listings) < limit and page <= 3:
+        source_url = build_wlw_url(category, location, page)
+        page_html = fetch_directory_html(source_url)
+        page_listings = parse_wlw_listing_html(page_html)
+        if not page_listings:
+            break
+        listings.extend(page_listings)
+        page += 1
+        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+    return enrich_wlw_entries(listings, max_detail_fetches=limit)[:limit]
 
 
 def scrape_steuerberater(category: str, location: str, limit: int) -> list[DirectoryEntry]:
@@ -2347,6 +2455,7 @@ def _directory_scraper_map() -> dict[str, callable]:
         "herold": scrape_herold,
         "wko": scrape_wko,
         "golocal": scrape_golocal,
+        "wlw": scrape_wlw,
     }
 
 
