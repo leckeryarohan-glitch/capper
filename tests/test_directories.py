@@ -620,6 +620,35 @@ class DirectoryParserTests(unittest.TestCase):
             build_herold_url("Steuerberater", "Wien"),
             "https://www.herold.at/gelbe-seiten/wien/steuerberater/",
         )
+        self.assertEqual(
+            build_herold_url("versand", "Wien"),
+            "https://www.herold.at/gelbe-seiten/wien/spedition/",
+        )
+
+    def test_scrape_herold_skips_non_austrian_locations(self) -> None:
+        from lead_research.directories import scrape_herold
+
+        with patch("lead_research.directories.fetch_directory_html") as fetch_html:
+            entries = scrape_herold("versand", "Dortmund", 5)
+        fetch_html.assert_not_called()
+        self.assertEqual(entries, [])
+
+    def test_scrape_wko_skips_non_austrian_locations(self) -> None:
+        from lead_research.directories import scrape_wko
+
+        with patch("lead_research.directories.fetch_directory_html") as fetch_html:
+            entries = scrape_wko("versand", "Berlin", 5)
+        fetch_html.assert_not_called()
+        self.assertEqual(entries, [])
+
+    def test_parse_herold_listing_and_detail_body(self) -> None:
+        from lead_research.directories import (
+            parse_herold_detail_html,
+            parse_herold_detail_name,
+            parse_herold_detail_website,
+            parse_herold_listing_html,
+        )
+
         listings = parse_herold_listing_html(
             """
             <a href="/gelbe-seiten/wien/TLhrv/steuerberatung-weiss/"

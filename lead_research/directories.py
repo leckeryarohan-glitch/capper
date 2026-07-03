@@ -2474,8 +2474,19 @@ def build_steuerberater_url(category: str, location: str) -> str:
 
 def build_herold_url(category: str, location: str) -> str:
     location_slug = directory_lower_hyphen_slug(location)
-    category_slug = directory_lower_hyphen_slug(category)
+    category_slug = herold_category_slug(category)
     return f"https://www.herold.at/gelbe-seiten/{location_slug}/{category_slug}/"
+
+
+def herold_category_slug(category: str) -> str:
+    slug = directory_lower_hyphen_slug(category)
+    aliases = {
+        "versand": "spedition",
+        "lieferung": "kurierdienst",
+        "paket": "kurierdienst",
+        "paketdienst": "kurierdienst",
+    }
+    return aliases.get(slug, slug)
 
 
 def build_wko_url(category: str, location: str, page: int) -> str:
@@ -2726,6 +2737,8 @@ def enrich_herold_entries(listings: list[tuple[str, str]], *, max_detail_fetches
 
 
 def scrape_herold(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    if not is_austrian_location(location):
+        return []
     source_url = build_herold_url(category, location)
     page_html = fetch_directory_html(source_url)
     listings = parse_herold_listing_html(page_html)
@@ -2733,6 +2746,8 @@ def scrape_herold(category: str, location: str, limit: int) -> list[DirectoryEnt
 
 
 def scrape_wko(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    if not is_austrian_location(location):
+        return []
     entries: list[DirectoryEntry] = []
     pending: list[tuple[str, str]] = []
     page = 1
