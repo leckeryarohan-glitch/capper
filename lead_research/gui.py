@@ -12,6 +12,7 @@ from .directories import (
     DIRECTORY_MAX_DETAIL_PARALLEL,
     build_directory_source_registry,
 )
+from .directory_profiles import resolve_category_directory_sources
 from .directory_registry import directory_sources_by_category
 from .locations import DEFAULT_COUNTRIES
 from .checkpoint import load_discovery_checkpoint, checkpoint_progress_summary
@@ -223,8 +224,8 @@ def run_gui_discovery(
     checkpoint = Path(str(values.get("checkpoint", DEFAULT_CHECKPOINT)).strip() or DEFAULT_CHECKPOINT)
     resume = bool(values.get("resume", False))
 
-    serpapi_key = str(values.get("serpapi_key", "")).strip()
-    zenrows_key = str(values.get("zenrows_key", "")).strip()
+    serpapi_key = str(values.get("serpapi_key", "")).strip() or os.getenv("SERPAPI_API_KEY", "").strip()
+    zenrows_key = str(values.get("zenrows_key", "")).strip() or os.getenv("ZENROWS_API_KEY", "").strip()
 
     use_osm = bool(values.get("use_osm", True))
     use_duckduckgo = bool(values.get("use_duckduckgo", True))
@@ -237,7 +238,8 @@ def run_gui_discovery(
             "Branchenverzeichnisse benoetigen einen ZenRows-Key (Universal API)."
         )
     if use_directories:
-        enabled_directory_sources = selected_directory_source_ids(values)
+        selected_sources = selected_directory_source_ids(values)
+        enabled_directory_sources = resolve_category_directory_sources(category, selected_sources)
         if not enabled_directory_sources:
             raise SearchProviderError("Aktiviere mindestens ein Branchenverzeichnis unter 'Branchenquellen'.")
     else:
@@ -258,6 +260,7 @@ def run_gui_discovery(
         enabled_directory_sources=enabled_directory_sources if use_directories else None,
         directory_parallel_requests=directory_parallel if use_directories else None,
         directory_detail_parallel_requests=directory_detail_parallel if use_directories else None,
+        directory_mass_mode=limit >= 500 if use_directories else False,
     )
     if not getattr(provider, "providers", None):
         raise SearchProviderError(

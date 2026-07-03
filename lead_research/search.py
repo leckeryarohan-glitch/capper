@@ -1667,6 +1667,7 @@ def combined_provider(
     enabled_directory_sources: set[str] | None = None,
     directory_parallel_requests: int | None = None,
     directory_detail_parallel_requests: int | None = None,
+    directory_mass_mode: bool = False,
 ) -> SearchProvider:
     """Combine the selected no-key and key-based sources for maximum coverage."""
     providers: list[SearchProvider] = []
@@ -1684,6 +1685,7 @@ def combined_provider(
                     enabled_directory_sources=enabled_directory_sources,
                     parallel_requests=directory_parallel_requests,
                     detail_parallel_requests=directory_detail_parallel_requests,
+                    mass_mode=directory_mass_mode,
                 )
             )
     if os.getenv("GOOGLE_SEARCH_API_KEY") and os.getenv("GOOGLE_SEARCH_ENGINE_ID"):
