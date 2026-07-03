@@ -136,6 +136,7 @@ def build_directory_source_registry(
         ("Unternehmensdatenbanken", "pitchbook", "PitchBook", "pitchbook"),
         ("Jobboersen", "indeed", "Indeed", "indeed"),
         ("Jobboersen", "stepstone", "StepStone", "stepstone"),
+        ("Jobboersen", "arbeitsagentur", "Arbeitsagentur", "arbeitsagentur"),
         ("Aerzte", "jameda", "Jameda", "jameda"),
         ("Aerzte", "sanego", "Sanego", "sanego"),
         ("Aerzte", "docfinder", "DocFinder", "docfinder"),
@@ -301,6 +302,7 @@ def build_directory_source_registry(
         "Jobboersen": [
             "Indeed",
             "StepStone",
+            "Arbeitsagentur",
             "LinkedIn Jobs",
             "XING Jobs",
             "Monster",

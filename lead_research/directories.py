@@ -119,6 +119,8 @@ DIRECTORY_HOST_SUFFIXES = (
     "indeed.de",
     "stepstone.de",
     "stepstone.",
+    "arbeitsagentur.de",
+    "bundesagentur.de",
     "hiringlab.org",
     "hrtechprivacy.com",
     "deloi.tt",
@@ -1346,6 +1348,114 @@ def parse_stepstone_detail_website(page_html: str) -> str:
     return parse_indeed_detail_website(page_html)
 
 
+def extract_arbeitsagentur_ng_state(page_html: str) -> dict | None:
+    match = re.search(r'<script id="ng-state"[^>]*>(.*?)</script>', page_html, re.DOTALL)
+    if not match:
+        return None
+    try:
+        payload = json.loads(match.group(1))
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def parse_arbeitsagentur_listing_html(page_html: str) -> list[tuple[str, str]]:
+    state = extract_arbeitsagentur_ng_state(page_html)
+    if not state:
+        return []
+    suchergebnis = state.get("suchergebnis")
+    if not isinstance(suchergebnis, dict):
+        return []
+    listings: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for item in suchergebnis.get("ergebnisliste", []):
+        if not isinstance(item, dict):
+            continue
+        reference = str(item.get("referenznummer", "")).strip()
+        name = html.unescape(str(item.get("firma", "")).strip())
+        if not reference or not name:
+            continue
+        employer_key = str(item.get("arbeitgeberKundennummerHash") or name).strip()
+        if employer_key in seen:
+            continue
+        seen.add(employer_key)
+        detail_url = f"https://www.arbeitsagentur.de/jobsuche/jobdetail/{reference}"
+        listings.append((name, detail_url))
+    return listings
+
+
+def parse_arbeitsagentur_detail_website(page_html: str) -> str:
+    state = extract_arbeitsagentur_ng_state(page_html)
+    if not state:
+        return ""
+    employer = state.get("arbeitgeberdarstellung")
+    if not isinstance(employer, dict):
+        return ""
+    links = employer.get("links")
+    if not isinstance(links, list):
+        return ""
+    homepage = ""
+    fallback = ""
+    for link in links:
+        if not isinstance(link, dict):
+            continue
+        candidate = normalize_directory_website(str(link.get("url", "")))
+        if not candidate or not is_external_business_url(candidate):
+            continue
+        art = str(link.get("art", "")).casefold()
+        if art == "homepage":
+            return candidate
+        if not fallback:
+            fallback = candidate
+    return homepage or fallback
+
+
+def parse_arbeitsagentur_detail_email(page_html: str) -> str:
+    state = extract_arbeitsagentur_ng_state(page_html)
+    if not state:
+        return ""
+    chunks: list[str] = []
+    employer = state.get("arbeitgeberdarstellung")
+    jobdetail = state.get("jobdetail")
+    if isinstance(employer, dict):
+        kontakt = employer.get("kontaktinformationen")
+        if isinstance(kontakt, str):
+            chunks.append(kontakt)
+        elif kontakt is not None:
+            chunks.append(json.dumps(kontakt))
+    if isinstance(jobdetail, dict):
+        kontakt = jobdetail.get("kontaktinformationen")
+        if isinstance(kontakt, str):
+            chunks.append(kontakt)
+        elif kontakt is not None:
+            chunks.append(json.dumps(kontakt))
+    return pick_directory_email(page_html, *chunks)
+
+
+def parse_arbeitsagentur_detail_html(page_html: str, *, name: str, source_url: str) -> DirectoryEntry | None:
+    state = extract_arbeitsagentur_ng_state(page_html)
+    if not state:
+        return None
+    employer = state.get("arbeitgeberdarstellung")
+    jobdetail = state.get("jobdetail")
+    resolved_name = name
+    if isinstance(employer, dict):
+        resolved_name = html.unescape(str(employer.get("firma") or resolved_name).strip()) or resolved_name
+    elif isinstance(jobdetail, dict):
+        resolved_name = html.unescape(str(jobdetail.get("firma") or resolved_name).strip()) or resolved_name
+    website = parse_arbeitsagentur_detail_website(page_html)
+    email = parse_arbeitsagentur_detail_email(page_html)
+    if not website and not email:
+        return None
+    return DirectoryEntry(
+        name=resolved_name,
+        website=website,
+        source_url=source_url,
+        snippet="Arbeitsagentur",
+        email=email,
+    )
+
+
 def parse_treatwell_listing_html(page_html: str, *, location: str) -> list[tuple[str, str]]:
     location_slug = treatwell_location_slug(location)
     listings: list[tuple[str, str]] = []
@@ -1987,6 +2097,16 @@ def build_stepstone_url(category: str, location: str, page: int) -> str:
     return f"{base}?{params}"
 
 
+def build_arbeitsagentur_url(category: str, location: str, page: int) -> str:
+    params = {
+        "was": category.strip() or "unternehmen",
+        "wo": location.strip() or "Berlin",
+    }
+    if page > 1:
+        params["page"] = str(page)
+    return f"https://www.arbeitsagentur.de/jobsuche/suche?{urllib.parse.urlencode(params)}"
+
+
 def build_jameda_url(category: str, location: str) -> str:
     category_slug = directory_lower_hyphen_slug(category) or "arzt"
     location_slug = directory_lower_hyphen_slug(location) or "berlin"
@@ -2117,6 +2237,36 @@ def scrape_stepstone(category: str, location: str, limit: int) -> list[Directory
         parse_detail_website=parse_stepstone_detail_website,
         source_name="StepStone",
     )[:limit]
+
+
+def enrich_arbeitsagentur_entries(listings: list[tuple[str, str]], *, max_detail_fetches: int) -> list[DirectoryEntry]:
+    entries: list[DirectoryEntry] = []
+    max_detail_fetches = cap_directory_detail_fetches(max_detail_fetches)
+    for name, detail_url in listings[:max_detail_fetches]:
+        try:
+            detail_html = fetch_directory_html(detail_url)
+        except DirectoryFetchError:
+            continue
+        parsed = parse_arbeitsagentur_detail_html(detail_html, name=name, source_url=detail_url)
+        if parsed is not None:
+            entries.append(parsed)
+        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+    return entries
+
+
+def scrape_arbeitsagentur(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    listings: list[tuple[str, str]] = []
+    page = 1
+    while len(listings) < limit and page <= 3:
+        source_url = build_arbeitsagentur_url(category, location, page)
+        page_html = fetch_directory_html(source_url)
+        page_listings = parse_arbeitsagentur_listing_html(page_html)
+        if not page_listings:
+            break
+        listings.extend(page_listings)
+        page += 1
+        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+    return enrich_arbeitsagentur_entries(listings, max_detail_fetches=limit)[:limit]
 
 
 def scrape_jameda(category: str, location: str, limit: int) -> list[DirectoryEntry]:
@@ -2625,6 +2775,7 @@ def _directory_scraper_map() -> dict[str, callable]:
         "pitchbook": scrape_pitchbook,
         "indeed": scrape_indeed,
         "stepstone": scrape_stepstone,
+        "arbeitsagentur": scrape_arbeitsagentur,
         "jameda": scrape_jameda,
         "sanego": scrape_sanego,
         "restaurantguru": scrape_restaurantguru,
