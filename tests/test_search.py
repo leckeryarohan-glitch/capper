@@ -24,6 +24,8 @@ from lead_research.search import (
     decode_duckduckgo_href,
     directory_parallel_workers,
     duckduckgo_links_from_html,
+    duckduckgo_next_offset,
+    duckduckgo_pages_per_query,
     expand_queries,
     google_items_to_results,
     is_valid_lead_url,
@@ -191,6 +193,14 @@ class SearchTests(unittest.TestCase):
         self.assertIn("https://hotel-a.example/", links)
         self.assertIn("https://hotel-b.example/kontakt", links)
         self.assertNotIn("https://ignore.example/", links)
+
+    def test_duckduckgo_next_offset_reads_form_field(self) -> None:
+        html_text = '<input type="hidden" name="s" value="10">'
+        self.assertEqual(duckduckgo_next_offset(html_text, 0, 20), 10)
+
+    def test_duckduckgo_pages_per_query_scales_with_limit(self) -> None:
+        self.assertEqual(duckduckgo_pages_per_query(25), 2)
+        self.assertEqual(duckduckgo_pages_per_query(500), 5)
 
     def test_multi_source_provider_merges_and_dedupes(self) -> None:
         class StaticProvider(SearchProvider):

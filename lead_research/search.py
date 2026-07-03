@@ -1198,6 +1198,26 @@ def escape_overpass_regex(value: str) -> str:
     return escaped
 
 
+DDG_MAX_OFFSET = 200
+DDG_MAX_PAGES_PER_QUERY_DEFAULT = 2
+DDG_MAX_PAGES_PER_QUERY_MASS = 5
+
+
+def duckduckgo_pages_per_query(limit: int) -> int:
+    if limit >= 500:
+        return DDG_MAX_PAGES_PER_QUERY_MASS
+    if limit >= 100:
+        return 3
+    return DDG_MAX_PAGES_PER_QUERY_DEFAULT
+
+
+def duckduckgo_next_offset(html_text: str, offset: int, link_count: int) -> int:
+    match = re.search(r'name="s"\s+value="(\d+)"', html_text)
+    if match:
+        return int(match.group(1))
+    return offset + max(10, link_count // 2)
+
+
 class DuckDuckGoSearchProvider(SearchProvider):
     """No-key web search using the DuckDuckGo HTML endpoint, like a normal user."""
 
@@ -1220,7 +1240,9 @@ class DuckDuckGoSearchProvider(SearchProvider):
                 break
             offset = 0
             page_num = 0
-            while len(results) < limit and offset <= 200:
+            max_pages = duckduckgo_pages_per_query(limit)
+            stale_pages = 0
+            while len(results) < limit and offset <= DDG_MAX_OFFSET and page_num < max_pages:
                 page_num += 1
                 self._report(f"DuckDuckGo: '{query}' Seite {page_num} ...")
                 data = urllib.parse.urlencode({"q": query, "s": offset, "kl": "de-de"}).encode("utf-8")
@@ -1256,9 +1278,13 @@ class DuckDuckGoSearchProvider(SearchProvider):
                     if len(results) >= limit:
                         self._report(f"DuckDuckGo: {len(results)} Websites gefunden")
                         return results
-                offset += len(links)
                 if new_in_page == 0:
-                    break
+                    stale_pages += 1
+                    if stale_pages >= 2:
+                        break
+                else:
+                    stale_pages = 0
+                offset = duckduckgo_next_offset(html_text, offset, len(links))
                 time.sleep(0.4)
 
         self._report(f"DuckDuckGo: {len(results)} Websites gefunden")
