@@ -9,10 +9,12 @@ from lead_research.google_maps import (
     build_zenrows_google_maps_request_url,
     css_extractor_values,
     discover_google_maps_results,
+    extract_place_urls_from_html,
     google_maps_cities_budget,
     google_maps_location_plans,
     google_maps_places_per_city,
     parse_google_maps_listing_html,
+    parse_website_from_detail_html,
     search_result_from_detail_payload,
 )
 from lead_research.search import GoogleMapsSearchProvider, SearchProviderError, combined_provider, source_label
@@ -58,11 +60,11 @@ class GoogleMapsParserTests(unittest.TestCase):
     def test_build_google_maps_search_url(self) -> None:
         self.assertEqual(
             build_google_maps_search_url("versand", "Dortmund"),
-            "https://www.google.de/maps/search/versand+Dortmund",
+            "https://www.google.de/maps/search/versand+Dortmund?hl=de",
         )
         self.assertEqual(
             build_google_maps_search_url("hotel", "Wien", country_code="AT"),
-            "https://www.google.at/maps/search/hotel+Wien",
+            "https://www.google.at/maps/search/hotel+Wien?hl=de",
         )
 
     def test_build_zenrows_request_uses_css_extractor_and_sidebar_scroll(self) -> None:
@@ -111,6 +113,18 @@ class GoogleMapsParserTests(unittest.TestCase):
         self.assertEqual(result.title, "Hotel Alpha")
         self.assertEqual(result.url, "https://www.hotel-alpha.example")
 
+    def test_extract_place_urls_from_html(self) -> None:
+        html = """
+        <a class="hfpxzc" href="https://www.google.de/maps/place/Hotel+Alpha/data=abc">Hotel Alpha</a>
+        <a href="https://www.google.de/maps/place/Hotel+Beta/data=def">Beta</a>
+        """
+        urls = extract_place_urls_from_html(html)
+        self.assertEqual(len(urls), 2)
+
+    def test_parse_website_from_detail_html(self) -> None:
+        html = '<a data-item-id="authority" href="https://www.hotel-demo.example">Website</a>'
+        self.assertEqual(parse_website_from_detail_html(html), "https://www.hotel-demo.example")
+
     def test_google_maps_location_plans_include_country_and_cities(self) -> None:
         plans = google_maps_location_plans("versand", "", ("DE",), limit=500)
         labels = [location for location, _country in plans]
@@ -135,7 +149,7 @@ class GoogleMapsParserTests(unittest.TestCase):
             return DETAIL_PAYLOADS.get(target_url, {})
 
         with patch("lead_research.google_maps.fetch_zenrows_css_payload", side_effect=fake_css_payload):
-            results = discover_google_maps_results(
+            results, stats = discover_google_maps_results(
                 "key",
                 "https://www.google.de/maps/search/hotel+Berlin",
                 places_limit=2,
@@ -143,6 +157,8 @@ class GoogleMapsParserTests(unittest.TestCase):
 
         urls = {result.url for result in results}
         self.assertEqual(urls, {"https://www.hotel-alpha.example", "https://www.hotel-beta.example"})
+        self.assertEqual(stats.place_urls, 2)
+        self.assertEqual(stats.websites_found, 2)
 
 
 class GoogleMapsProviderTests(unittest.TestCase):
@@ -173,7 +189,7 @@ class GoogleMapsProviderTests(unittest.TestCase):
             )
         ]
 
-        with patch.object(provider, "_discover_google_maps_results", return_value=sample):
+        with patch.object(provider, "_discover_google_maps_results", return_value=(sample, __import__("lead_research.google_maps", fromlist=["GoogleMapsDiscoveryStats"]).GoogleMapsDiscoveryStats(place_urls=1, websites_found=1))):
             results = provider.search("hotel", "Berlin", 10, ("DE",))
 
         self.assertEqual(len(results), 1)
