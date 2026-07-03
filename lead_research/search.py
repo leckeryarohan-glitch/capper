@@ -652,20 +652,20 @@ class GoogleMapsSearchProvider(SearchProvider):
         from .google_maps import (
             GoogleMapsFetchError,
             build_google_maps_search_url,
-            fetch_google_maps_html,
+            discover_google_maps_results,
             google_maps_location_plans,
             google_maps_parallel_workers,
+            google_maps_places_per_city,
             google_maps_scroll_steps,
-            parse_google_maps_listing_html,
         )
 
         self._fetch_error = GoogleMapsFetchError
         self._build_google_maps_search_url = build_google_maps_search_url
-        self._fetch_google_maps_html = fetch_google_maps_html
+        self._discover_google_maps_results = discover_google_maps_results
         self._google_maps_location_plans = google_maps_location_plans
         self._google_maps_scroll_steps = google_maps_scroll_steps
         self._google_maps_parallel_workers = google_maps_parallel_workers
-        self._parse_google_maps_listing_html = parse_google_maps_listing_html
+        self._google_maps_places_per_city = google_maps_places_per_city
         self.zenrows_api_key = _resolve_api_key(zenrows_api_key, "ZENROWS_API_KEY")
         if not self.zenrows_api_key:
             raise SearchProviderError("ZENROWS_API_KEY is required for Google Maps search.")
@@ -686,9 +686,11 @@ class GoogleMapsSearchProvider(SearchProvider):
         plans = self._google_maps_location_plans(category, location, countries, limit=limit)
         parallel_workers = min(self._google_maps_parallel_workers(), max(1, len(plans)))
         scroll_steps = self._google_maps_scroll_steps()
+        places_per_city = self._google_maps_places_per_city(limit, len(plans))
         self._report(
             f"Google Maps (ZenRows): bis zu {limit} Websites — "
-            f"{len(plans)} Orte, {parallel_workers} parallel, {scroll_steps} Scroll-Schritte ..."
+            f"{len(plans)} Orte, {parallel_workers} parallel, "
+            f"{places_per_city} Listings/Ort, {scroll_steps} Scroll-Schritte ..."
         )
 
         state_lock = threading.Lock()
@@ -705,24 +707,21 @@ class GoogleMapsSearchProvider(SearchProvider):
                 f"({plan_index}/{len(plans)}) ..."
             )
             try:
-                page_html = self._fetch_google_maps_html(
+                plan_results = self._discover_google_maps_results(
                     self.zenrows_api_key,
                     target_url,
                     proxy_country=locale_country,
                     country_code=country_code,
                     scroll_steps=scroll_steps,
+                    places_limit=places_per_city,
                 )
             except self._fetch_error as exc:
                 self._report(f"Google Maps: {exc}")
                 auth_error = "API-Key ungueltig" in str(exc) or "Berechtigung" in str(exc)
                 return plan_index, plan_location, [], auth_error
+            if not plan_results:
+                self._report(f"Google Maps: 0 Websites aus {plan_location}")
 
-            plan_results: list[SearchResult] = []
-            for result in self._parse_google_maps_listing_html(page_html):
-                key = google_maps_result_key(result)
-                if not key:
-                    continue
-                plan_results.append(result)
             return plan_index, plan_location, plan_results, False
 
         pending_plans = list(enumerate(plans, start=1))
