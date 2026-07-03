@@ -707,7 +707,7 @@ class GoogleMapsSearchProvider(SearchProvider):
                 f"({plan_index}/{len(plans)}) ..."
             )
             try:
-                plan_results = self._discover_google_maps_results(
+                plan_results, stats = self._discover_google_maps_results(
                     self.zenrows_api_key,
                     target_url,
                     proxy_country=locale_country,
@@ -719,8 +719,16 @@ class GoogleMapsSearchProvider(SearchProvider):
                 self._report(f"Google Maps: {exc}")
                 auth_error = "API-Key ungueltig" in str(exc) or "Berechtigung" in str(exc)
                 return plan_index, plan_location, [], auth_error
-            if not plan_results:
-                self._report(f"Google Maps: 0 Websites aus {plan_location}")
+            if plan_results:
+                self._report(
+                    f"Google Maps: +{len(plan_results)} aus {plan_location} "
+                    f"({stats.place_urls} Listings, {stats.websites_found} mit Website)"
+                )
+            else:
+                self._report(
+                    f"Google Maps: 0 Websites aus {plan_location} "
+                    f"({stats.place_urls} Listings gefunden, {stats.details_checked} Details geprueft)"
+                )
 
             return plan_index, plan_location, plan_results, False
 

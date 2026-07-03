@@ -5,11 +5,19 @@ import re
 import urllib.error
 import urllib.parse
 import urllib.request
+from dataclasses import dataclass
 
 from .extract import normalized_host
 from .http import format_request_error, read_response_text, urlopen
 from .locations import SUPPORTED_COUNTRIES, ZENROWS_LOCALE, cities_for_mass_web_search, country_label, top_cities_for_web_search
 from .models import SearchResult
+
+
+@dataclass(frozen=True)
+class GoogleMapsDiscoveryStats:
+    place_urls: int = 0
+    details_checked: int = 0
+    websites_found: int = 0
 
 
 GOOGLE_MAPS_ZENROWS_ENDPOINT = "https://api.zenrows.com/v1/"
@@ -28,11 +36,13 @@ GOOGLE_MAPS_SIDEBAR_SCROLL_JS = (
     "var el=document.querySelectorAll('.m6QErb.DxyBCb.kA9KIf.dS8AEf.XiKgde.ecceSd')[1]; "
     "if(el){ el.scrollTop += el.scrollHeight; }"
 )
-GOOGLE_MAPS_LISTING_CSS_EXTRACTOR = {"place_urls": "a.hfpxzc @href"}
+GOOGLE_MAPS_LISTING_CSS_EXTRACTOR = {"place_urls": "a.hfpxzc @href", "url": "a.hfpxzc @href"}
+GOOGLE_MAPS_LISTING_WAIT_FOR = "a.hfpxzc"
 GOOGLE_MAPS_DETAIL_CSS_EXTRACTOR = {
-    "name": "h1.DUwDvf.lfPIob",
-    "website": ".RcCsl:nth-child(4) a.CsEnBe @href",
+    "name": "h1.DUwDvf",
+    "website": 'a[data-item-id="authority"] @href',
 }
+GOOGLE_MAPS_DETAIL_WAIT_FOR = 'a[data-item-id="authority"], h1.DUwDvf'
 GOOGLE_MAPS_HOST_MARKERS = (
     "google.com",
     "google.de",
@@ -50,6 +60,19 @@ _ARIA_WEBSITE_RE = re.compile(r'aria-label="(?:Website|Webseite):\s*([^"]+)"', r
 _WEBSITE_HREF_RE = re.compile(r'href="(https?://[^"]+)"', re.IGNORECASE)
 _JSON_WEBSITE_RE = re.compile(
     r'"(?:website|url)":"(https?://(?![^"]*(?:google|gstatic|ggpht))[^"]+)"',
+    re.IGNORECASE,
+)
+_PLACE_HREF_RE = re.compile(r'href="(https?://[^"]+/maps/place/[^"]+)"', re.IGNORECASE)
+_HFPXZC_HREF_RE = re.compile(
+    r'<a[^>]*class="[^"]*hfpxzc[^"]*"[^>]*href="([^"]+)"',
+    re.IGNORECASE,
+)
+_AUTHORITY_HREF_RE = re.compile(
+    r'data-item-id="authority"[^>]*href="([^"]+)"',
+    re.IGNORECASE,
+)
+_AUTHORITY_HREF_RE_ALT = re.compile(
+    r'href="([^"]+)"[^>]*data-item-id="authority"',
     re.IGNORECASE,
 )
 
@@ -79,7 +102,8 @@ def build_google_maps_search_url(category: str, location: str, *, country_code: 
     encoded = urllib.parse.quote_plus(query or "unternehmen")
     _locale_country, tld = ZENROWS_LOCALE.get(country_code, ZENROWS_LOCALE["DE"])
     host = f"www.google{tld}"
-    return f"https://{host}/maps/search/{encoded}"
+    hl = "de" if country_code == "AT" else "de"
+    return f"https://{host}/maps/search/{encoded}?hl={hl}"
 
 
 def google_maps_scroll_steps() -> int:
@@ -259,6 +283,37 @@ def place_name_from_url(place_url: str) -> str:
     if not match:
         return ""
     return decode_maps_place_name(match.group(1).split("/")[0])
+
+
+def extract_place_urls_from_html(page_html: str) -> list[str]:
+    seen: set[str] = set()
+    urls: list[str] = []
+    for pattern in (_HFPXZC_HREF_RE, _PLACE_HREF_RE):
+        for match in pattern.finditer(page_html):
+            candidate = match.group(1).strip()
+            if "/maps/place/" not in candidate:
+                continue
+            key = candidate.lower().split("?", 1)[0]
+            if key in seen:
+                continue
+            seen.add(key)
+            urls.append(candidate)
+    return urls
+
+
+def parse_website_from_detail_html(page_html: str) -> str:
+    for pattern in (_AUTHORITY_HREF_RE, _AUTHORITY_HREF_RE_ALT, _ARIA_WEBSITE_RE, _JSON_WEBSITE_RE):
+        match = pattern.search(page_html)
+        if not match:
+            continue
+        website = normalize_maps_website(match.group(1))
+        if website:
+            return website
+    for match in _WEBSITE_HREF_RE.finditer(page_html):
+        website = normalize_maps_website(match.group(1))
+        if website:
+            return website
+    return ""
 
 
 def _website_from_chunk(chunk: str) -> str:
@@ -442,6 +497,42 @@ def fetch_zenrows_css_payload(
     return {}
 
 
+def fetch_google_maps_search_html(
+    api_key: str,
+    search_url: str,
+    *,
+    proxy_country: str = "de",
+    country_code: str = "DE",
+    scroll_steps: int | None = None,
+) -> str:
+    steps = google_maps_scroll_steps() if scroll_steps is None else max(0, min(scroll_steps, GOOGLE_MAPS_MAX_SCROLL_STEPS))
+    instructions = sidebar_scroll_instructions(steps)
+    try:
+        return _fetch_zenrows_text_once(
+            api_key,
+            search_url,
+            proxy_country=proxy_country,
+            country_code=country_code,
+            css_extractor=None,
+            js_instructions=instructions or None,
+            wait_ms=GOOGLE_MAPS_INITIAL_WAIT_MS,
+            wait_for=GOOGLE_MAPS_LISTING_WAIT_FOR,
+        )
+    except GoogleMapsFetchError as exc:
+        if "HTTP Error 422" not in str(exc) or not instructions:
+            raise
+        return _fetch_zenrows_text_once(
+            api_key,
+            search_url,
+            proxy_country=proxy_country,
+            country_code=country_code,
+            css_extractor=None,
+            js_instructions=None,
+            wait_ms=GOOGLE_MAPS_FALLBACK_WAIT_MS,
+            wait_for=GOOGLE_MAPS_LISTING_WAIT_FOR,
+        )
+
+
 def fetch_google_maps_place_urls(
     api_key: str,
     search_url: str,
@@ -458,8 +549,20 @@ def fetch_google_maps_place_urls(
         country_code=country_code,
         css_extractor=GOOGLE_MAPS_LISTING_CSS_EXTRACTOR,
         scroll_steps=steps,
+        wait_for=GOOGLE_MAPS_LISTING_WAIT_FOR,
     )
     urls = css_extractor_values(payload, "place_urls", "url")
+    if not urls:
+        html = payload.get("_html")
+        if not isinstance(html, str) or not html.strip():
+            html = fetch_google_maps_search_html(
+                api_key,
+                search_url,
+                proxy_country=proxy_country,
+                country_code=country_code,
+                scroll_steps=steps,
+            )
+        urls = extract_place_urls_from_html(html)
     seen: set[str] = set()
     unique: list[str] = []
     for place_url in urls:
@@ -488,22 +591,41 @@ def fetch_google_maps_place_result(
         country_code=country_code,
         css_extractor=GOOGLE_MAPS_DETAIL_CSS_EXTRACTOR,
         scroll_steps=0,
-        wait_ms=3000,
-        wait_for="h1.DUwDvf",
+        wait_ms=5000,
+        wait_for=GOOGLE_MAPS_DETAIL_WAIT_FOR,
     )
     result = search_result_from_detail_payload(place_url, payload)
     if result is not None:
         return result
+    html_parts: list[str] = []
     html = payload.get("_html")
-    if isinstance(html, str):
-        for parsed in parse_google_maps_listing_html(html):
-            if parsed.url:
-                return SearchResult(
-                    title=parsed.title or place_name_from_url(place_url),
-                    url=parsed.url,
-                    snippet="Google Maps",
-                    directory_source_url=place_url,
+    if isinstance(html, str) and html.strip():
+        html_parts.append(html)
+    if not html_parts:
+        try:
+            html_parts.append(
+                _fetch_zenrows_text_once(
+                    api_key,
+                    place_url,
+                    proxy_country=proxy_country,
+                    country_code=country_code,
+                    css_extractor=None,
+                    js_instructions=None,
+                    wait_ms=5000,
+                    wait_for=GOOGLE_MAPS_DETAIL_WAIT_FOR,
                 )
+            )
+        except GoogleMapsFetchError:
+            return None
+    for html_text in html_parts:
+        website = parse_website_from_detail_html(html_text)
+        if website:
+            return SearchResult(
+                title=place_name_from_url(place_url) or normalized_host(website),
+                url=website,
+                snippet="Google Maps",
+                directory_source_url=place_url,
+            )
     return None
 
 
@@ -515,7 +637,7 @@ def discover_google_maps_results(
     country_code: str = "DE",
     scroll_steps: int | None = None,
     places_limit: int = GOOGLE_MAPS_DEFAULT_PLACES_PER_CITY,
-) -> list[SearchResult]:
+) -> tuple[list[SearchResult], GoogleMapsDiscoveryStats]:
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     place_urls = fetch_google_maps_place_urls(
@@ -525,10 +647,12 @@ def discover_google_maps_results(
         country_code=country_code,
         scroll_steps=scroll_steps,
     )[: max(places_limit, 0)]
+    stats = GoogleMapsDiscoveryStats(place_urls=len(place_urls))
     if not place_urls:
-        return []
+        return [], stats
 
     results: list[SearchResult] = []
+    details_checked = 0
     workers = min(GOOGLE_MAPS_DETAIL_PARALLEL, len(place_urls))
     with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="capper-gmaps-detail") as executor:
         futures = {
@@ -542,10 +666,16 @@ def discover_google_maps_results(
             for place_url in place_urls
         }
         for future in as_completed(futures):
+            details_checked += 1
             result = future.result()
             if result is not None and result.url.strip():
                 results.append(result)
-    return results
+    stats = GoogleMapsDiscoveryStats(
+        place_urls=len(place_urls),
+        details_checked=details_checked,
+        websites_found=len(results),
+    )
+    return results, stats
 
 
 def google_maps_location_plans(
