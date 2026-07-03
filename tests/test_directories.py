@@ -450,6 +450,55 @@ class DirectoryParserTests(unittest.TestCase):
         self.assertEqual(entries[0].website, "https://www.demo-kanzlei.example")
         self.assertEqual(entries[0].email, "info@demo-kanzlei.example")
 
+    def test_parse_herold_listing_and_detail(self) -> None:
+        from lead_research.directories import (
+            build_herold_url,
+            parse_herold_detail_html,
+            parse_herold_detail_name,
+            parse_herold_detail_website,
+            parse_herold_listing_html,
+        )
+
+        self.assertEqual(
+            build_herold_url("Steuerberater", "Wien"),
+            "https://www.herold.at/gelbe-seiten/wien/steuerberater/",
+        )
+        listings = parse_herold_listing_html(
+            """
+            <a href="/gelbe-seiten/wien/TLhrv/steuerberatung-weiss/"
+               data-ht-label="company_name" data-ht-value="2026962">
+              <picture alt="Logo von Steuerberatung Weiß"></picture>
+              <span><!--t=at-->Steuerberatung Weiß<!----></span>
+            </a>
+            """
+        )
+        self.assertEqual(
+            listings[0],
+            (
+                "Steuerberatung Weiß",
+                "https://www.herold.at/gelbe-seiten/wien/TLhrv/steuerberatung-weiss/",
+            ),
+        )
+        website = parse_herold_detail_website(
+            '<a href="https://www.demo-steuerberatung.example" data-ht-label="use_other_contact_info">'
+            '<i class="icon icon-internet"></i></a>'
+            '<a href="https://www.facebook.com/demo">Facebook</a>'
+        )
+        self.assertEqual(website, "https://www.demo-steuerberatung.example")
+        name = parse_herold_detail_name(
+            "<title>Steuerberatung Weiß in 1010 Wien 1 (Innere Stadt) | herold.at</title>"
+        )
+        self.assertEqual(name, "Steuerberatung Weiß")
+        entry = parse_herold_detail_html(
+            '<a href="mailto:office@demo-steuerberatung.example">Mail</a>'
+            '<a href="https://www.demo-steuerberatung.example" data-ht-label="use_other_contact_info">Web</a>',
+            name="Steuerberatung Weiß",
+            source_url="https://www.herold.at/gelbe-seiten/wien/TLhrv/demo/",
+        )
+        assert entry is not None
+        self.assertEqual(entry.email, "office@demo-steuerberatung.example")
+        self.assertEqual(entry.website, "https://www.demo-steuerberatung.example")
+
     def test_parse_steuerberater_filters_and_detail(self) -> None:
         from lead_research.directories import (
             parse_steuerberater_company_filters,
