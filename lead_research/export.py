@@ -12,7 +12,6 @@ CSV_FIELDS = [
     "category",
     "company_name",
     "email",
-    "phone",
     "website",
     "source_url",
     "page_title",

@@ -31,7 +31,6 @@ GOOGLE_MAPS_HOST_MARKERS = (
 _PLACE_PATH_RE = re.compile(r"/maps/place/([^/?#\"]+)")
 _ARIA_WEBSITE_RE = re.compile(r'aria-label="(?:Website|Webseite):\s*([^"]+)"', re.IGNORECASE)
 _WEBSITE_HREF_RE = re.compile(r'href="(https?://[^"]+)"', re.IGNORECASE)
-_TEL_HREF_RE = re.compile(r'href="tel:([^"]+)"', re.IGNORECASE)
 _JSON_WEBSITE_RE = re.compile(
     r'"(?:website|url)":"(https?://(?![^"]*(?:google|gstatic|ggpht))[^"]+)"',
     re.IGNORECASE,
@@ -145,13 +144,6 @@ def _website_from_chunk(chunk: str) -> str:
     return ""
 
 
-def _phone_from_chunk(chunk: str) -> str:
-    match = _TEL_HREF_RE.search(chunk)
-    if not match:
-        return ""
-    return re.sub(r"\s+", " ", match.group(1).strip())
-
-
 def parse_google_maps_listing_html(page_html: str) -> list[SearchResult]:
     results: list[SearchResult] = []
     seen_websites: set[str] = set()
@@ -170,33 +162,22 @@ def parse_google_maps_listing_html(page_html: str) -> list[SearchResult]:
         if not name:
             continue
         chunk = segment[:1200]
-        website = _website_from_chunk(chunk)
-        phone = _phone_from_chunk(chunk)
         place_url = f"https://www.google.com/maps/place/{place_slug}"
-        if website:
-            key = website.lower().rstrip("/")
-            if key in seen_websites:
-                continue
-            seen_websites.add(key)
-            results.append(
-                SearchResult(
-                    title=name,
-                    url=website,
-                    snippet="Google Maps",
-                    directory_phone=phone,
-                    directory_source_url=place_url,
-                )
+        website = _website_from_chunk(chunk)
+        if not website:
+            continue
+        key = website.lower().rstrip("/")
+        if key in seen_websites:
+            continue
+        seen_websites.add(key)
+        results.append(
+            SearchResult(
+                title=name,
+                url=website,
+                snippet="Google Maps",
+                directory_source_url=place_url,
             )
-        elif phone:
-            results.append(
-                SearchResult(
-                    title=name,
-                    url="",
-                    snippet="Google Maps",
-                    directory_phone=phone,
-                    directory_source_url=place_url,
-                )
-            )
+        )
 
     if results:
         return results
@@ -209,14 +190,11 @@ def parse_google_maps_listing_html(page_html: str) -> list[SearchResult]:
         if key in seen_websites:
             continue
         seen_websites.add(key)
-        chunk = page_html[max(0, match.start() - 500) : match.start() + 500]
-        phone = _phone_from_chunk(chunk)
         results.append(
             SearchResult(
                 title=normalized_host(website),
                 url=website,
                 snippet="Google Maps",
-                directory_phone=phone,
             )
         )
     return results

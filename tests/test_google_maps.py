@@ -57,7 +57,15 @@ class GoogleMapsParserTests(unittest.TestCase):
         urls = {result.url for result in results if result.url}
         self.assertIn("https://www.spedition-muster.de/kontakt", urls)
         self.assertIn("https://www.kurier-demo.example", urls)
-        self.assertTrue(any(result.directory_phone for result in results))
+        self.assertFalse(any(result.directory_phone for result in results))
+
+    def test_parse_google_maps_skips_phone_only_entries(self) -> None:
+        html = """
+        <a href="https://www.google.com/maps/place/Nur+Telefon+GmbH/data=abc">Nur Telefon GmbH</a>
+        <a href="tel:+49201123456">Anrufen</a>
+        """
+        results = parse_google_maps_listing_html(html)
+        self.assertEqual(results, [])
 
     def test_google_maps_location_plans_include_country_and_cities(self) -> None:
         plans = google_maps_location_plans("versand", "", ("DE",), limit=500)

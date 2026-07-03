@@ -729,9 +729,7 @@ def google_maps_result_key(result: SearchResult) -> str:
         return result.url.lower().rstrip("/")
     if result.directory_source_url.strip():
         return result.directory_source_url.lower().rstrip("/")
-    title = result.title.strip().lower()
-    phone = result.directory_phone.strip()
-    return f"{title}|{phone}" if title or phone else ""
+    return result.title.strip().lower()
 
 
 def zenrows_plan_key(query_text: str, country_code: str) -> str:

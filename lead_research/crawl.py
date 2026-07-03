@@ -8,7 +8,7 @@ import urllib.robotparser
 from dataclasses import dataclass
 from typing import Callable
 
-from .extract import extract_emails, extract_phone, normalized_host, parse_page, strip_fragment
+from .extract import extract_emails, normalized_host, parse_page, strip_fragment
 from .extract import normalize_email
 from .http import read_response_text, urlopen
 from .models import Lead, SearchResult, classify_email
@@ -97,7 +97,6 @@ class LeadCrawler:
         seen_emails: set[str] = set()
         leads: list[Lead] = []
         page_title = result.title
-        phone = ""
         fetched = 0
         attempts = 0
         max_attempts = self.config.max_pages_per_site + len(CONTACT_PATH_GUESSES) + 2
@@ -130,7 +129,6 @@ class LeadCrawler:
             html_text, final_url = response
             title, contact_links = parse_page(html_text, final_url)
             page_title = title or page_title
-            phone = phone or extract_phone(html_text)
 
             for email in extract_emails(html_text):
                 if email in seen_emails:
@@ -145,7 +143,6 @@ class LeadCrawler:
                     website=final_url,
                     email=email,
                     company_name=infer_company_name(page_title, final_url),
-                    phone=phone,
                     page_title=page_title,
                     consent_status=status,
                     notes=[f"Search snippet: {result.snippet}"] if result.snippet else [],
@@ -182,7 +179,6 @@ class LeadCrawler:
             website=website,
             email=email,
             company_name=result.title,
-            phone=result.directory_phone,
             page_title=result.title,
             consent_status=status,
             notes=[f"Branchenverzeichnis: {result.snippet}"] if result.snippet else ["Branchenverzeichnis"],
