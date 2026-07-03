@@ -306,6 +306,8 @@ def build_directory_fetch_config(
     mass_mode: bool | None = None,
 ) -> DirectoryFetchConfig:
     mass = directory_mass_mode_enabled() if mass_mode is None else mass_mode
+    if mass_mode is None and fast_mode is True:
+        mass = False
     fast = False if mass else (directory_fast_mode_enabled() if fast_mode is None else fast_mode)
     detail_parallel = directory_detail_parallel_workers(detail_parallel_requests)
     if mass and (detail_parallel_requests is None or detail_parallel_requests <= 0):
@@ -1175,10 +1177,9 @@ def _parallel_process_items[T, R](
             maybe_sleep(directory_request_delay())
         return results
 
-    ctx = copy_context()
     results: list[R] = []
     with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="capper-dir-detail") as executor:
-        futures = [executor.submit(ctx.run, worker, item) for item in items]
+        futures = [executor.submit(copy_context().run, worker, item) for item in items]
         for future in as_completed(futures):
             result = future.result()
             if result is not None:

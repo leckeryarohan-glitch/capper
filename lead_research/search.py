@@ -11,6 +11,7 @@ import urllib.parse
 import urllib.request
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextvars import copy_context
 from dataclasses import dataclass
 from math import ceil
 from pathlib import Path
@@ -1535,7 +1536,7 @@ class DirectorySearchProvider(SearchProvider):
                     return label, []
 
             with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="capper-directories") as executor:
-                futures = [executor.submit(run_scraper, item) for item in active_scrapers]
+                futures = [executor.submit(copy_context().run, run_scraper, item) for item in active_scrapers]
                 for future in as_completed(futures):
                     label, entries = future.result()
                     added = directory_entries_to_results(entries, limit=limit - len(results), seen=seen)
