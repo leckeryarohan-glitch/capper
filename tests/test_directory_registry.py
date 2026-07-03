@@ -69,6 +69,22 @@ class DirectoryRegistryTests(unittest.TestCase):
         self.assertIn("lieferanten_europages", implemented_ids)
         self.assertIn("europages", implemented_ids)
 
+    def test_lieferanten_b2b_marketplaces_are_implemented(self) -> None:
+        registry = build_directory_source_registry()
+        implemented_ids = {spec.id for spec in registry if spec.implemented}
+        unavailable_ids = {spec.id for spec in unavailable_directory_sources(registry)}
+
+        self.assertIn("alibaba", implemented_ids)
+        self.assertIn("india_mart", implemented_ids)
+        self.assertIn("made_in_china", implemented_ids)
+        self.assertIn("marktplaetze_alibaba", implemented_ids)
+        self.assertNotIn("lieferanten_india_mart", unavailable_ids)
+        self.assertNotIn("lieferanten_made_in_china", unavailable_ids)
+        self.assertIn("marktplaetze_amazon_seller", unavailable_ids)
+        self.assertIn("marktplaetze_faire", unavailable_ids)
+        self.assertIn("marktplaetze_ankorstore", unavailable_ids)
+        self.assertIn("marktplaetze_ebay_shops", unavailable_ids)
+
     def test_stepstone_not_marked_unavailable(self) -> None:
         registry = build_directory_source_registry()
         unavailable_ids = {spec.id for spec in unavailable_directory_sources(registry)}

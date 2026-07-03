@@ -244,7 +244,8 @@ class DirectoryEntry:
 
 
 def normalize_directory_email(value: str) -> str:
-    cleaned = normalize_email(value)
+    cleaned = re.sub(r"^(?:e-?mail|mailto)\s*:\s*", "", value.strip(), flags=re.IGNORECASE)
+    cleaned = normalize_email(cleaned)
     if not cleaned or "@" not in cleaned:
         return ""
     local, _, domain = cleaned.partition("@")
@@ -2017,6 +2018,114 @@ def parse_wlw_detail_html(page_html: str, *, name: str, source_url: str) -> Dire
     )
 
 
+def parse_alibaba_listing_html(page_html: str) -> list[tuple[str, str]]:
+    listings: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for match in re.finditer(
+        r"//([a-z0-9-]+\.en\.alibaba\.com)/(?:[a-z]{2}_[A-Z]{2}/)?company_profile\.html",
+        page_html,
+        re.IGNORECASE,
+    ):
+        host = match.group(1).lower()
+        detail_url = f"https://{host}/company_profile.html"
+        if detail_url in seen:
+            continue
+        seen.add(detail_url)
+        chunk = page_html[max(0, match.start() - 800) : match.end() + 120]
+        name_match = re.search(r'title="([^"]{3,120})"', chunk)
+        name = html.unescape(name_match.group(1).strip()) if name_match else name_from_url_slug(host.split(".")[0])
+        listings.append((name, detail_url))
+    return listings
+
+
+def parse_alibaba_detail_name(page_html: str) -> str:
+    match = re.search(r"<title>([^<]+)</title>", page_html, re.IGNORECASE)
+    if not match:
+        return ""
+    title = html.unescape(match.group(1).strip())
+    return re.split(r"\s+[-–|]\s+", title)[0].strip()
+
+
+def parse_alibaba_detail_website(page_html: str) -> str:
+    for pattern in (
+        r'"companyHomepage"\s*:\s*"(https?://[^"]+)"',
+        r'"homePage"\s*:\s*"(https?://[^"]+)"',
+        r'"companyWebsite"\s*:\s*"(https?://[^"]+)"',
+    ):
+        match = re.search(pattern, page_html, re.IGNORECASE)
+        if match:
+            candidate = normalize_directory_website(html.unescape(match.group(1)))
+            if candidate and is_external_business_url(candidate):
+                return candidate
+    match = re.search(
+        r'(?:property="og:url"|rel="canonical")[^>]+(?:content|href)="(https://[a-z0-9-]+\.en\.alibaba\.com)/?',
+        page_html,
+        re.IGNORECASE,
+    )
+    if match:
+        return normalize_result_url(match.group(1) + "/")
+    match = re.search(r"https://[a-z0-9-]+\.en\.alibaba\.com/?", page_html, re.IGNORECASE)
+    if match:
+        return normalize_result_url(match.group(0))
+    return ""
+
+
+def parse_indiamart_listing_html(page_html: str) -> list[tuple[str, str]]:
+    listings: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for match in re.finditer(r'href="(/company/[^"?#]+)[^"]*"[^>]*>([^<]{3,120})</a>', page_html, re.IGNORECASE):
+        path = html.unescape(match.group(1)).rstrip("/")
+        name = html.unescape(match.group(2).strip())
+        if not name or name.lower() in {"company", "view profile"}:
+            continue
+        detail_url = f"https://export.indiamart.com{path}/"
+        if detail_url in seen:
+            continue
+        seen.add(detail_url)
+        listings.append((name, detail_url))
+    return listings
+
+
+def parse_indiamart_detail_name(page_html: str) -> str:
+    match = re.search(r"<title>([^<]+)</title>", page_html, re.IGNORECASE)
+    if not match:
+        return ""
+    title = html.unescape(match.group(1).strip())
+    return re.split(r"\s+[-–|]\s+", title)[0].strip()
+
+
+def parse_indiamart_detail_website(page_html: str) -> str:
+    for pattern in (
+        r'"url"\s*:\s*"(https://export\.indiamart\.com/company/[^"]+)"',
+        r'property="og:url"\s+content="(https://export\.indiamart\.com/company/[^"]+)"',
+        r'rel="canonical"\s+href="(https://export\.indiamart\.com/company/[^"]+)"',
+    ):
+        match = re.search(pattern, page_html, re.IGNORECASE)
+        if match:
+            return normalize_result_url(html.unescape(match.group(1)))
+    match = re.search(r"https://export\.indiamart\.com/company/[a-z0-9-]+/?", page_html, re.IGNORECASE)
+    if match:
+        return normalize_result_url(match.group(0))
+    return ""
+
+
+def parse_made_in_china_listing_html(page_html: str) -> list[tuple[str, str]]:
+    listings: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for match in re.finditer(
+        r'<a[^>]+href="(//[a-z0-9-]+\.en\.made-in-china\.com)"[^>]*>([^<]{3,120})</a>',
+        page_html,
+        re.IGNORECASE,
+    ):
+        website = normalize_result_url("https:" + html.unescape(match.group(1)))
+        name = html.unescape(match.group(2).strip())
+        if not website or website in seen:
+            continue
+        seen.add(website)
+        listings.append((name, website))
+    return listings
+
+
 def parse_steuerberater_detail_html(page_html: str, *, name: str, source_url: str) -> DirectoryEntry | None:
     email = pick_directory_email(page_html)
     website = ""
@@ -2179,6 +2288,35 @@ def build_wlw_url(category: str, location: str, page: int) -> str:
         "page": str(max(page, 1)),
     }
     return f"https://www.wlw.de/de/suche?{urllib.parse.urlencode(params)}"
+
+
+def build_alibaba_url(category: str, location: str, page: int) -> str:
+    query = category.strip() or "supplier"
+    if location.strip():
+        query = f"{query} {location.strip()}"
+    params: dict[str, str] = {"SearchText": query}
+    if page > 1:
+        params["page"] = str(page)
+    return f"https://www.alibaba.com/trade/search?{urllib.parse.urlencode(params)}"
+
+
+def build_indiamart_url(category: str, location: str) -> str:
+    query = category.strip() or "supplier"
+    if location.strip():
+        query = f"{query} {location.strip()}"
+    return f"https://export.indiamart.com/search.php?{urllib.parse.urlencode({'ss': query})}"
+
+
+def build_made_in_china_url(category: str, location: str) -> str:
+    query = category.strip() or "supplier"
+    if location.strip():
+        query = f"{query} {location.strip()}"
+    params = {
+        "subaction": "hunt",
+        "style": "b",
+        "word": query,
+    }
+    return f"https://www.made-in-china.com/companysearch.do?{urllib.parse.urlencode(params)}"
 
 
 def build_treatwell_url(category: str, location: str, page: int) -> str:
@@ -2463,6 +2601,59 @@ def scrape_wlw(category: str, location: str, limit: int) -> list[DirectoryEntry]
         page += 1
         time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
     return enrich_wlw_entries(listings, max_detail_fetches=limit)[:limit]
+
+
+def scrape_alibaba(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    listings: list[tuple[str, str]] = []
+    page = 1
+    while len(listings) < limit and page <= 3:
+        source_url = build_alibaba_url(category, location, page)
+        page_html = fetch_directory_html(source_url)
+        page_listings = parse_alibaba_listing_html(page_html)
+        if not page_listings:
+            break
+        listings.extend(page_listings)
+        page += 1
+        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+    return enrich_detail_name_and_website(
+        listings,
+        max_detail_fetches=limit,
+        parse_detail_name=parse_alibaba_detail_name,
+        parse_detail_website=parse_alibaba_detail_website,
+        source_name="Alibaba",
+    )[:limit]
+
+
+def scrape_indiamart(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    source_url = build_indiamart_url(category, location)
+    page_html = fetch_directory_html(source_url)
+    listings = parse_indiamart_listing_html(page_html)
+    return enrich_detail_name_and_website(
+        listings,
+        max_detail_fetches=limit,
+        parse_detail_name=parse_indiamart_detail_name,
+        parse_detail_website=parse_indiamart_detail_website,
+        source_name="IndiaMART",
+    )[:limit]
+
+
+def scrape_made_in_china(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    source_url = build_made_in_china_url(category, location)
+    page_html = fetch_directory_html(source_url)
+    listings = parse_made_in_china_listing_html(page_html)
+    entries: list[DirectoryEntry] = []
+    for name, website in listings[:limit]:
+        if not website:
+            continue
+        entries.append(
+            DirectoryEntry(
+                name=name,
+                website=website,
+                source_url=website,
+                snippet="Made-in-China",
+            )
+        )
+    return entries
 
 
 def enrich_treatwell_entries(listings: list[tuple[str, str]], *, max_detail_fetches: int) -> list[DirectoryEntry]:
@@ -2803,6 +2994,9 @@ def _directory_scraper_map() -> dict[str, callable]:
         "wko": scrape_wko,
         "golocal": scrape_golocal,
         "wlw": scrape_wlw,
+        "alibaba": scrape_alibaba,
+        "indiamart": scrape_indiamart,
+        "made_in_china": scrape_made_in_china,
         "treatwell": scrape_treatwell,
         "treatwell_fitness": scrape_treatwell_fitness,
         "jameda_physio": scrape_jameda_physio,
