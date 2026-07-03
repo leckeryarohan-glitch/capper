@@ -5,11 +5,13 @@ import unittest
 from unittest.mock import patch
 
 from lead_research.google_maps import (
+    GoogleMapsFetchError,
     build_google_maps_search_url,
     build_zenrows_google_maps_request_url,
     css_extractor_values,
     discover_google_maps_results,
     extract_place_urls_from_html,
+    fetch_google_maps_place_urls,
     google_maps_cities_budget,
     google_maps_location_plans,
     google_maps_places_per_city,
@@ -129,8 +131,8 @@ class GoogleMapsParserTests(unittest.TestCase):
         plans = google_maps_location_plans("versand", "", ("DE",), limit=500)
         labels = [location for location, _country in plans]
 
-        self.assertIn("Deutschland", labels)
         self.assertIn("Berlin", labels)
+        self.assertNotIn("Deutschland", labels)
         self.assertGreater(len(plans), 100)
 
     def test_google_maps_cities_budget_scales_with_limit(self) -> None:
@@ -141,6 +143,19 @@ class GoogleMapsParserTests(unittest.TestCase):
     def test_google_maps_places_per_city_scales_with_limit(self) -> None:
         self.assertGreaterEqual(google_maps_places_per_city(5000, 1600), 10)
         self.assertLessEqual(google_maps_places_per_city(5000, 1600), 60)
+
+    def test_fetch_google_maps_place_urls_returns_empty_on_422(self) -> None:
+        with patch(
+            "lead_research.google_maps.fetch_zenrows_css_payload",
+            side_effect=GoogleMapsFetchError(
+                "Google Maps ZenRows request failed: HTTP Error 422: Unprocessable Entity"
+            ),
+        ):
+            urls = fetch_google_maps_place_urls(
+                "key",
+                "https://www.google.de/maps/search/hotel+Dresden?hl=de",
+            )
+        self.assertEqual(urls, [])
 
     def test_discover_google_maps_results_fetches_listings_then_details(self) -> None:
         def fake_css_payload(api_key, target_url, *, css_extractor, **_kwargs):
