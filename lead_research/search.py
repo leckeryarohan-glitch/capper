@@ -190,6 +190,7 @@ SOURCE_LABELS = {
     "BingSearchProvider": "Bing",
     "SerpApiSearchProvider": "SerpAPI",
     "ZenRowsSearchProvider": "ZenRows",
+    "GoogleMapsSearchProvider": "Google Maps",
     "CommonSourcesSearchProvider": "Branchenquellen",
     "DirectorySearchProvider": "Branchenverzeichnisse",
     "MultiSourceProvider": "Kombiniert",
@@ -642,6 +643,95 @@ class ZenRowsSearchProvider(SearchProvider):
 
         self._report(f"ZenRows: {len(results)} Websites gefunden")
         return results
+
+
+class GoogleMapsSearchProvider(SearchProvider):
+    """Experimental local business discovery via Google Maps + ZenRows Universal API."""
+
+    def __init__(self, zenrows_api_key: str | None = None, *, proxy_country: str = "de"):
+        from .google_maps import (
+            GoogleMapsFetchError,
+            build_google_maps_search_url,
+            fetch_google_maps_html,
+            google_maps_location_plans,
+            google_maps_scroll_steps,
+            parse_google_maps_listing_html,
+        )
+
+        self._fetch_error = GoogleMapsFetchError
+        self._build_google_maps_search_url = build_google_maps_search_url
+        self._fetch_google_maps_html = fetch_google_maps_html
+        self._google_maps_location_plans = google_maps_location_plans
+        self._google_maps_scroll_steps = google_maps_scroll_steps
+        self._parse_google_maps_listing_html = parse_google_maps_listing_html
+        self.zenrows_api_key = _resolve_api_key(zenrows_api_key, "ZENROWS_API_KEY")
+        if not self.zenrows_api_key:
+            raise SearchProviderError("ZENROWS_API_KEY is required for Google Maps search.")
+        self.proxy_country = proxy_country
+
+    def search(
+        self,
+        category: str,
+        location: str,
+        limit: int,
+        countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+    ) -> list[SearchResult]:
+        if limit < 1:
+            return []
+
+        results: list[SearchResult] = []
+        seen: set[str] = set()
+        plans = self._google_maps_location_plans(category, location, countries, limit=limit)
+        self._report(
+            f"Google Maps (ZenRows): bis zu {limit} Websites — "
+            f"{len(plans)} Orte, {self._google_maps_scroll_steps()} Scroll-Schritte ..."
+        )
+
+        for plan_index, (plan_location, country_code) in enumerate(plans, start=1):
+            if len(results) >= limit:
+                break
+            locale_country, _tld = ZENROWS_LOCALE.get(country_code, ZENROWS_LOCALE["DE"])
+            target_url = self._build_google_maps_search_url(category, plan_location)
+            self._report(
+                f"Google Maps: {category} in {plan_location} "
+                f"({plan_index}/{len(plans)}) ..."
+            )
+            try:
+                page_html = self._fetch_google_maps_html(
+                    self.zenrows_api_key,
+                    target_url,
+                    proxy_country=locale_country,
+                    scroll_steps=self._google_maps_scroll_steps(),
+                )
+            except self._fetch_error as exc:
+                self._report(f"Google Maps: {exc}")
+                continue
+
+            added = 0
+            for result in self._parse_google_maps_listing_html(page_html):
+                key = google_maps_result_key(result)
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                results.append(result)
+                added += 1
+                if len(results) >= limit:
+                    break
+            if added:
+                self._report(f"Google Maps: +{added} aus {plan_location} (gesamt {len(results)})")
+
+        self._report(f"Google Maps: {len(results)} Websites gefunden")
+        return results[:limit]
+
+
+def google_maps_result_key(result: SearchResult) -> str:
+    if result.url.strip():
+        return result.url.lower().rstrip("/")
+    if result.directory_source_url.strip():
+        return result.directory_source_url.lower().rstrip("/")
+    title = result.title.strip().lower()
+    phone = result.directory_phone.strip()
+    return f"{title}|{phone}" if title or phone else ""
 
 
 def zenrows_plan_key(query_text: str, country_code: str) -> str:
@@ -1694,6 +1784,7 @@ def combined_provider(
     directory_parallel_requests: int | None = None,
     directory_detail_parallel_requests: int | None = None,
     directory_mass_mode: bool = False,
+    use_google_maps: bool = False,
 ) -> SearchProvider:
     """Combine the selected no-key and key-based sources for maximum coverage."""
     providers: list[SearchProvider] = []
@@ -1726,6 +1817,8 @@ def combined_provider(
         providers.append(SerpApiSearchProvider(api_key=resolved_serpapi))
 
     resolved_zenrows = _resolve_api_key(zenrows_key, "ZENROWS_API_KEY")
+    if use_google_maps and resolved_zenrows:
+        providers.append(GoogleMapsSearchProvider(zenrows_api_key=resolved_zenrows))
     if use_zenrows_google and resolved_zenrows:
         providers.append(ZenRowsSearchProvider(api_key=resolved_zenrows))
 
