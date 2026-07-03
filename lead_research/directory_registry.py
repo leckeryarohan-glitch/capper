@@ -161,6 +161,7 @@ def build_directory_source_registry(
         ("Branchen", "branchen_fitnessstudios", "Fitnessstudios", "treatwell_fitness"),
         ("Branchen", "branchen_physiotherapeuten", "Physiotherapeuten", "jameda_physio"),
         ("Branchen", "branchen_zahnaerzte", "Zahnaerzte", "jameda_zahn"),
+        ("Branchen", "docfinder_zahn", "DocFinder Zahnaerzte", "docfinder_zahn"),
         ("Lokale Portale", "golocal", "GoLocal", "golocal"),
         ("Lieferanten", "wlw", "Wer liefert was (WLW)", "wlw"),
         ("Lieferanten", "lieferanten_europages", "Europages", "europages"),
