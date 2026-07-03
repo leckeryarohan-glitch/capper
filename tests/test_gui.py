@@ -6,7 +6,14 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from lead_research.gui import build_simple_gui_argv, run_gui_discovery
+from lead_research.gui import (
+    apply_gui_settings,
+    build_simple_gui_argv,
+    checkpoint_settings_for_gui,
+    collect_gui_settings,
+    run_gui_discovery,
+)
+from lead_research.checkpoint import new_discovery_checkpoint, save_discovery_checkpoint
 from lead_research.models import Lead, SearchResult
 from lead_research.search import SearchProviderError
 
@@ -147,6 +154,106 @@ class GuiArgumentTests(unittest.TestCase):
         self.assertTrue(captured["use_directories"])
         self.assertFalse(captured["use_zenrows_google"])
         self.assertFalse(captured["use_serpapi"])
+        self.assertEqual(captured["directory_parallel_requests"], 20)
+
+    def test_run_gui_discovery_passes_directory_parallel_requests(self) -> None:
+        events: "queue.Queue[tuple]" = queue.Queue()
+        captured: dict[str, object] = {}
+
+        def fake_combined_provider(**kwargs):
+            captured.update(kwargs)
+            return FakeProvider()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "leads.csv"
+            with patch("lead_research.gui.combined_provider", side_effect=fake_combined_provider), patch(
+                "lead_research.pipeline.LeadCrawler", FakeCrawler
+            ):
+                run_gui_discovery(
+                    {
+                        "category": "hotel",
+                        "output": str(output),
+                        "use_directories": True,
+                        "use_zenrows_google": False,
+                        "use_serpapi": False,
+                        "zenrows_key": "zr-key",
+                        "directory_parallel": "50",
+                    },
+                    events,
+                )
+
+        self.assertEqual(captured["directory_parallel_requests"], 50)
+
+    def test_collect_and_apply_gui_settings_roundtrip(self) -> None:
+        original = {
+            "category": "logistik",
+            "location": "Berlin",
+            "max_leads": "12000",
+            "limit": "3000",
+            "workers": "8",
+            "directory_parallel": "40",
+            "use_osm": False,
+            "use_duckduckgo": True,
+            "use_directories": True,
+            "use_zenrows_google": False,
+            "use_serpapi": False,
+            "country_de": True,
+            "country_at": True,
+            "dir_source_gelbeseiten": True,
+            "dir_source_cylex": False,
+        }
+        collected = collect_gui_settings(original)
+        target: dict[str, object] = {}
+        apply_gui_settings(target, collected)
+        self.assertEqual(target["category"], "logistik")
+        self.assertEqual(target["location"], "Berlin")
+        self.assertEqual(target["limit"], "3000")
+        self.assertEqual(target["max_leads"], "12000")
+        self.assertEqual(target["workers"], "8")
+        self.assertEqual(target["directory_parallel"], "40")
+        self.assertFalse(target["use_osm"])
+        self.assertFalse(target["dir_source_cylex"])
+        self.assertTrue(target["dir_source_gelbeseiten"])
+
+    def test_checkpoint_settings_for_gui_reads_saved_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "checkpoint.json"
+            checkpoint = new_discovery_checkpoint(
+                category="logistik",
+                location="",
+                countries=("DE",),
+                limit=5000,
+                max_leads=20000,
+                dedupe_by="email",
+            )
+            checkpoint.config["gui_settings"] = collect_gui_settings(
+                {
+                    "category": "logistik",
+                    "location": "",
+                    "limit": "5000",
+                    "max_leads": "20000",
+                    "workers": "12",
+                    "directory_parallel": "50",
+                    "use_osm": True,
+                    "use_duckduckgo": False,
+                    "use_directories": True,
+                    "use_zenrows_google": True,
+                    "use_serpapi": False,
+                    "country_de": True,
+                    "country_at": False,
+                    "dir_source_gelbeseiten": True,
+                }
+            )
+            checkpoint.directory_completed_locations = ["Berlin"]
+            save_discovery_checkpoint(path, checkpoint)
+            settings = checkpoint_settings_for_gui(path)
+
+        assert settings is not None
+        self.assertEqual(settings["category"], "logistik")
+        self.assertEqual(settings["workers"], "12")
+        self.assertEqual(settings["directory_parallel"], "50")
+        self.assertFalse(settings["use_duckduckgo"])
+        self.assertIn("Berlin", str(settings["progress_summary"]))
 
     def test_run_gui_discovery_passes_directory_source_ids(self) -> None:
         from lead_research.directories import build_directory_source_registry

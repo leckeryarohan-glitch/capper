@@ -11,11 +11,13 @@ from typing import Callable
 from .checkpoint import (
     DiscoveryCheckpoint,
     append_lead,
+    clear_directory_search_progress,
     config_fingerprint,
     load_discovery_checkpoint,
     mark_result_crawled,
     new_discovery_checkpoint,
     save_discovery_checkpoint,
+    update_directory_search_progress,
     update_search_results,
     validate_checkpoint_config,
 )
@@ -26,6 +28,7 @@ from .extract import normalized_host
 from .models import ConsentStatus, Lead, LeadDeduplicator, SearchResult, search_result_crawl_key, search_result_display_label
 from .locations import DEFAULT_COUNTRIES
 from .search import SearchProvider, ZenRowsResumeState, find_zenrows_provider, is_zenrows_only_provider
+from .search import DirectoryResumeState, MultiSourceProvider, DirectorySearchProvider, find_directory_provider
 from .suppression import SuppressionList
 
 
@@ -103,6 +106,7 @@ def run_discovery(
     on_event: EventCallback | None = None,
     checkpoint: Path | None = None,
     resume: bool = False,
+    gui_settings: dict[str, object] | None = None,
 ) -> LeadStats:
     """Run a concurrent discovery: search, crawl websites in parallel, dedupe,
     suppress, and stream results to disk while reporting live statistics."""
@@ -127,7 +131,12 @@ def run_discovery(
             emit(
                 "status",
                 f"Checkpoint geladen: {len(loaded.search_results)} Websites, "
-                f"{len(loaded.crawled_urls)} gecrawlt, {len(loaded.leads)} Leads.",
+                f"{len(loaded.crawled_urls)} gecrawlt, {len(loaded.leads)} Leads."
+                + (
+                    f" Branchenverzeichnisse: {len(loaded.directory_completed_locations)} Orte fertig."
+                    if loaded.directory_completed_locations and not loaded.search_complete
+                    else ""
+                ),
             )
 
     if checkpoint_state is None:
@@ -139,6 +148,10 @@ def run_discovery(
             max_leads=config.max_leads,
             dedupe_by=config.dedupe_by,
         )
+
+    if gui_settings is not None:
+        checkpoint_state.config["gui_settings"] = gui_settings
+        save_discovery_checkpoint(checkpoint, checkpoint_state)
 
     emit("status", "Bereite Suche vor ...")
     try:
@@ -344,14 +357,55 @@ def _discover_websites(
                 "status",
                 "Hinweis: ZenRows-Checkpoint erkannt, aber kein ZenRows-Provider aktiv. Starte Suche neu.",
             )
-        search_results = provider.search(
-            config.category,
-            config.location,
-            config.limit,
-            config.countries,
+
+        directory_resume = None
+        if checkpoint_state.directory_completed_locations or checkpoint_state.directory_partial_results:
+            directory_resume = DirectoryResumeState(
+                results=checkpoint_state.directory_search_result_objects(),
+                seen=set(checkpoint_state.directory_seen_keys),
+                completed_locations=set(checkpoint_state.directory_completed_locations),
+            )
+
+        def persist_directory_progress(state: DirectoryResumeState) -> None:
+            update_directory_search_progress(
+                checkpoint_state,
+                results=state.results,
+                seen=state.seen,
+                completed_locations=state.completed_locations,
+            )
+            save_discovery_checkpoint(checkpoint_path, checkpoint_state)
+
+        directory_progress_callback = (
+            persist_directory_progress if find_directory_provider(provider) is not None else None
         )
+        if isinstance(provider, MultiSourceProvider):
+            search_results = provider.search(
+                config.category,
+                config.location,
+                config.limit,
+                config.countries,
+                directory_resume_state=directory_resume,
+                on_directory_location_complete=directory_progress_callback,
+            )
+        elif isinstance(provider, DirectorySearchProvider):
+            search_results = provider.search(
+                config.category,
+                config.location,
+                config.limit,
+                config.countries,
+                resume_state=directory_resume,
+                on_location_complete=directory_progress_callback,
+            )
+        else:
+            search_results = provider.search(
+                config.category,
+                config.location,
+                config.limit,
+                config.countries,
+            )
 
     checkpoint_state.search_complete = True
     update_search_results(checkpoint_state, search_results)
+    clear_directory_search_progress(checkpoint_state)
     save_discovery_checkpoint(checkpoint_path, checkpoint_state)
     return search_results

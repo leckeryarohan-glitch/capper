@@ -19,6 +19,9 @@ class DiscoveryCheckpoint:
     search_complete: bool = False
     search_results: list[dict[str, str]] = field(default_factory=list)
     zenrows_completed_plans: list[str] = field(default_factory=list)
+    directory_completed_locations: list[str] = field(default_factory=list)
+    directory_partial_results: list[dict[str, str]] = field(default_factory=list)
+    directory_seen_keys: list[str] = field(default_factory=list)
     crawled_urls: list[str] = field(default_factory=list)
     leads: list[dict[str, object]] = field(default_factory=list)
 
@@ -28,6 +31,9 @@ class DiscoveryCheckpoint:
 
     def search_result_objects(self) -> list[SearchResult]:
         return [search_result_from_dict(item) for item in self.search_results]
+
+    def directory_search_result_objects(self) -> list[SearchResult]:
+        return [search_result_from_dict(item) for item in self.directory_partial_results]
 
     def lead_objects(self) -> list[Lead]:
         return [lead_from_dict(item) for item in self.leads]
@@ -66,6 +72,21 @@ def validate_checkpoint_config(checkpoint: DiscoveryCheckpoint, expected: dict[s
             f"(abweichend: {labels}). Gleiche Kategorie, Ort, Laender und Limits verwenden "
             "oder einen neuen Checkpoint ohne --resume starten."
         )
+
+
+def checkpoint_progress_summary(checkpoint: DiscoveryCheckpoint) -> str:
+    parts = [
+        f"{len(checkpoint.search_results)} Websites",
+        f"{len(checkpoint.crawled_urls)} gecrawlt",
+        f"{len(checkpoint.leads)} Leads",
+    ]
+    if checkpoint.directory_completed_locations and not checkpoint.search_complete:
+        completed = checkpoint.directory_completed_locations
+        if len(completed) <= 3:
+            parts.append(f"{len(completed)} Branchenorte ({', '.join(completed)})")
+        else:
+            parts.append(f"{len(completed)} Branchenorte")
+    return ", ".join(parts)
 
 
 def lead_to_dict(lead: Lead) -> dict:
@@ -140,6 +161,9 @@ def load_discovery_checkpoint(path: Path | None) -> DiscoveryCheckpoint | None:
         search_complete=bool(payload.get("search_complete", False)),
         search_results=list(payload.get("search_results", [])),
         zenrows_completed_plans=list(payload.get("zenrows_completed_plans", [])),
+        directory_completed_locations=list(payload.get("directory_completed_locations", [])),
+        directory_partial_results=list(payload.get("directory_partial_results", [])),
+        directory_seen_keys=list(payload.get("directory_seen_keys", [])),
         crawled_urls=list(payload.get("crawled_urls", [])),
         leads=list(payload.get("leads", [])),
     )
@@ -158,6 +182,9 @@ def checkpoint_to_payload(checkpoint: DiscoveryCheckpoint) -> dict[str, object]:
         "search_complete": checkpoint.search_complete,
         "search_results": list(checkpoint.search_results),
         "zenrows_completed_plans": list(checkpoint.zenrows_completed_plans),
+        "directory_completed_locations": list(checkpoint.directory_completed_locations),
+        "directory_partial_results": list(checkpoint.directory_partial_results),
+        "directory_seen_keys": list(checkpoint.directory_seen_keys),
         "crawled_urls": list(checkpoint.crawled_urls),
         "leads": list(checkpoint.leads),
     }
@@ -188,3 +215,21 @@ def mark_result_crawled(checkpoint: DiscoveryCheckpoint, result: SearchResult) -
 
 def update_search_results(checkpoint: DiscoveryCheckpoint, results: list[SearchResult]) -> None:
     checkpoint.search_results = [search_result_to_dict(result) for result in results]
+
+
+def update_directory_search_progress(
+    checkpoint: DiscoveryCheckpoint,
+    *,
+    results: list[SearchResult],
+    seen: set[str],
+    completed_locations: set[str],
+) -> None:
+    checkpoint.directory_partial_results = [search_result_to_dict(result) for result in results]
+    checkpoint.directory_seen_keys = sorted(seen)
+    checkpoint.directory_completed_locations = sorted(completed_locations)
+
+
+def clear_directory_search_progress(checkpoint: DiscoveryCheckpoint) -> None:
+    checkpoint.directory_partial_results = []
+    checkpoint.directory_seen_keys = []
+    checkpoint.directory_completed_locations = []

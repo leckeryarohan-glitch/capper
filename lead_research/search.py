@@ -147,6 +147,8 @@ CATEGORY_SEARCH_VARIANTS: dict[str, tuple[str, ...]] = {
 
 ZENROWS_MASS_MODE_LIMIT = 500
 ZENROWS_MAX_PARALLEL_REQUESTS = 6
+DEFAULT_DIRECTORY_PARALLEL_REQUESTS = 20
+DIRECTORY_MAX_PARALLEL_REQUESTS = 100
 ZENROWS_DEEP_PAGINATION_START = 90
 ZENROWS_MEDIUM_PAGINATION_START = 40
 ZENROWS_LIGHT_PAGINATION_START = 10
@@ -379,6 +381,13 @@ def serpapi_items_to_results(data: dict) -> list[SearchResult]:
         for item in data.get("organic_results", [])
         if is_valid_lead_url(item.get("link", ""))
     ]
+
+
+@dataclass
+class DirectoryResumeState:
+    results: list[SearchResult]
+    seen: set[str]
+    completed_locations: set[str]
 
 
 @dataclass
@@ -642,6 +651,21 @@ def zenrows_parallel_workers(requested: int, mass_mode: bool, plan_count: int) -
     if not mass_mode or plan_count <= 30 or requested <= 1:
         return 1
     return max(1, min(ZENROWS_MAX_PARALLEL_REQUESTS, requested))
+
+
+def directory_parallel_workers(
+    active_scraper_count: int,
+    *,
+    use_zenrows: bool,
+    requested_parallel: int | None = None,
+) -> int:
+    if active_scraper_count < 1:
+        return 1
+    if not use_zenrows:
+        return active_scraper_count
+    cap = requested_parallel if requested_parallel and requested_parallel > 0 else DEFAULT_DIRECTORY_PARALLEL_REQUESTS
+    cap = max(1, min(cap, DIRECTORY_MAX_PARALLEL_REQUESTS))
+    return max(1, min(active_scraper_count, cap))
 
 
 def find_zenrows_provider(provider: SearchProvider) -> ZenRowsSearchProvider | None:
@@ -1278,6 +1302,9 @@ class MultiSourceProvider(SearchProvider):
         location: str,
         limit: int,
         countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+        *,
+        directory_resume_state: DirectoryResumeState | None = None,
+        on_directory_location_complete: Callable[[DirectoryResumeState], None] | None = None,
     ) -> list[SearchResult]:
         if limit < 1 or not self.providers:
             return []
@@ -1293,7 +1320,16 @@ class MultiSourceProvider(SearchProvider):
         grouped: list[list[SearchResult]] = []
         with ThreadPoolExecutor(max_workers=len(self.providers)) as executor:
             futures = {
-                executor.submit(self._safe_search, provider, category, location, limit, countries): provider
+                executor.submit(
+                    self._safe_search,
+                    provider,
+                    category,
+                    location,
+                    limit,
+                    countries,
+                    directory_resume_state,
+                    on_directory_location_complete,
+                ): provider
                 for provider in self.providers
             }
             for future in as_completed(futures):
@@ -1324,8 +1360,19 @@ class MultiSourceProvider(SearchProvider):
         location: str,
         limit: int,
         countries: tuple[str, ...],
+        directory_resume_state: DirectoryResumeState | None = None,
+        on_directory_location_complete: Callable[[DirectoryResumeState], None] | None = None,
     ) -> list[SearchResult]:
         try:
+            if isinstance(provider, DirectorySearchProvider):
+                return provider.search(
+                    category,
+                    location,
+                    limit,
+                    countries,
+                    resume_state=directory_resume_state,
+                    on_location_complete=on_directory_location_complete,
+                )
             return provider.search(category, location, limit, countries)
         except SearchProviderError:
             return []
@@ -1376,11 +1423,13 @@ class DirectorySearchProvider(SearchProvider):
         allow_direct_fetch: bool = False,
         proxy_country: str = "de",
         enabled_directory_sources: set[str] | None = None,
+        parallel_requests: int | None = None,
     ):
         self.zenrows_api_key = _resolve_api_key(zenrows_api_key, "ZENROWS_API_KEY")
         self.allow_direct_fetch = allow_direct_fetch
         self.proxy_country = proxy_country
         self.enabled_directory_sources = enabled_directory_sources
+        self.parallel_requests = parallel_requests
 
     def search(
         self,
@@ -1388,6 +1437,9 @@ class DirectorySearchProvider(SearchProvider):
         location: str,
         limit: int,
         countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+        *,
+        resume_state: DirectoryResumeState | None = None,
+        on_location_complete: Callable[[DirectoryResumeState], None] | None = None,
     ) -> list[SearchResult]:
         from .directories import (
             DirectoryFetchConfig,
@@ -1427,12 +1479,29 @@ class DirectorySearchProvider(SearchProvider):
         per_source_limit = cap_directory_source_limit(
             max(1, ceil(per_location_limit / len(active_scrapers)))
         )
-        results: list[SearchResult] = []
-        seen: set[str] = set()
+        if resume_state:
+            results = list(resume_state.results)
+            seen = set(resume_state.seen)
+            completed_locations = set(resume_state.completed_locations)
+            if completed_locations:
+                self._report(
+                    f"Branchenverzeichnisse: Fortsetzung — {len(results)} Websites, "
+                    f"{len(completed_locations)}/{len(locations)} Orte fertig."
+                )
+        else:
+            results = []
+            seen: set[str] = set()
+            completed_locations: set[str] = set()
         fetch_mode = "ZenRows" if self.zenrows_api_key else "Direct"
-        max_workers = 2 if self.zenrows_api_key else len(active_scrapers)
+        max_workers = directory_parallel_workers(
+            len(active_scrapers),
+            use_zenrows=bool(self.zenrows_api_key),
+            requested_parallel=self.parallel_requests,
+        )
 
         for plan_index, plan_location in enumerate(locations, start=1):
+            if plan_location in completed_locations:
+                continue
             if len(results) >= limit:
                 break
             location_hint = (
@@ -1440,8 +1509,9 @@ class DirectorySearchProvider(SearchProvider):
                 if len(locations) > 1
                 else ""
             )
+            parallel_hint = f", {max_workers} parallel" if max_workers > 1 else ""
             self._report(
-                f"Branchenverzeichnisse ({fetch_mode}, {len(active_scrapers)} Quellen): "
+                f"Branchenverzeichnisse ({fetch_mode}, {len(active_scrapers)} Quellen{parallel_hint}): "
                 f"{category} in {plan_location}{location_hint} ..."
             )
 
@@ -1468,8 +1538,31 @@ class DirectorySearchProvider(SearchProvider):
                     if len(results) >= limit:
                         break
 
+            completed_locations.add(plan_location)
+            if on_location_complete:
+                on_location_complete(
+                    DirectoryResumeState(
+                        results=list(results),
+                        seen=set(seen),
+                        completed_locations=set(completed_locations),
+                    )
+                )
+
         self._report(f"Branchenverzeichnisse: {len(results)} Websites gefunden")
         return results[:limit]
+
+
+def find_directory_provider(provider: SearchProvider) -> "DirectorySearchProvider | None":
+    if isinstance(provider, DirectorySearchProvider):
+        return provider
+    if isinstance(provider, MultiSourceProvider):
+        for sub_provider in provider.providers:
+            found = find_directory_provider(sub_provider)
+            if found is not None:
+                return found
+    if isinstance(provider, CommonSourcesSearchProvider):
+        return find_directory_provider(provider.provider)
+    return None
 
 
 def build_query(category: str, location: str, *, broad: bool = False) -> str:
@@ -1564,6 +1657,7 @@ def combined_provider(
     serpapi_key: str | None = None,
     zenrows_key: str | None = None,
     enabled_directory_sources: set[str] | None = None,
+    directory_parallel_requests: int | None = None,
 ) -> SearchProvider:
     """Combine the selected no-key and key-based sources for maximum coverage."""
     providers: list[SearchProvider] = []
@@ -1579,6 +1673,7 @@ def combined_provider(
                     zenrows_api_key=resolved_zenrows_for_directories or None,
                     allow_direct_fetch=os.getenv("DIRECTORY_ALLOW_DIRECT_FETCH") == "1",
                     enabled_directory_sources=enabled_directory_sources,
+                    parallel_requests=directory_parallel_requests,
                 )
             )
     if os.getenv("GOOGLE_SEARCH_API_KEY") and os.getenv("GOOGLE_SEARCH_ENGINE_ID"):
