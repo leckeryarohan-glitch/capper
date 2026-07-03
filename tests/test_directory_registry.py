@@ -84,6 +84,16 @@ class DirectoryRegistryTests(unittest.TestCase):
         self.assertIn("lieferanten_thomasnet", unavailable_ids)
         self.assertIn("branchen_physiotherapeuten", unavailable_ids)
 
+    def test_branchen_trade_sources_are_implemented(self) -> None:
+        registry = build_directory_source_registry()
+        implemented_ids = {spec.id for spec in registry if spec.implemented}
+        unavailable_ids = {spec.id for spec in unavailable_directory_sources(registry)}
+
+        self.assertIn("branchen_restaurants", implemented_ids)
+        self.assertIn("branchen_elektriker", implemented_ids)
+        self.assertIn("branchen_fitnessstudios", implemented_ids)
+        self.assertNotIn("branchen_restaurants", unavailable_ids)
+
     def test_blocked_gastronomie_and_aerzte_sources_marked_unavailable(self) -> None:
         registry = build_directory_source_registry()
         unavailable_ids = {spec.id for spec in unavailable_directory_sources(registry)}
@@ -99,6 +109,7 @@ class DirectoryRegistryTests(unittest.TestCase):
         self.assertIn("branchen_notare", unavailable_ids)
         self.assertNotIn("aerzte_docfinder", unavailable_ids)
         self.assertNotIn("branchen_anwaltauskunft", unavailable_ids)
+        self.assertNotIn("steuerberater", unavailable_ids)
         self.assertNotIn("branchen_steuerberater", unavailable_ids)
         self.assertNotIn("gastronomie_restaurant_guru", unavailable_ids)
 

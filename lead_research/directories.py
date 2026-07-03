@@ -2347,6 +2347,11 @@ def scrape_treatwell(category: str, location: str, limit: int) -> list[Directory
     return enrich_treatwell_entries(listings, max_detail_fetches=limit)[:limit]
 
 
+def scrape_treatwell_fitness(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    query_category = category.strip() or "fitness"
+    return scrape_treatwell(query_category, location, limit)
+
+
 def scrape_steuerberater(category: str, location: str, limit: int) -> list[DirectoryEntry]:
     _ = category
     source_url = build_steuerberater_url(category, location)
@@ -2631,6 +2636,7 @@ def _directory_scraper_map() -> dict[str, callable]:
         "golocal": scrape_golocal,
         "wlw": scrape_wlw,
         "treatwell": scrape_treatwell,
+        "treatwell_fitness": scrape_treatwell_fitness,
     }
 
 
