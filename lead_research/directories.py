@@ -8,6 +8,8 @@ import time
 import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextvars import ContextVar, copy_context
 from dataclasses import dataclass
 
 from .extract import normalized_host
@@ -24,6 +26,34 @@ DIRECTORY_ZENROWS_STEALTH_MODE = "auto"
 DIRECTORY_ZENROWS_TIMEOUT_SECONDS = 60
 DIRECTORY_MAX_RESULTS_PER_SOURCE = 120
 DIRECTORY_MAX_DETAIL_FETCHES = 30
+DIRECTORY_FAST_DETAIL_FETCH_CAP = 10
+DIRECTORY_FAST_LISTING_PAGE_CAP = 1
+DEFAULT_DIRECTORY_DETAIL_PARALLEL = 8
+DIRECTORY_MAX_DETAIL_PARALLEL = 50
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return default
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+def directory_fast_mode_enabled() -> bool:
+    return os.getenv("DIRECTORY_FAST_MODE", "").strip() == "1"
 
 
 def cap_directory_source_limit(limit: int) -> int:
@@ -31,7 +61,56 @@ def cap_directory_source_limit(limit: int) -> int:
 
 
 def cap_directory_detail_fetches(limit: int) -> int:
-    return max(1, min(limit, DIRECTORY_MAX_DETAIL_FETCHES))
+    config = current_fetch_config()
+    effective_cap = config.max_detail_fetches
+    if effective_cap is None and directory_fast_mode_enabled():
+        effective_cap = DIRECTORY_FAST_DETAIL_FETCH_CAP
+    if effective_cap is None:
+        effective_cap = DIRECTORY_MAX_DETAIL_FETCHES
+    return max(1, min(limit, effective_cap))
+
+
+def directory_listing_page_limit() -> int:
+    config = current_fetch_config()
+    if config.max_listing_pages is not None:
+        return max(1, config.max_listing_pages)
+    if directory_fast_mode_enabled():
+        return DIRECTORY_FAST_LISTING_PAGE_CAP
+    return 3
+
+
+def directory_request_delay() -> float:
+    config = current_fetch_config()
+    if config.request_delay_seconds is not None:
+        return config.request_delay_seconds
+    if config.detail_parallel_workers > 1 or directory_fast_mode_enabled():
+        return 0.0
+    return _env_float("DIRECTORY_REQUEST_DELAY_SECONDS", DIRECTORY_REQUEST_DELAY_SECONDS)
+
+
+def directory_zenrows_delay() -> float:
+    config = current_fetch_config()
+    if config.zenrows_delay_seconds is not None:
+        return config.zenrows_delay_seconds
+    if config.detail_parallel_workers > 1 or directory_fast_mode_enabled():
+        return 0.0
+    return _env_float("DIRECTORY_ZENROWS_DELAY_SECONDS", DIRECTORY_ZENROWS_DELAY_SECONDS)
+
+
+def directory_detail_parallel_workers(requested: int | None = None) -> int:
+    if requested is not None and requested > 0:
+        return max(1, min(requested, DIRECTORY_MAX_DETAIL_PARALLEL))
+    env_value = _env_int("DIRECTORY_DETAIL_PARALLEL", 0)
+    if env_value > 0:
+        return max(1, min(env_value, DIRECTORY_MAX_DETAIL_PARALLEL))
+    if directory_fast_mode_enabled():
+        return DEFAULT_DIRECTORY_DETAIL_PARALLEL
+    return DEFAULT_DIRECTORY_DETAIL_PARALLEL
+
+
+def maybe_sleep(seconds: float) -> None:
+    if seconds > 0:
+        time.sleep(seconds)
 
 DIRECTORY_HOST_SUFFIXES = (
     "gelbeseiten.de",
@@ -175,14 +254,51 @@ class DirectoryFetchConfig:
     zenrows_api_key: str = ""
     proxy_country: str = "de"
     allow_direct_fallback: bool = False
+    detail_parallel_workers: int = 1
+    request_delay_seconds: float | None = None
+    zenrows_delay_seconds: float | None = None
+    max_detail_fetches: int | None = None
+    max_listing_pages: int | None = None
 
 
-_fetch_config = DirectoryFetchConfig()
+_fetch_config_var: ContextVar[DirectoryFetchConfig] = ContextVar(
+    "directory_fetch_config",
+    default=DirectoryFetchConfig(),
+)
+
+
+def current_fetch_config() -> DirectoryFetchConfig:
+    return _fetch_config_var.get()
 
 
 def configure_directory_fetch(config: DirectoryFetchConfig) -> None:
-    global _fetch_config
-    _fetch_config = config
+    _fetch_config_var.set(config)
+
+
+def build_directory_fetch_config(
+    *,
+    zenrows_api_key: str = "",
+    proxy_country: str = "de",
+    allow_direct_fallback: bool = False,
+    scraper_parallel_requests: int | None = None,
+    detail_parallel_requests: int | None = None,
+    fast_mode: bool | None = None,
+) -> DirectoryFetchConfig:
+    fast = directory_fast_mode_enabled() if fast_mode is None else fast_mode
+    detail_parallel = directory_detail_parallel_workers(detail_parallel_requests)
+    if detail_parallel <= 1 and scraper_parallel_requests and scraper_parallel_requests > 1:
+        detail_parallel = directory_detail_parallel_workers(None)
+    no_delay = detail_parallel > 1 or fast
+    return DirectoryFetchConfig(
+        zenrows_api_key=zenrows_api_key,
+        proxy_country=proxy_country,
+        allow_direct_fallback=allow_direct_fallback,
+        detail_parallel_workers=detail_parallel,
+        request_delay_seconds=0.0 if no_delay else None,
+        zenrows_delay_seconds=0.0 if no_delay else None,
+        max_detail_fetches=DIRECTORY_FAST_DETAIL_FETCH_CAP if fast else None,
+        max_listing_pages=DIRECTORY_FAST_LISTING_PAGE_CAP if fast else None,
+    )
 
 
 def resolve_directory_zenrows_key(explicit_key: str | None = None) -> str:
@@ -192,7 +308,7 @@ def resolve_directory_zenrows_key(explicit_key: str | None = None) -> str:
 
 
 def directory_fetch_requires_zenrows(config: DirectoryFetchConfig | None = None) -> bool:
-    active = config or _fetch_config
+    active = config or current_fetch_config()
     return not active.allow_direct_fallback
 
 
@@ -484,7 +600,7 @@ def fetch_directory_html_via_zenrows(
 
 
 def fetch_directory_html(url: str, *, timeout: int = DIRECTORY_ZENROWS_TIMEOUT_SECONDS) -> str:
-    config = _fetch_config
+    config = current_fetch_config()
     if config.zenrows_api_key:
         page_html = fetch_directory_html_via_zenrows(
             url,
@@ -492,7 +608,7 @@ def fetch_directory_html(url: str, *, timeout: int = DIRECTORY_ZENROWS_TIMEOUT_S
             proxy_country=config.proxy_country,
             timeout=timeout,
         )
-        time.sleep(DIRECTORY_ZENROWS_DELAY_SECONDS)
+        maybe_sleep(directory_zenrows_delay())
         return page_html
     if config.allow_direct_fallback:
         return fetch_directory_html_direct(url, timeout=min(timeout, 20))
@@ -509,7 +625,7 @@ def fetch_directory_post(
     timeout: int = DIRECTORY_ZENROWS_TIMEOUT_SECONDS,
 ) -> str:
     encoded = urllib.parse.urlencode(data).encode("utf-8")
-    config = _fetch_config
+    config = current_fetch_config()
     if config.zenrows_api_key:
         params = urllib.parse.urlencode(
             {
@@ -535,7 +651,7 @@ def fetch_directory_post(
         except OSError as exc:
             message = format_request_error(exc)
             raise DirectoryFetchError(f"ZenRows directory POST failed for {url}: {message}") from exc
-        time.sleep(DIRECTORY_ZENROWS_DELAY_SECONDS)
+        maybe_sleep(directory_zenrows_delay())
         return page_html
     if config.allow_direct_fallback:
         request = urllib.request.Request(
@@ -969,62 +1085,86 @@ def build_manta_url(category: str, location: str) -> str:
     return f"https://www.manta.com/search?{params}"
 
 
+def _parallel_process_items[T, R](
+    items: list[T],
+    worker: Callable[[T], R | None],
+) -> list[R]:
+    if not items:
+        return []
+    workers = max(1, current_fetch_config().detail_parallel_workers)
+    if workers <= 1:
+        results: list[R] = []
+        for item in items:
+            result = worker(item)
+            if result is not None:
+                results.append(result)
+            maybe_sleep(directory_request_delay())
+        return results
+
+    ctx = copy_context()
+    results: list[R] = []
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="capper-dir-detail") as executor:
+        futures = [executor.submit(ctx.run, worker, item) for item in items]
+        for future in as_completed(futures):
+            result = future.result()
+            if result is not None:
+                results.append(result)
+    return results
+
+
 def enrich_11880_entries(entries: list[DirectoryEntry], *, max_detail_fetches: int) -> list[DirectoryEntry]:
-    enriched: list[DirectoryEntry] = []
-    detail_fetches = 0
     max_detail_fetches = cap_directory_detail_fetches(max_detail_fetches)
+    enriched: list[DirectoryEntry] = []
+    pending: list[DirectoryEntry] = []
     for entry in entries:
         if entry.website:
             enriched.append(entry)
-            continue
-        if detail_fetches >= max_detail_fetches or not entry.source_url:
-            continue
+        elif entry.source_url:
+            pending.append(entry)
+
+    def fetch_entry(entry: DirectoryEntry) -> DirectoryEntry | None:
         try:
             detail_html = fetch_directory_html(entry.source_url)
         except DirectoryFetchError:
-            continue
-        detail_fetches += 1
+            return None
         website = parse_11880_detail_website(detail_html)
         email = pick_directory_email(detail_html, entry.email)
         if website:
-            enriched.append(
-                DirectoryEntry(
-                    name=entry.name,
-                    website=website,
-                    source_url=entry.source_url,
-                    snippet=entry.snippet,
-                    email=email or entry.email,
-                    phone=entry.phone,
-                )
+            return DirectoryEntry(
+                name=entry.name,
+                website=website,
+                source_url=entry.source_url,
+                snippet=entry.snippet,
+                email=email or entry.email,
+                phone=entry.phone,
             )
-        elif email or entry.email:
-            enriched.append(
-                DirectoryEntry(
-                    name=entry.name,
-                    website="",
-                    source_url=entry.source_url,
-                    snippet=entry.snippet,
-                    email=email or entry.email,
-                    phone=entry.phone,
-                )
+        if email or entry.email:
+            return DirectoryEntry(
+                name=entry.name,
+                website="",
+                source_url=entry.source_url,
+                snippet=entry.snippet,
+                email=email or entry.email,
+                phone=entry.phone,
             )
-        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+        return None
+
+    enriched.extend(_parallel_process_items(pending[:max_detail_fetches], fetch_entry))
     return enriched
 
 
 def enrich_gelbeseiten_entries(listings: list[tuple[str, str]], *, max_detail_fetches: int) -> list[DirectoryEntry]:
-    entries: list[DirectoryEntry] = []
     max_detail_fetches = cap_directory_detail_fetches(max_detail_fetches)
-    for name, detail_url in listings[:max_detail_fetches]:
+
+    def fetch_listing(item: tuple[str, str]) -> DirectoryEntry | None:
+        name, detail_url = item
         try:
             detail_html = fetch_directory_html(detail_url)
         except DirectoryFetchError:
-            continue
-        parsed = parse_gelbeseiten_detail_html(detail_html, name=name, source_url=detail_url)
-        if parsed is not None:
-            entries.append(parsed)
-        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
-    return entries
+            return None
+        return parse_gelbeseiten_detail_html(detail_html, name=name, source_url=detail_url)
+
+    return _parallel_process_items(listings[:max_detail_fetches], fetch_listing)
 
 
 def enrich_named_listing_details(
@@ -1034,28 +1174,27 @@ def enrich_named_listing_details(
     parse_detail_website: Callable[[str], str],
     source_name: str,
 ) -> list[DirectoryEntry]:
-    entries: list[DirectoryEntry] = []
     max_detail_fetches = cap_directory_detail_fetches(max_detail_fetches)
-    for name, detail_url in listings[:max_detail_fetches]:
+
+    def fetch_listing(item: tuple[str, str]) -> DirectoryEntry | None:
+        name, detail_url = item
         try:
             detail_html = fetch_directory_html(detail_url)
         except DirectoryFetchError:
-            continue
+            return None
         website = parse_detail_website(detail_html)
         email = pick_directory_email(detail_html)
         if not website and not email:
-            continue
-        entries.append(
-            DirectoryEntry(
-                name=name,
-                website=website,
-                source_url=detail_url,
-                snippet=source_name,
-                email=email,
-            )
+            return None
+        return DirectoryEntry(
+            name=name,
+            website=website,
+            source_url=detail_url,
+            snippet=source_name,
+            email=email,
         )
-        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
-    return entries
+
+    return _parallel_process_items(listings[:max_detail_fetches], fetch_listing)
 
 
 def parse_json_ld_directory_entries(page_html: str, *, source_url: str, source_name: str) -> list[DirectoryEntry]:
@@ -2161,29 +2300,28 @@ def enrich_detail_name_and_website(
     parse_detail_website: Callable[[str], str],
     source_name: str,
 ) -> list[DirectoryEntry]:
-    entries: list[DirectoryEntry] = []
     max_detail_fetches = cap_directory_detail_fetches(max_detail_fetches)
-    for fallback_name, detail_url in listings[:max_detail_fetches]:
+
+    def fetch_listing(item: tuple[str, str]) -> DirectoryEntry | None:
+        fallback_name, detail_url = item
         try:
             detail_html = fetch_directory_html(detail_url)
         except DirectoryFetchError:
-            continue
+            return None
         website = parse_detail_website(detail_html)
         email = pick_directory_email(detail_html)
         if not website and not email:
-            continue
+            return None
         name = parse_detail_name(detail_html) or fallback_name
-        entries.append(
-            DirectoryEntry(
-                name=name,
-                website=website,
-                source_url=detail_url,
-                snippet=source_name,
-                email=email,
-            )
+        return DirectoryEntry(
+            name=name,
+            website=website,
+            source_url=detail_url,
+            snippet=source_name,
+            email=email,
         )
-        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
-    return entries
+
+    return _parallel_process_items(listings[:max_detail_fetches], fetch_listing)
 
 
 def build_pitchbook_url(category: str, location: str) -> str:
@@ -2357,7 +2495,7 @@ def scrape_indeed(category: str, location: str, limit: int) -> list[DirectoryEnt
 def scrape_stepstone(category: str, location: str, limit: int) -> list[DirectoryEntry]:
     listings: list[tuple[str, str]] = []
     page = 1
-    while len(listings) < limit and page <= 3:
+    while len(listings) < limit and page <= directory_listing_page_limit():
         source_url = build_stepstone_url(category, location, page)
         page_html = fetch_directory_html(source_url)
         page_listings = parse_stepstone_listing_html(page_html)
@@ -2368,7 +2506,7 @@ def scrape_stepstone(category: str, location: str, limit: int) -> list[Directory
         if f"page={next_page}" not in page_html:
             break
         page = next_page
-        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+        maybe_sleep(directory_request_delay())
     return enrich_detail_name_and_website(
         listings,
         max_detail_fetches=limit,
@@ -2379,24 +2517,23 @@ def scrape_stepstone(category: str, location: str, limit: int) -> list[Directory
 
 
 def enrich_arbeitsagentur_entries(listings: list[tuple[str, str]], *, max_detail_fetches: int) -> list[DirectoryEntry]:
-    entries: list[DirectoryEntry] = []
     max_detail_fetches = cap_directory_detail_fetches(max_detail_fetches)
-    for name, detail_url in listings[:max_detail_fetches]:
+
+    def fetch_listing(item: tuple[str, str]) -> DirectoryEntry | None:
+        name, detail_url = item
         try:
             detail_html = fetch_directory_html(detail_url)
         except DirectoryFetchError:
-            continue
-        parsed = parse_arbeitsagentur_detail_html(detail_html, name=name, source_url=detail_url)
-        if parsed is not None:
-            entries.append(parsed)
-        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
-    return entries
+            return None
+        return parse_arbeitsagentur_detail_html(detail_html, name=name, source_url=detail_url)
+
+    return _parallel_process_items(listings[:max_detail_fetches], fetch_listing)
 
 
 def scrape_arbeitsagentur(category: str, location: str, limit: int) -> list[DirectoryEntry]:
     listings: list[tuple[str, str]] = []
     page = 1
-    while len(listings) < limit and page <= 3:
+    while len(listings) < limit and page <= directory_listing_page_limit():
         source_url = build_arbeitsagentur_url(category, location, page)
         page_html = fetch_directory_html(source_url)
         page_listings = parse_arbeitsagentur_listing_html(page_html)
@@ -2404,7 +2541,7 @@ def scrape_arbeitsagentur(category: str, location: str, limit: int) -> list[Dire
             break
         listings.extend(page_listings)
         page += 1
-        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+        maybe_sleep(directory_request_delay())
     return enrich_arbeitsagentur_entries(listings, max_detail_fetches=limit)[:limit]
 
 
@@ -2426,30 +2563,29 @@ def scrape_sanego(category: str, location: str, limit: int) -> list[DirectoryEnt
     page_html = fetch_directory_html(source_url)
     listings = parse_sanego_listing_html(page_html)
     max_detail_fetches = cap_directory_detail_fetches(limit)
-    entries: list[DirectoryEntry] = []
-    for fallback_name, detail_url in listings[:max_detail_fetches]:
+
+    def fetch_listing(item: tuple[str, str]) -> DirectoryEntry | None:
+        fallback_name, detail_url = item
         try:
             detail_html = fetch_directory_html(detail_url)
         except DirectoryFetchError:
-            continue
+            return None
         website = parse_sanego_detail_website(detail_html)
         email = pick_directory_email(detail_html)
         phone = parse_sanego_detail_phone(detail_html)
         if not website and not email:
-            continue
+            return None
         name = parse_sanego_detail_name(detail_html) or fallback_name
-        entries.append(
-            DirectoryEntry(
-                name=name,
-                website=website,
-                source_url=detail_url,
-                snippet="Sanego",
-                email=email,
-                phone=phone,
-            )
+        return DirectoryEntry(
+            name=name,
+            website=website,
+            source_url=detail_url,
+            snippet="Sanego",
+            email=email,
+            phone=phone,
         )
-        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
-    return entries[:limit]
+
+    return _parallel_process_items(listings[:max_detail_fetches], fetch_listing)[:limit]
 
 
 def scrape_restaurantguru(category: str, location: str, limit: int) -> list[DirectoryEntry]:
@@ -2470,28 +2606,27 @@ def scrape_docfinder(category: str, location: str, limit: int) -> list[Directory
     page_html = fetch_directory_html(source_url)
     listings = parse_docfinder_listing_html(page_html)
     max_detail_fetches = cap_directory_detail_fetches(limit)
-    entries: list[DirectoryEntry] = []
-    for fallback_name, detail_url in listings[:max_detail_fetches]:
+
+    def fetch_listing(item: tuple[str, str]) -> DirectoryEntry | None:
+        fallback_name, detail_url = item
         try:
             detail_html = fetch_directory_html(detail_url)
         except DirectoryFetchError:
-            continue
+            return None
         website = parse_docfinder_detail_website(detail_html)
         email = parse_docfinder_detail_email(detail_html)
         if not website and not email:
-            continue
+            return None
         name = parse_docfinder_detail_name(detail_html) or fallback_name
-        entries.append(
-            DirectoryEntry(
-                name=name,
-                website=website,
-                source_url=detail_url,
-                snippet="DocFinder",
-                email=email,
-            )
+        return DirectoryEntry(
+            name=name,
+            website=website,
+            source_url=detail_url,
+            snippet="DocFinder",
+            email=email,
         )
-        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
-    return entries[:limit]
+
+    return _parallel_process_items(listings[:max_detail_fetches], fetch_listing)[:limit]
 
 
 def scrape_anwaltauskunft(category: str, location: str, limit: int) -> list[DirectoryEntry]:
@@ -2501,18 +2636,17 @@ def scrape_anwaltauskunft(category: str, location: str, limit: int) -> list[Dire
 
 
 def enrich_herold_entries(listings: list[tuple[str, str]], *, max_detail_fetches: int) -> list[DirectoryEntry]:
-    entries: list[DirectoryEntry] = []
     max_detail_fetches = cap_directory_detail_fetches(max_detail_fetches)
-    for name, detail_url in listings[:max_detail_fetches]:
+
+    def fetch_listing(item: tuple[str, str]) -> DirectoryEntry | None:
+        name, detail_url = item
         try:
             detail_html = fetch_directory_html(detail_url)
         except DirectoryFetchError:
-            continue
-        parsed = parse_herold_detail_html(detail_html, name=name, source_url=detail_url)
-        if parsed is not None:
-            entries.append(parsed)
-        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
-    return entries
+            return None
+        return parse_herold_detail_html(detail_html, name=name, source_url=detail_url)
+
+    return _parallel_process_items(listings[:max_detail_fetches], fetch_listing)
 
 
 def scrape_herold(category: str, location: str, limit: int) -> list[DirectoryEntry]:
@@ -2526,7 +2660,7 @@ def scrape_wko(category: str, location: str, limit: int) -> list[DirectoryEntry]
     entries: list[DirectoryEntry] = []
     pending: list[tuple[str, str]] = []
     page = 1
-    while len(entries) + len(pending) < limit and page <= 3:
+    while len(entries) + len(pending) < limit and page <= directory_listing_page_limit():
         source_url = build_wko_url(category, location, page)
         page_html = fetch_directory_html(source_url)
         ready, need_detail = parse_wko_listing_html(page_html, source_url=source_url)
@@ -2535,7 +2669,7 @@ def scrape_wko(category: str, location: str, limit: int) -> list[DirectoryEntry]
         if f"?page={page + 1}" not in page_html and f"page={page + 1}" not in page_html:
             break
         page += 1
-        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+        maybe_sleep(directory_request_delay())
 
     max_detail_fetches = cap_directory_detail_fetches(limit - len(entries))
     for name, detail_url in pending[:max_detail_fetches]:
@@ -2546,14 +2680,14 @@ def scrape_wko(category: str, location: str, limit: int) -> list[DirectoryEntry]
         parsed = parse_wko_detail_html(detail_html, name=name, source_url=detail_url)
         if parsed is not None:
             entries.append(parsed)
-        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+        maybe_sleep(directory_request_delay())
     return entries[:limit]
 
 
 def scrape_golocal(category: str, location: str, limit: int) -> list[DirectoryEntry]:
     listings: list[tuple[str, str]] = []
     page = 1
-    while len(listings) < limit and page <= 3:
+    while len(listings) < limit and page <= directory_listing_page_limit():
         source_url = build_golocal_url(category, location, page)
         page_html = fetch_directory_html(source_url)
         page_listings = parse_golocal_listing_html(page_html)
@@ -2563,7 +2697,7 @@ def scrape_golocal(category: str, location: str, limit: int) -> list[DirectoryEn
         if f"?p={page + 1}" not in page_html and f"p={page + 1}" not in page_html:
             break
         page += 1
-        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+        maybe_sleep(directory_request_delay())
     return enrich_detail_name_and_website(
         listings,
         max_detail_fetches=limit,
@@ -2574,24 +2708,23 @@ def scrape_golocal(category: str, location: str, limit: int) -> list[DirectoryEn
 
 
 def enrich_wlw_entries(listings: list[tuple[str, str]], *, max_detail_fetches: int) -> list[DirectoryEntry]:
-    entries: list[DirectoryEntry] = []
     max_detail_fetches = cap_directory_detail_fetches(max_detail_fetches)
-    for name, detail_url in listings[:max_detail_fetches]:
+
+    def fetch_listing(item: tuple[str, str]) -> DirectoryEntry | None:
+        name, detail_url = item
         try:
             detail_html = fetch_directory_html(detail_url)
         except DirectoryFetchError:
-            continue
-        parsed = parse_wlw_detail_html(detail_html, name=name, source_url=detail_url)
-        if parsed is not None:
-            entries.append(parsed)
-        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
-    return entries
+            return None
+        return parse_wlw_detail_html(detail_html, name=name, source_url=detail_url)
+
+    return _parallel_process_items(listings[:max_detail_fetches], fetch_listing)
 
 
 def scrape_wlw(category: str, location: str, limit: int) -> list[DirectoryEntry]:
     listings: list[tuple[str, str]] = []
     page = 1
-    while len(listings) < limit and page <= 3:
+    while len(listings) < limit and page <= directory_listing_page_limit():
         source_url = build_wlw_url(category, location, page)
         page_html = fetch_directory_html(source_url)
         page_listings = parse_wlw_listing_html(page_html)
@@ -2599,14 +2732,14 @@ def scrape_wlw(category: str, location: str, limit: int) -> list[DirectoryEntry]
             break
         listings.extend(page_listings)
         page += 1
-        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+        maybe_sleep(directory_request_delay())
     return enrich_wlw_entries(listings, max_detail_fetches=limit)[:limit]
 
 
 def scrape_alibaba(category: str, location: str, limit: int) -> list[DirectoryEntry]:
     listings: list[tuple[str, str]] = []
     page = 1
-    while len(listings) < limit and page <= 3:
+    while len(listings) < limit and page <= directory_listing_page_limit():
         source_url = build_alibaba_url(category, location, page)
         page_html = fetch_directory_html(source_url)
         page_listings = parse_alibaba_listing_html(page_html)
@@ -2614,7 +2747,7 @@ def scrape_alibaba(category: str, location: str, limit: int) -> list[DirectoryEn
             break
         listings.extend(page_listings)
         page += 1
-        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+        maybe_sleep(directory_request_delay())
     return enrich_detail_name_and_website(
         listings,
         max_detail_fetches=limit,
@@ -2657,24 +2790,23 @@ def scrape_made_in_china(category: str, location: str, limit: int) -> list[Direc
 
 
 def enrich_treatwell_entries(listings: list[tuple[str, str]], *, max_detail_fetches: int) -> list[DirectoryEntry]:
-    entries: list[DirectoryEntry] = []
     max_detail_fetches = cap_directory_detail_fetches(max_detail_fetches)
-    for name, detail_url in listings[:max_detail_fetches]:
+
+    def fetch_listing(item: tuple[str, str]) -> DirectoryEntry | None:
+        name, detail_url = item
         try:
             detail_html = fetch_directory_html(detail_url)
         except DirectoryFetchError:
-            continue
-        parsed = parse_treatwell_detail_html(detail_html, name=name, source_url=detail_url)
-        if parsed is not None:
-            entries.append(parsed)
-        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
-    return entries
+            return None
+        return parse_treatwell_detail_html(detail_html, name=name, source_url=detail_url)
+
+    return _parallel_process_items(listings[:max_detail_fetches], fetch_listing)
 
 
 def scrape_treatwell(category: str, location: str, limit: int) -> list[DirectoryEntry]:
     listings: list[tuple[str, str]] = []
     page = 1
-    while len(listings) < limit and page <= 3:
+    while len(listings) < limit and page <= directory_listing_page_limit():
         source_url = build_treatwell_url(category, location, page)
         page_html = fetch_directory_html(source_url)
         page_listings = parse_treatwell_listing_html(page_html, location=location)
@@ -2685,7 +2817,7 @@ def scrape_treatwell(category: str, location: str, limit: int) -> list[Directory
         if f"seite-{next_page}" not in page_html:
             break
         page = next_page
-        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+        maybe_sleep(directory_request_delay())
     return enrich_treatwell_entries(listings, max_detail_fetches=limit)[:limit]
 
 
@@ -2740,7 +2872,7 @@ def scrape_steuerberater(category: str, location: str, limit: int) -> list[Direc
         entry = parse_steuerberater_detail_html(detail_html, name=company_name, source_url=detail_link)
         if entry:
             entries.append(entry)
-        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+        maybe_sleep(directory_request_delay())
     return entries[:limit]
 
 
@@ -2750,45 +2882,43 @@ def enrich_directory_listing_details(
     max_detail_fetches: int,
     parse_detail_website: Callable[[str], str],
 ) -> list[DirectoryEntry]:
-    enriched: list[DirectoryEntry] = []
-    detail_fetches = 0
     max_detail_fetches = cap_directory_detail_fetches(max_detail_fetches)
+    enriched: list[DirectoryEntry] = []
+    pending: list[DirectoryEntry] = []
     for entry in entries:
         if entry.website:
             enriched.append(entry)
-            continue
-        if detail_fetches >= max_detail_fetches or not entry.source_url:
-            continue
+        elif entry.source_url:
+            pending.append(entry)
+
+    def fetch_entry(entry: DirectoryEntry) -> DirectoryEntry | None:
         try:
             detail_html = fetch_directory_html(entry.source_url)
         except DirectoryFetchError:
-            continue
-        detail_fetches += 1
+            return None
         website = parse_detail_website(detail_html)
         email = pick_directory_email(detail_html, entry.email)
         if website:
-            enriched.append(
-                DirectoryEntry(
-                    name=entry.name,
-                    website=website,
-                    source_url=entry.source_url,
-                    snippet=entry.snippet,
-                    email=email or entry.email,
-                    phone=entry.phone,
-                )
+            return DirectoryEntry(
+                name=entry.name,
+                website=website,
+                source_url=entry.source_url,
+                snippet=entry.snippet,
+                email=email or entry.email,
+                phone=entry.phone,
             )
-        elif email or entry.email:
-            enriched.append(
-                DirectoryEntry(
-                    name=entry.name,
-                    website="",
-                    source_url=entry.source_url,
-                    snippet=entry.snippet,
-                    email=email or entry.email,
-                    phone=entry.phone,
-                )
+        if email or entry.email:
+            return DirectoryEntry(
+                name=entry.name,
+                website="",
+                source_url=entry.source_url,
+                snippet=entry.snippet,
+                email=email or entry.email,
+                phone=entry.phone,
             )
-        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+        return None
+
+    enriched.extend(_parallel_process_items(pending[:max_detail_fetches], fetch_entry))
     return enriched
 
 
@@ -2842,7 +2972,7 @@ def scrape_werkenntdenbesten(category: str, location: str, limit: int) -> list[D
 def scrape_dasoertliche(category: str, location: str, limit: int) -> list[DirectoryEntry]:
     entries: list[DirectoryEntry] = []
     page = 1
-    while len(entries) < limit and page <= 5:
+    while len(entries) < limit and page <= directory_listing_page_limit():
         source_url = build_dasoertliche_url(category, location, page)
         page_html = fetch_directory_html(source_url)
         page_entries = parse_dasoertliche_html(page_html, source_url=source_url)
@@ -2852,7 +2982,7 @@ def scrape_dasoertliche(category: str, location: str, limit: int) -> list[Direct
         if "rel=\"next\"" not in page_html and f"-Seite-{page + 1}.html" not in page_html:
             break
         page += 1
-        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+        maybe_sleep(directory_request_delay())
     return entries
 
 
@@ -2865,7 +2995,7 @@ def scrape_auskunft(category: str, location: str, limit: int) -> list[DirectoryE
 def scrape_11880(category: str, location: str, limit: int) -> list[DirectoryEntry]:
     entries: list[DirectoryEntry] = []
     page = 1
-    while len(entries) < limit and page <= 3:
+    while len(entries) < limit and page <= directory_listing_page_limit():
         source_url = build_11880_url(category, location, page)
         page_html = fetch_directory_html(source_url)
         page_entries = parse_11880_html(page_html, source_url=source_url)
@@ -2873,7 +3003,7 @@ def scrape_11880(category: str, location: str, limit: int) -> list[DirectoryEntr
             break
         entries.extend(page_entries)
         page += 1
-        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+        maybe_sleep(directory_request_delay())
     return enrich_11880_entries(entries, max_detail_fetches=limit)
 
 
@@ -2898,7 +3028,7 @@ def scrape_telefonbuch(category: str, location: str, limit: int) -> list[Directo
 def scrape_goyellow(category: str, location: str, limit: int) -> list[DirectoryEntry]:
     listings: list[tuple[str, str]] = []
     page = 1
-    while len(listings) < limit and page <= 3:
+    while len(listings) < limit and page <= directory_listing_page_limit():
         source_url = build_goyellow_url(category, location, page)
         page_html = fetch_directory_html(source_url)
         page_listings = parse_goyellow_listing_html(page_html)
@@ -2908,7 +3038,7 @@ def scrape_goyellow(category: str, location: str, limit: int) -> list[DirectoryE
         if f"/seite-{page + 1}" not in page_html:
             break
         page += 1
-        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+        maybe_sleep(directory_request_delay())
     return enrich_named_listing_details(
         listings,
         max_detail_fetches=limit,

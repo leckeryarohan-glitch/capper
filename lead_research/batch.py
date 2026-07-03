@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Iterable
 
@@ -40,6 +42,7 @@ def run_batch_discovery(
     checkpoint: Path | None,
     resume: bool,
     query_delay: float,
+    query_parallel: int = 1,
 ) -> int:
     if limit_per_query < 1:
         raise ValueError("--limit-per-query must be at least 1")
@@ -48,27 +51,60 @@ def run_batch_discovery(
 
     completed_queries, leads = load_checkpoint(checkpoint) if resume and checkpoint else (set(), [])
     crawler = LeadCrawler(crawl_config)
+    query_parallel = max(1, query_parallel)
+    state_lock = threading.Lock()
+    pending_queries = [
+        query_key
+        for query_key in query_plan(categories, locations)
+        if query_key not in completed_queries
+    ]
 
-    for category, location in query_plan(categories, locations):
-        query_key = (category, location)
-        if query_key in completed_queries:
-            continue
-        if len(leads) >= max_leads:
-            break
-
+    def process_query(query_key: QueryKey) -> tuple[QueryKey, list[Lead]]:
+        category, location = query_key
         print(f"Searching category={category!r} location={location!r}")
         results = provider.search(category, location, limit_per_query)
+        query_leads: list[Lead] = []
         for result in results:
-            if len(leads) >= max_leads:
-                break
-            leads.extend(crawler.crawl_result(result, category))
-            leads = dedupe_leads(leads)
+            query_leads.extend(crawler.crawl_result(result, category))
+        return query_key, query_leads
 
-        completed_queries.add(query_key)
-        save_checkpoint(checkpoint, completed_queries, leads)
-
-        if query_delay > 0:
-            time.sleep(query_delay)
+    if query_parallel <= 1:
+        for query_key in pending_queries:
+            with state_lock:
+                if len(leads) >= max_leads:
+                    break
+            _, query_leads = process_query(query_key)
+            with state_lock:
+                for lead in query_leads:
+                    if len(leads) >= max_leads:
+                        break
+                    leads.append(lead)
+                leads = dedupe_leads(leads)
+                completed_queries.add(query_key)
+                save_checkpoint(checkpoint, completed_queries, leads)
+            if query_delay > 0:
+                time.sleep(query_delay)
+    else:
+        with ThreadPoolExecutor(max_workers=query_parallel, thread_name_prefix="capper-batch") as executor:
+            futures = {
+                executor.submit(process_query, query_key): query_key
+                for query_key in pending_queries
+            }
+            for future in as_completed(futures):
+                with state_lock:
+                    if len(leads) >= max_leads:
+                        break
+                query_key, query_leads = future.result()
+                with state_lock:
+                    for lead in query_leads:
+                        if len(leads) >= max_leads:
+                            break
+                        leads.append(lead)
+                    leads = dedupe_leads(leads)
+                    completed_queries.add(query_key)
+                    save_checkpoint(checkpoint, completed_queries, leads)
+                if query_delay > 0:
+                    time.sleep(query_delay)
 
     leads = dedupe_leads(leads)[:max_leads]
     leads = SuppressionList(suppression_file).apply(leads)
