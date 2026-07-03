@@ -6,6 +6,7 @@ from unittest.mock import patch
 from lead_research.google_maps import (
     build_google_maps_search_url,
     build_zenrows_google_maps_request_url,
+    google_maps_cities_budget,
     google_maps_location_plans,
     parse_google_maps_listing_html,
 )
@@ -73,6 +74,17 @@ class GoogleMapsParserTests(unittest.TestCase):
 
         self.assertIn("Deutschland", labels)
         self.assertIn("Berlin", labels)
+        self.assertGreater(len(plans), 100)
+
+    def test_google_maps_cities_budget_scales_with_limit(self) -> None:
+        self.assertEqual(google_maps_cities_budget(50), 40)
+        self.assertEqual(google_maps_cities_budget(500), 200)
+        self.assertIsNone(google_maps_cities_budget(5000))
+
+    def test_google_maps_location_plans_use_all_cities_for_large_limits(self) -> None:
+        plans = google_maps_location_plans("versand", "", ("DE",), limit=5000)
+        city_plans = [location for location, _country in plans if location != "Deutschland"]
+        self.assertGreater(len(city_plans), 1000)
 
 
 class GoogleMapsProviderTests(unittest.TestCase):
