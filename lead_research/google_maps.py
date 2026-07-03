@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 from .extract import normalized_host
 from .http import format_request_error, read_response_text, urlopen
-from .locations import SUPPORTED_COUNTRIES, ZENROWS_LOCALE, cities_for_mass_web_search, country_label, top_cities_for_web_search
+from .locations import SUPPORTED_COUNTRIES, ZENROWS_LOCALE, cities_for_mass_web_search, top_cities_for_web_search
 from .models import SearchResult
 
 
@@ -29,20 +29,18 @@ GOOGLE_MAPS_MAX_PARALLEL = 40
 GOOGLE_MAPS_DEFAULT_PLACES_PER_CITY = 25
 GOOGLE_MAPS_MAX_PLACES_PER_CITY = 60
 GOOGLE_MAPS_DETAIL_PARALLEL = 4
-GOOGLE_MAPS_INITIAL_WAIT_MS = 5000
-GOOGLE_MAPS_FALLBACK_WAIT_MS = 10000
+GOOGLE_MAPS_INITIAL_WAIT_MS = 10000
+GOOGLE_MAPS_FALLBACK_WAIT_MS = 15000
 GOOGLE_MAPS_SIDEBAR_SCROLL_WAIT_MS = 2000
 GOOGLE_MAPS_SIDEBAR_SCROLL_JS = (
     "var el=document.querySelectorAll('.m6QErb.DxyBCb.kA9KIf.dS8AEf.XiKgde.ecceSd')[1]; "
     "if(el){ el.scrollTop += el.scrollHeight; }"
 )
 GOOGLE_MAPS_LISTING_CSS_EXTRACTOR = {"place_urls": "a.hfpxzc @href", "url": "a.hfpxzc @href"}
-GOOGLE_MAPS_LISTING_WAIT_FOR = "a.hfpxzc"
 GOOGLE_MAPS_DETAIL_CSS_EXTRACTOR = {
     "name": "h1.DUwDvf",
     "website": 'a[data-item-id="authority"] @href',
 }
-GOOGLE_MAPS_DETAIL_WAIT_FOR = 'a[data-item-id="authority"], h1.DUwDvf'
 GOOGLE_MAPS_HOST_MARKERS = (
     "google.com",
     "google.de",
@@ -450,6 +448,51 @@ def _fetch_zenrows_text_once(
         raise GoogleMapsFetchError(f"Google Maps ZenRows request failed for {target_url}: {message}") from exc
 
 
+def _fetch_zenrows_maps_with_fallbacks(
+    api_key: str,
+    target_url: str,
+    *,
+    proxy_country: str,
+    country_code: str,
+    css_extractor: dict[str, str] | None = None,
+    scroll_steps: int = 0,
+    wait_ms: int = GOOGLE_MAPS_INITIAL_WAIT_MS,
+) -> str:
+    """Fetch Maps HTML/JSON without wait_for (wait_for causes 422 when selectors are absent)."""
+    instructions = sidebar_scroll_instructions(scroll_steps)
+    profiles: list[tuple[dict[str, str] | None, list[dict[str, object]] | None, int]] = [
+        (css_extractor, instructions or None, wait_ms),
+        (css_extractor, None, GOOGLE_MAPS_FALLBACK_WAIT_MS),
+        (None, instructions or None, GOOGLE_MAPS_FALLBACK_WAIT_MS),
+        (None, None, GOOGLE_MAPS_FALLBACK_WAIT_MS),
+    ]
+    last_error: GoogleMapsFetchError | None = None
+    seen: set[tuple[bool, bool, int]] = set()
+    for css, js, wait in profiles:
+        key = (css is not None, js is not None, wait)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            return _fetch_zenrows_text_once(
+                api_key,
+                target_url,
+                proxy_country=proxy_country,
+                country_code=country_code,
+                css_extractor=css,
+                js_instructions=js,
+                wait_ms=wait,
+                wait_for="",
+            )
+        except GoogleMapsFetchError as exc:
+            last_error = exc
+            if "HTTP Error 422" not in str(exc):
+                raise
+    if last_error is not None:
+        raise last_error
+    raise GoogleMapsFetchError(f"Google Maps ZenRows request failed for {target_url}")
+
+
 def fetch_zenrows_css_payload(
     api_key: str,
     target_url: str,
@@ -462,33 +505,16 @@ def fetch_zenrows_css_payload(
     wait_for: str = "",
     timeout: int = GOOGLE_MAPS_DEFAULT_TIMEOUT_SECONDS,
 ) -> dict:
-    instructions = sidebar_scroll_instructions(scroll_steps)
-    try:
-        raw_text = _fetch_zenrows_text_once(
-            api_key,
-            target_url,
-            proxy_country=proxy_country,
-            country_code=country_code,
-            css_extractor=css_extractor,
-            js_instructions=instructions or None,
-            wait_ms=wait_ms,
-            wait_for=wait_for,
-            timeout=timeout,
-        )
-    except GoogleMapsFetchError as exc:
-        if "HTTP Error 422" not in str(exc) or not instructions:
-            raise
-        raw_text = _fetch_zenrows_text_once(
-            api_key,
-            target_url,
-            proxy_country=proxy_country,
-            country_code=country_code,
-            css_extractor=css_extractor,
-            js_instructions=None,
-            wait_ms=GOOGLE_MAPS_FALLBACK_WAIT_MS,
-            wait_for=wait_for,
-            timeout=timeout,
-        )
+    del wait_for, timeout  # Maps fetch uses unified fallback helper without wait_for.
+    raw_text = _fetch_zenrows_maps_with_fallbacks(
+        api_key,
+        target_url,
+        proxy_country=proxy_country,
+        country_code=country_code,
+        css_extractor=css_extractor,
+        scroll_steps=scroll_steps,
+        wait_ms=wait_ms,
+    )
     payload = parse_zenrows_css_payload(raw_text)
     if payload:
         return payload
@@ -506,31 +532,14 @@ def fetch_google_maps_search_html(
     scroll_steps: int | None = None,
 ) -> str:
     steps = google_maps_scroll_steps() if scroll_steps is None else max(0, min(scroll_steps, GOOGLE_MAPS_MAX_SCROLL_STEPS))
-    instructions = sidebar_scroll_instructions(steps)
-    try:
-        return _fetch_zenrows_text_once(
-            api_key,
-            search_url,
-            proxy_country=proxy_country,
-            country_code=country_code,
-            css_extractor=None,
-            js_instructions=instructions or None,
-            wait_ms=GOOGLE_MAPS_INITIAL_WAIT_MS,
-            wait_for=GOOGLE_MAPS_LISTING_WAIT_FOR,
-        )
-    except GoogleMapsFetchError as exc:
-        if "HTTP Error 422" not in str(exc) or not instructions:
-            raise
-        return _fetch_zenrows_text_once(
-            api_key,
-            search_url,
-            proxy_country=proxy_country,
-            country_code=country_code,
-            css_extractor=None,
-            js_instructions=None,
-            wait_ms=GOOGLE_MAPS_FALLBACK_WAIT_MS,
-            wait_for=GOOGLE_MAPS_LISTING_WAIT_FOR,
-        )
+    return _fetch_zenrows_maps_with_fallbacks(
+        api_key,
+        search_url,
+        proxy_country=proxy_country,
+        country_code=country_code,
+        css_extractor=None,
+        scroll_steps=steps,
+    )
 
 
 def fetch_google_maps_place_urls(
@@ -542,15 +551,19 @@ def fetch_google_maps_place_urls(
     scroll_steps: int | None = None,
 ) -> list[str]:
     steps = google_maps_scroll_steps() if scroll_steps is None else max(0, min(scroll_steps, GOOGLE_MAPS_MAX_SCROLL_STEPS))
-    payload = fetch_zenrows_css_payload(
-        api_key,
-        search_url,
-        proxy_country=proxy_country,
-        country_code=country_code,
-        css_extractor=GOOGLE_MAPS_LISTING_CSS_EXTRACTOR,
-        scroll_steps=steps,
-        wait_for=GOOGLE_MAPS_LISTING_WAIT_FOR,
-    )
+    try:
+        payload = fetch_zenrows_css_payload(
+            api_key,
+            search_url,
+            proxy_country=proxy_country,
+            country_code=country_code,
+            css_extractor=GOOGLE_MAPS_LISTING_CSS_EXTRACTOR,
+            scroll_steps=steps,
+        )
+    except GoogleMapsFetchError as exc:
+        if "HTTP Error 422" in str(exc):
+            return []
+        raise
     urls = css_extractor_values(payload, "place_urls", "url")
     if not urls:
         html = payload.get("_html")
@@ -584,16 +597,18 @@ def fetch_google_maps_place_result(
     proxy_country: str = "de",
     country_code: str = "DE",
 ) -> SearchResult | None:
-    payload = fetch_zenrows_css_payload(
-        api_key,
-        place_url,
-        proxy_country=proxy_country,
-        country_code=country_code,
-        css_extractor=GOOGLE_MAPS_DETAIL_CSS_EXTRACTOR,
-        scroll_steps=0,
-        wait_ms=5000,
-        wait_for=GOOGLE_MAPS_DETAIL_WAIT_FOR,
-    )
+    try:
+        payload = fetch_zenrows_css_payload(
+            api_key,
+            place_url,
+            proxy_country=proxy_country,
+            country_code=country_code,
+            css_extractor=GOOGLE_MAPS_DETAIL_CSS_EXTRACTOR,
+            scroll_steps=0,
+            wait_ms=5000,
+        )
+    except GoogleMapsFetchError:
+        payload = {}
     result = search_result_from_detail_payload(place_url, payload)
     if result is not None:
         return result
@@ -604,15 +619,14 @@ def fetch_google_maps_place_result(
     if not html_parts:
         try:
             html_parts.append(
-                _fetch_zenrows_text_once(
+                _fetch_zenrows_maps_with_fallbacks(
                     api_key,
                     place_url,
                     proxy_country=proxy_country,
                     country_code=country_code,
                     css_extractor=None,
-                    js_instructions=None,
+                    scroll_steps=0,
                     wait_ms=5000,
-                    wait_for=GOOGLE_MAPS_DETAIL_WAIT_FOR,
                 )
             )
         except GoogleMapsFetchError:
@@ -689,10 +703,6 @@ def google_maps_location_plans(
         country_code = countries[0] if countries else "DE"
         return [(location.strip(), country_code)]
     plans: list[tuple[str, str]] = []
-    for country_code in countries:
-        if country_code not in SUPPORTED_COUNTRIES:
-            continue
-        plans.append((country_label(country_code), country_code))
     city_budget = google_maps_max_cities_override()
     if city_budget is None:
         city_budget = google_maps_cities_budget(limit)
