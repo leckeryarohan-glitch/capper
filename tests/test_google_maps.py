@@ -4,8 +4,10 @@ import unittest
 from unittest.mock import patch
 
 from lead_research.google_maps import (
+    GoogleMapsFetchError,
     build_google_maps_search_url,
     build_zenrows_google_maps_request_url,
+    fetch_google_maps_html,
     google_maps_cities_budget,
     google_maps_location_plans,
     parse_google_maps_listing_html,
@@ -35,7 +37,11 @@ class GoogleMapsParserTests(unittest.TestCase):
     def test_build_google_maps_search_url(self) -> None:
         self.assertEqual(
             build_google_maps_search_url("versand", "Dortmund"),
-            "https://www.google.com/maps/search/versand+Dortmund",
+            "https://www.google.de/maps/search/versand+Dortmund",
+        )
+        self.assertEqual(
+            build_google_maps_search_url("hotel", "Wien", country_code="AT"),
+            "https://www.google.at/maps/search/hotel+Wien",
         )
 
     def test_build_zenrows_request_uses_scroll_y_not_camelcase(self) -> None:
@@ -56,6 +62,8 @@ class GoogleMapsParserTests(unittest.TestCase):
         self.assertIn("js_render=true", url)
         self.assertIn("premium_proxy=true", url)
         self.assertIn("proxy_country=de", url)
+        self.assertIn("custom_headers=true", url)
+        self.assertIn("wait=5000", url)
         self.assertIn("scroll_y", url)
         self.assertIn("js_instructions", url)
 
@@ -93,6 +101,23 @@ class GoogleMapsParserTests(unittest.TestCase):
         plans = google_maps_location_plans("versand", "", ("DE",), limit=5000)
         city_plans = [location for location, _country in plans if location != "Deutschland"]
         self.assertGreater(len(city_plans), 1000)
+
+    def test_fetch_google_maps_html_falls_back_without_scroll_on_422(self) -> None:
+        calls: list[int] = []
+
+        def fake_fetch(*_args, scroll_steps: int = 2, **_kwargs) -> str:
+            calls.append(scroll_steps)
+            if scroll_steps > 0:
+                raise GoogleMapsFetchError(
+                    "Google Maps ZenRows request failed for https://example.com: HTTP Error 422: Unprocessable Entity"
+                )
+            return "<html>ok</html>"
+
+        with patch("lead_research.google_maps._fetch_google_maps_html_once", side_effect=fake_fetch):
+            html = fetch_google_maps_html("key", "https://www.google.de/maps/search/hotel+Dresden", scroll_steps=2)
+
+        self.assertEqual(html, "<html>ok</html>")
+        self.assertEqual(calls, [2, 0])
 
 
 class GoogleMapsProviderTests(unittest.TestCase):
