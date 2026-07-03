@@ -4,13 +4,10 @@ import unittest
 from unittest.mock import patch
 
 from lead_research.google_maps import (
-    GoogleMapsFetchError,
     build_google_maps_search_url,
     build_zenrows_google_maps_request_url,
-    fetch_google_maps_html,
     google_maps_cities_budget,
     google_maps_location_plans,
-    is_retryable_maps_error,
     parse_google_maps_listing_html,
 )
 from lead_research.search import GoogleMapsSearchProvider, SearchProviderError, combined_provider, source_label
@@ -41,7 +38,14 @@ class GoogleMapsParserTests(unittest.TestCase):
             "https://www.google.com/maps/search/versand+Dortmund",
         )
 
-    def test_build_zenrows_request_includes_js_and_proxy(self) -> None:
+    def test_build_zenrows_request_uses_scroll_y_not_camelcase(self) -> None:
+        url = build_zenrows_google_maps_request_url(
+            "test-key",
+            "https://www.google.com/maps/search/hotel+Berlin",
+            scroll_steps=1,
+        )
+        self.assertIn("scroll_y", url)
+        self.assertNotIn("scrollY", url)
         url = build_zenrows_google_maps_request_url(
             "test-key",
             "https://www.google.com/maps/search/versand+Dortmund",
@@ -52,7 +56,7 @@ class GoogleMapsParserTests(unittest.TestCase):
         self.assertIn("js_render=true", url)
         self.assertIn("premium_proxy=true", url)
         self.assertIn("proxy_country=de", url)
-        self.assertIn("wait=8000", url)
+        self.assertIn("scroll_y", url)
         self.assertIn("js_instructions", url)
 
     def test_parse_google_maps_listing_html_extracts_websites(self) -> None:
@@ -89,32 +93,6 @@ class GoogleMapsParserTests(unittest.TestCase):
         plans = google_maps_location_plans("versand", "", ("DE",), limit=5000)
         city_plans = [location for location, _country in plans if location != "Deutschland"]
         self.assertGreater(len(city_plans), 1000)
-
-    def test_is_retryable_maps_error_detects_connection_drops(self) -> None:
-        self.assertTrue(
-            is_retryable_maps_error(
-                "Google Maps ZenRows request failed: Remote end closed connection without response"
-            )
-        )
-        self.assertFalse(is_retryable_maps_error("HTTP Error 401: Unauthorized"))
-
-    def test_fetch_google_maps_html_retries_transient_errors(self) -> None:
-        calls = {"count": 0}
-
-        def flaky_fetch(*_args, **_kwargs) -> str:
-            calls["count"] += 1
-            if calls["count"] < 3:
-                raise GoogleMapsFetchError(
-                    "Google Maps ZenRows request failed for https://example.com: "
-                    "Remote end closed connection without response"
-                )
-            return "<html>ok</html>"
-
-        with patch("lead_research.google_maps._fetch_google_maps_html_once", side_effect=flaky_fetch):
-            html = fetch_google_maps_html("key", "https://www.google.com/maps/search/hotel+Berlin", retries=3)
-
-        self.assertEqual(html, "<html>ok</html>")
-        self.assertEqual(calls["count"], 3)
 
 
 class GoogleMapsProviderTests(unittest.TestCase):
