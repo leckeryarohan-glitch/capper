@@ -119,6 +119,7 @@ def build_directory_source_registry(
         active(cat, "kompass", "Kompass", "kompass"),
         active(cat, "manta", "Manta", "manta"),
         active(cat, "herold", "Herold", "herold"),
+        active(cat, "wko", "WKO Firmen A-Z", "wko"),
         _unavailable(cat, "wlw", "Wer liefert was (WLW)"),
         _unavailable(cat, "firmenabc", "FirmenABC"),
         _unavailable(cat, "business_branchenbuch", "Business Branchenbuch"),
@@ -141,6 +142,7 @@ def build_directory_source_registry(
         ("Gastronomie", "restaurantguru", "Restaurant Guru", "restaurantguru"),
         ("Branchen", "anwaltauskunft", "Anwaltauskunft", "anwaltauskunft"),
         ("Branchen", "steuerberater", "Steuerberaterverzeichnis", "steuerberater"),
+        ("Lokale Portale", "golocal", "GoLocal", "golocal"),
     )
     active_slugs_by_category: dict[str, set[str]] = {}
     for category, source_id, label, scraper_key in active_category_sources:
@@ -218,13 +220,13 @@ def build_directory_source_registry(
             "trustpilot",
         },
         "Lokale Portale": {
-            "golocal",
             "locanto",
         },
         "IHK / HWK": {
             "industrie_und_handelskammern",
             "handwerkskammern",
             "mitgliederverzeichnisse",
+            "amtliches_verzeichnis",
         },
         "Branchen": {
             "notare",
@@ -259,6 +261,7 @@ def build_directory_source_registry(
             "Industrie- und Handelskammern",
             "Handwerkskammern",
             "Mitgliederverzeichnisse",
+            "Amtliches Verzeichnis",
         ],
         "Verbaende": ["Bundesverbaende", "Fachverbaende", "Innungen", "Berufsverbaende", "Vereinslisten"],
         "Hersteller": ["Partnerfinder", "Haendlerlisten", "Distributorlisten", "Resellerlisten"],
@@ -360,7 +363,7 @@ def build_directory_source_registry(
         "Foerderprogramme": ["Exist", "EU Foerderprojekte", "Innovationsnetzwerke"],
         "GitHub": ["Organisationen", "Repositories", "Contributors"],
         "APIs": ["OpenCorporates API", "Clearbit", "People Data Labs", "FullContact"],
-        "Lokale Portale": ["Stadtportale", "Gemeindeverzeichnisse", "Tourismusportale", "Gewerbeverzeichnisse"],
+        "Lokale Portale": ["Stadtportale", "Gemeindeverzeichnisse", "Tourismusportale", "Gewerbeverzeichnisse", "GoLocal"],
         "Sonstige": [
             "Wikipedia Unternehmenslisten",
             "Verbandslisten",

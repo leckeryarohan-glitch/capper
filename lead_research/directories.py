@@ -141,6 +141,10 @@ DIRECTORY_HOST_SUFFIXES = (
     "herold.at",
     "ksv.at",
     "arztsuche24.at",
+    "firmen.wko.at",
+    "wko.at",
+    "golocal.de",
+    "kennstdueinen.de",
 )
 
 BLOCKED_WEBSITE_SUFFIXES = (
@@ -1634,6 +1638,108 @@ def parse_herold_detail_html(page_html: str, *, name: str, source_url: str) -> D
     )
 
 
+def parse_wko_listing_html(page_html: str, *, source_url: str) -> tuple[list[DirectoryEntry], list[tuple[str, str]]]:
+    ready: list[DirectoryEntry] = []
+    pending: list[tuple[str, str]] = []
+    for article in re.findall(r"<article class='search-result-article'>(.*?)</article>", page_html, re.DOTALL):
+        title_match = re.search(r'class="title-link" href="(/[^"]+)"[^>]*>\s*<h3>([^<]+)</h3>', article)
+        if not title_match:
+            continue
+        path = html.unescape(title_match.group(1).strip())
+        name = html.unescape(title_match.group(2).strip())
+        detail_url = f"https://firmen.wko.at{path}" if path.startswith("/") else path
+        email_match = re.search(r"kontaktinfo-mail-click[^>]*href='mailto:([^']+)'", article)
+        website_match = re.search(r"kontaktinfo-web-click[^>]*href='(https?://[^']+)'", article)
+        email = normalize_directory_email(email_match.group(1)) if email_match else ""
+        website = normalize_directory_website(website_match.group(1)) if website_match else ""
+        if website or email:
+            ready.append(
+                DirectoryEntry(
+                    name=name,
+                    website=website,
+                    source_url=detail_url,
+                    snippet="WKO Firmen A-Z",
+                    email=email,
+                )
+            )
+        else:
+            pending.append((name, detail_url))
+    return ready, pending
+
+
+def parse_wko_detail_html(page_html: str, *, name: str, source_url: str) -> DirectoryEntry | None:
+    email = pick_directory_email(page_html)
+    website = ""
+    for pattern in (
+        r"kontaktinfo-web-click[^>]*href='(https?://[^']+)'",
+        r'kontaktinfo-web-click[^>]*href="(https?://[^"]+)"',
+    ):
+        match = re.search(pattern, page_html, re.IGNORECASE)
+        if match:
+            website = normalize_directory_website(match.group(1))
+            if website:
+                break
+    if not website and not email:
+        return None
+    title_match = re.search(r'<h1[^>]*class="[^"]*detail-heading[^"]*"[^>]*>([^<]+)', page_html)
+    resolved_name = html.unescape(title_match.group(1).strip()) if title_match else name
+    return DirectoryEntry(
+        name=resolved_name,
+        website=website,
+        source_url=source_url,
+        snippet="WKO Firmen A-Z",
+        email=email,
+    )
+
+
+def parse_golocal_listing_html(page_html: str) -> list[tuple[str, str]]:
+    listings: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for match in re.finditer(r'<li[^>]*class="listEntry[^"]*"[^>]*>(.*?)</li>', page_html, re.DOTALL | re.IGNORECASE):
+        block = match.group(0)
+        if "gl-adsbygoogle" in block:
+            continue
+        name_match = re.search(r'<meta itemprop="name" content="([^"]+)"', block)
+        link_match = re.search(
+            r'<h2 class="title">[\s\S]*?href="(https://www\.golocal\.de/[^"#]+)"',
+            block,
+            re.IGNORECASE,
+        )
+        if not name_match or not link_match:
+            continue
+        name = html.unescape(name_match.group(1).strip())
+        detail_url = html.unescape(link_match.group(1).strip())
+        if detail_url in seen:
+            continue
+        seen.add(detail_url)
+        listings.append((name, detail_url))
+    return listings
+
+
+def parse_golocal_detail_name(page_html: str) -> str:
+    meta_match = re.search(r'<meta itemprop="name" content="([^"]+)"', page_html)
+    if meta_match:
+        return html.unescape(meta_match.group(1).strip())
+    title_match = re.search(r"<title>([^<|]+)", page_html, re.IGNORECASE)
+    if title_match:
+        return html.unescape(title_match.group(1).strip())
+    return ""
+
+
+def parse_golocal_detail_website(page_html: str) -> str:
+    for pattern in (
+        r'href="(https?://[^"]+)"[^>]*itemprop=url',
+        r'itemprop="url"[^>]*href="(https?://[^"]+)"',
+        r"trackEvent\('contact-www'[\s\S]{0,250}?href=\"(https?://[^\"]+)\"",
+    ):
+        match = re.search(pattern, page_html, re.IGNORECASE)
+        if match:
+            candidate = normalize_directory_website(match.group(1))
+            if candidate:
+                return candidate
+    return next((link for link in extract_external_links(page_html) if is_external_business_url(link)), "")
+
+
 def parse_steuerberater_detail_html(page_html: str, *, name: str, source_url: str) -> DirectoryEntry | None:
     email = pick_directory_email(page_html)
     website = ""
@@ -1751,6 +1857,22 @@ def build_herold_url(category: str, location: str) -> str:
     location_slug = directory_lower_hyphen_slug(location)
     category_slug = directory_lower_hyphen_slug(category)
     return f"https://www.herold.at/gelbe-seiten/{location_slug}/{category_slug}/"
+
+
+def build_wko_url(category: str, location: str, page: int) -> str:
+    category_slug = directory_lower_hyphen_slug(category) or "unternehmen"
+    location_slug = directory_lower_hyphen_slug(location) or "wien"
+    if page <= 1:
+        return f"https://firmen.wko.at/{category_slug}/{location_slug}/"
+    return f"https://firmen.wko.at/{category_slug}/{location_slug}/?page={page}"
+
+
+def build_golocal_url(category: str, location: str, page: int) -> str:
+    location_slug = directory_lower_hyphen_slug(location) or "berlin"
+    category_slug = directory_lower_hyphen_slug(category) or "unternehmen"
+    if page <= 1:
+        return f"https://www.golocal.de/{location_slug}/{category_slug}/"
+    return f"https://www.golocal.de/{location_slug}/{category_slug}/?p={page}"
 
 
 def scrape_pitchbook(category: str, location: str, limit: int) -> list[DirectoryEntry]:
@@ -1891,6 +2013,57 @@ def scrape_herold(category: str, location: str, limit: int) -> list[DirectoryEnt
     page_html = fetch_directory_html(source_url)
     listings = parse_herold_listing_html(page_html)
     return enrich_herold_entries(listings, max_detail_fetches=limit)
+
+
+def scrape_wko(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    entries: list[DirectoryEntry] = []
+    pending: list[tuple[str, str]] = []
+    page = 1
+    while len(entries) + len(pending) < limit and page <= 3:
+        source_url = build_wko_url(category, location, page)
+        page_html = fetch_directory_html(source_url)
+        ready, need_detail = parse_wko_listing_html(page_html, source_url=source_url)
+        entries.extend(ready)
+        pending.extend(need_detail)
+        if f"?page={page + 1}" not in page_html and f"page={page + 1}" not in page_html:
+            break
+        page += 1
+        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+
+    max_detail_fetches = cap_directory_detail_fetches(limit - len(entries))
+    for name, detail_url in pending[:max_detail_fetches]:
+        try:
+            detail_html = fetch_directory_html(detail_url)
+        except DirectoryFetchError:
+            continue
+        parsed = parse_wko_detail_html(detail_html, name=name, source_url=detail_url)
+        if parsed is not None:
+            entries.append(parsed)
+        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+    return entries[:limit]
+
+
+def scrape_golocal(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    listings: list[tuple[str, str]] = []
+    page = 1
+    while len(listings) < limit and page <= 3:
+        source_url = build_golocal_url(category, location, page)
+        page_html = fetch_directory_html(source_url)
+        page_listings = parse_golocal_listing_html(page_html)
+        if not page_listings:
+            break
+        listings.extend(page_listings)
+        if f"?p={page + 1}" not in page_html and f"p={page + 1}" not in page_html:
+            break
+        page += 1
+        time.sleep(DIRECTORY_REQUEST_DELAY_SECONDS)
+    return enrich_detail_name_and_website(
+        listings,
+        max_detail_fetches=limit,
+        parse_detail_name=parse_golocal_detail_name,
+        parse_detail_website=parse_golocal_detail_website,
+        source_name="GoLocal",
+    )[:limit]
 
 
 def scrape_steuerberater(category: str, location: str, limit: int) -> list[DirectoryEntry]:
@@ -2172,6 +2345,8 @@ def _directory_scraper_map() -> dict[str, callable]:
         "anwaltauskunft": scrape_anwaltauskunft,
         "steuerberater": scrape_steuerberater,
         "herold": scrape_herold,
+        "wko": scrape_wko,
+        "golocal": scrape_golocal,
     }
 
 
