@@ -438,6 +438,19 @@ class DirectoryParserTests(unittest.TestCase):
             scrape_jameda_zahn("Kieferorthopädie", "München", 3)
             mock.assert_called_once_with("Kieferorthopädie", "München", 3)
 
+    def test_docfinder_zahn_scraper_defaults(self) -> None:
+        from unittest.mock import patch
+
+        from lead_research.directories import build_docfinder_url, scrape_docfinder_zahn
+
+        self.assertEqual(
+            build_docfinder_url("zahnarzt", "Wien"),
+            "https://www.docfinder.at/suche/zahnarzt/wien",
+        )
+        with patch("lead_research.directories.scrape_docfinder", return_value=[]) as mock:
+            scrape_docfinder_zahn("", "", 5)
+            mock.assert_called_once_with("zahnarzt", "Wien", 5)
+
     def test_parse_jameda_listing_and_detail(self) -> None:
         from lead_research.directories import (
             build_jameda_url,

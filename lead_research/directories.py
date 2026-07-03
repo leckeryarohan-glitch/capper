@@ -132,6 +132,7 @@ DIRECTORY_HOST_SUFFIXES = (
     "gehalt.de",
     "onelink.me",
     "indeed.onelink.me",
+    "browserupgrade.info",
     "jameda.de",
     "docplanner.",
     "sanego.de",
@@ -2512,6 +2513,12 @@ def scrape_jameda_zahn(category: str, location: str, limit: int) -> list[Directo
     return scrape_jameda(query_category, location, limit)
 
 
+def scrape_docfinder_zahn(category: str, location: str, limit: int) -> list[DirectoryEntry]:
+    query_category = category.strip() or "zahnarzt"
+    query_location = location.strip() or "Wien"
+    return scrape_docfinder(query_category, query_location, limit)
+
+
 def scrape_steuerberater(category: str, location: str, limit: int) -> list[DirectoryEntry]:
     _ = category
     source_url = build_steuerberater_url(category, location)
@@ -2800,6 +2807,7 @@ def _directory_scraper_map() -> dict[str, callable]:
         "treatwell_fitness": scrape_treatwell_fitness,
         "jameda_physio": scrape_jameda_physio,
         "jameda_zahn": scrape_jameda_zahn,
+        "docfinder_zahn": scrape_docfinder_zahn,
     }
 
 

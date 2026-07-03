@@ -97,6 +97,7 @@ class DirectoryRegistryTests(unittest.TestCase):
         self.assertIn("branchen_fitnessstudios", implemented_ids)
         self.assertIn("branchen_physiotherapeuten", implemented_ids)
         self.assertIn("branchen_zahnaerzte", implemented_ids)
+        self.assertIn("docfinder_zahn", implemented_ids)
         self.assertNotIn("branchen_restaurants", unavailable_ids)
         self.assertNotIn("branchen_physiotherapeuten", unavailable_ids)
         self.assertNotIn("branchen_zahnaerzte", unavailable_ids)
