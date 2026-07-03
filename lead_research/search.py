@@ -654,6 +654,7 @@ class GoogleMapsSearchProvider(SearchProvider):
             build_google_maps_search_url,
             fetch_google_maps_html,
             google_maps_location_plans,
+            google_maps_parallel_workers,
             google_maps_scroll_steps,
             parse_google_maps_listing_html,
         )
@@ -663,6 +664,7 @@ class GoogleMapsSearchProvider(SearchProvider):
         self._fetch_google_maps_html = fetch_google_maps_html
         self._google_maps_location_plans = google_maps_location_plans
         self._google_maps_scroll_steps = google_maps_scroll_steps
+        self._google_maps_parallel_workers = google_maps_parallel_workers
         self._parse_google_maps_listing_html = parse_google_maps_listing_html
         self.zenrows_api_key = _resolve_api_key(zenrows_api_key, "ZENROWS_API_KEY")
         if not self.zenrows_api_key:
@@ -682,14 +684,20 @@ class GoogleMapsSearchProvider(SearchProvider):
         results: list[SearchResult] = []
         seen: set[str] = set()
         plans = self._google_maps_location_plans(category, location, countries, limit=limit)
+        parallel_workers = min(self._google_maps_parallel_workers(), max(1, len(plans)))
+        scroll_steps = self._google_maps_scroll_steps()
         self._report(
             f"Google Maps (ZenRows): bis zu {limit} Websites — "
-            f"{len(plans)} Orte, {self._google_maps_scroll_steps()} Scroll-Schritte ..."
+            f"{len(plans)} Orte, {parallel_workers} parallel, {scroll_steps} Scroll-Schritte ..."
         )
 
-        for plan_index, (plan_location, country_code) in enumerate(plans, start=1):
-            if len(results) >= limit:
-                break
+        state_lock = threading.Lock()
+        stop = threading.Event()
+        completed_count = 0
+
+        def run_plan(plan_index: int, plan_location: str, country_code: str) -> tuple[int, str, list[SearchResult], bool]:
+            if stop.is_set():
+                return plan_index, plan_location, [], False
             locale_country, _tld = ZENROWS_LOCALE.get(country_code, ZENROWS_LOCALE["DE"])
             target_url = self._build_google_maps_search_url(category, plan_location)
             self._report(
@@ -701,24 +709,60 @@ class GoogleMapsSearchProvider(SearchProvider):
                     self.zenrows_api_key,
                     target_url,
                     proxy_country=locale_country,
-                    scroll_steps=self._google_maps_scroll_steps(),
+                    scroll_steps=scroll_steps,
                 )
             except self._fetch_error as exc:
                 self._report(f"Google Maps: {exc}")
-                continue
+                auth_error = "API-Key ungueltig" in str(exc) or "Berechtigung" in str(exc)
+                return plan_index, plan_location, [], auth_error
 
-            added = 0
+            plan_results: list[SearchResult] = []
             for result in self._parse_google_maps_listing_html(page_html):
                 key = google_maps_result_key(result)
-                if not key or key in seen:
+                if not key:
                     continue
-                seen.add(key)
-                results.append(result)
-                added += 1
+                plan_results.append(result)
+            return plan_index, plan_location, plan_results, False
+
+        with ThreadPoolExecutor(max_workers=parallel_workers, thread_name_prefix="capper-gmaps") as executor:
+            futures = [
+                executor.submit(run_plan, plan_index, plan_location, country_code)
+                for plan_index, (plan_location, country_code) in enumerate(plans, start=1)
+            ]
+            for future in as_completed(futures):
+                if stop.is_set():
+                    break
+                _plan_index, plan_location, plan_results, auth_error = future.result()
+                if auth_error:
+                    stop.set()
+                    self._report(
+                        "Google Maps: Suche abgebrochen. Bitte den ZenRows API-Key pruefen."
+                    )
+                    break
+                added = 0
+                with state_lock:
+                    for result in plan_results:
+                        key = google_maps_result_key(result)
+                        if not key or key in seen:
+                            continue
+                        seen.add(key)
+                        results.append(result)
+                        added += 1
+                        if len(results) >= limit:
+                            stop.set()
+                            break
+                    completed_count += 1
+                if added:
+                    self._report(
+                        f"Google Maps: +{added} aus {plan_location} (gesamt {len(results)})"
+                    )
+                if completed_count % 25 == 0:
+                    self._report(
+                        f"Google Maps: {len(results)}/{limit} Websites — "
+                        f"{completed_count}/{len(plans)} Orte erledigt ..."
+                    )
                 if len(results) >= limit:
                     break
-            if added:
-                self._report(f"Google Maps: +{added} aus {plan_location} (gesamt {len(results)})")
 
         self._report(f"Google Maps: {len(results)} Websites gefunden")
         return results[:limit]

@@ -7,7 +7,7 @@ import urllib.request
 
 from .extract import normalized_host
 from .http import format_request_error, read_response_text, urlopen
-from .locations import SUPPORTED_COUNTRIES, country_label, top_cities_for_web_search
+from .locations import SUPPORTED_COUNTRIES, cities_for_mass_web_search, country_label, top_cities_for_web_search
 from .models import SearchResult
 
 
@@ -15,7 +15,8 @@ GOOGLE_MAPS_ZENROWS_ENDPOINT = "https://api.zenrows.com/v1/"
 GOOGLE_MAPS_DEFAULT_SCROLL_STEPS = 2
 GOOGLE_MAPS_MAX_SCROLL_STEPS = 5
 GOOGLE_MAPS_DEFAULT_TIMEOUT_SECONDS = 90
-GOOGLE_MAPS_MAX_CITY_PLANS = 12
+GOOGLE_MAPS_DEFAULT_PARALLEL = 6
+GOOGLE_MAPS_MAX_PARALLEL = 12
 GOOGLE_MAPS_HOST_MARKERS = (
     "google.com",
     "google.de",
@@ -73,6 +74,43 @@ def google_maps_scroll_steps() -> int:
         return max(0, min(int(raw), GOOGLE_MAPS_MAX_SCROLL_STEPS))
     except ValueError:
         return GOOGLE_MAPS_DEFAULT_SCROLL_STEPS
+
+
+def google_maps_cities_budget(limit: int) -> int | None:
+    """How many cities per country to query. None means all cached OSM cities."""
+    if limit >= 3000:
+        return None
+    if limit >= 1000:
+        return 800
+    if limit >= 500:
+        return 200
+    if limit >= 100:
+        return 40
+    return 40
+
+
+def google_maps_max_cities_override() -> int | None:
+    import os
+
+    raw = os.getenv("GOOGLE_MAPS_MAX_CITIES", "").strip()
+    if not raw:
+        return None
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return None
+
+
+def google_maps_parallel_workers() -> int:
+    import os
+
+    raw = os.getenv("GOOGLE_MAPS_PARALLEL", "").strip()
+    if raw:
+        try:
+            return max(1, min(int(raw), GOOGLE_MAPS_MAX_PARALLEL))
+        except ValueError:
+            pass
+    return GOOGLE_MAPS_DEFAULT_PARALLEL
 
 
 def build_zenrows_google_maps_request_url(
@@ -215,10 +253,14 @@ def google_maps_location_plans(
         if country_code not in SUPPORTED_COUNTRIES:
             continue
         plans.append((country_label(country_code), country_code))
-    city_budget = GOOGLE_MAPS_MAX_CITY_PLANS
-    if limit >= 500:
-        city_budget = min(40, GOOGLE_MAPS_MAX_CITY_PLANS * 2)
-    for city_name, country_code in top_cities_for_web_search(countries, per_country=city_budget):
+    city_budget = google_maps_max_cities_override()
+    if city_budget is None:
+        city_budget = google_maps_cities_budget(limit)
+    if city_budget is None:
+        city_pairs = cities_for_mass_web_search(countries)
+    else:
+        city_pairs = top_cities_for_web_search(countries, per_country=city_budget)
+    for city_name, country_code in city_pairs:
         plans.append((city_name, country_code))
     return plans
 
