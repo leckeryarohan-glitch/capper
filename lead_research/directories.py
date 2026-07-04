@@ -356,16 +356,39 @@ def build_zenrows_directory_fetch_url(
     target_url: str,
     *,
     proxy_country: str = "de",
+    zenrows_params: dict[str, str] | None = None,
 ) -> str:
-    params = urllib.parse.urlencode(
-        {
-            "apikey": api_key,
-            "mode": DIRECTORY_ZENROWS_STEALTH_MODE,
-            "proxy_country": proxy_country,
-        }
-    )
+    params: dict[str, str] = {
+        "apikey": api_key,
+        "proxy_country": proxy_country,
+    }
+    if zenrows_params:
+        params.update(zenrows_params)
+    else:
+        params["mode"] = DIRECTORY_ZENROWS_STEALTH_MODE
     encoded_target = urllib.parse.quote(target_url, safe="")
-    return f"{DIRECTORY_ZENROWS_ENDPOINT}?{params}&url={encoded_target}"
+    query = urllib.parse.urlencode(params)
+    return f"{DIRECTORY_ZENROWS_ENDPOINT}?{query}&url={encoded_target}"
+
+
+def zenrows_directory_fetch_profiles(url: str, proxy_country: str) -> list[dict[str, str]]:
+    if "hotfrog." in url:
+        return [
+            {
+                "js_render": "true",
+                "premium_proxy": "true",
+                "proxy_country": proxy_country,
+                "wait": "3000",
+            },
+            {"mode": DIRECTORY_ZENROWS_STEALTH_MODE, "proxy_country": proxy_country},
+            {
+                "js_render": "true",
+                "premium_proxy": "true",
+                "proxy_country": proxy_country,
+                "wait": "8000",
+            },
+        ]
+    return [{"mode": DIRECTORY_ZENROWS_STEALTH_MODE, "proxy_country": proxy_country}]
 
 
 def is_valid_lead_url(url: str) -> bool:
@@ -685,25 +708,37 @@ def fetch_directory_html_via_zenrows(
     proxy_country: str = "de",
     timeout: int = DIRECTORY_ZENROWS_TIMEOUT_SECONDS,
 ) -> str:
-    request = urllib.request.Request(
-        build_zenrows_directory_fetch_url(api_key, url, proxy_country=proxy_country),
-        headers={
-            "Accept": "text/html,application/xhtml+xml",
-            "User-Agent": DIRECTORY_USER_AGENT,
-        },
-        method="GET",
-    )
-    try:
-        with urlopen(request, timeout=timeout) as response:
-            return read_response_text(response)
-    except OSError as exc:
-        message = format_request_error(exc)
-        if "HTTP Error 401" in message or "HTTP Error 403" in message:
-            raise DirectoryFetchError(
-                "ZenRows API-Key ungueltig oder ohne Berechtigung fuer Branchenverzeichnisse. "
-                "Bitte den Key im ZenRows-Dashboard pruefen."
-            ) from exc
-        raise DirectoryFetchError(f"ZenRows directory request failed for {url}: {message}") from exc
+    last_error: DirectoryFetchError | None = None
+    for zenrows_params in zenrows_directory_fetch_profiles(url, proxy_country):
+        request = urllib.request.Request(
+            build_zenrows_directory_fetch_url(
+                api_key,
+                url,
+                proxy_country=proxy_country,
+                zenrows_params=zenrows_params,
+            ),
+            headers={
+                "Accept": "text/html,application/xhtml+xml",
+                "User-Agent": DIRECTORY_USER_AGENT,
+            },
+            method="GET",
+        )
+        try:
+            with urlopen(request, timeout=timeout) as response:
+                return read_response_text(response)
+        except OSError as exc:
+            message = format_request_error(exc)
+            if "HTTP Error 401" in message or "HTTP Error 403" in message:
+                raise DirectoryFetchError(
+                    "ZenRows API-Key ungueltig oder ohne Berechtigung fuer Branchenverzeichnisse. "
+                    "Bitte den Key im ZenRows-Dashboard pruefen."
+                ) from exc
+            last_error = DirectoryFetchError(f"ZenRows directory request failed for {url}: {message}")
+            if "HTTP Error 422" not in message:
+                raise last_error from exc
+    if last_error is not None:
+        raise last_error
+    raise DirectoryFetchError(f"ZenRows directory request failed for {url}")
 
 
 def fetch_directory_html(url: str, *, timeout: int = DIRECTORY_ZENROWS_TIMEOUT_SECONDS) -> str:
@@ -1379,6 +1414,60 @@ def parse_hotfrog_redirect_websites(page_html: str) -> list[str]:
         seen.add(key)
         websites.append(candidate)
     return websites
+
+
+def parse_hotfrog_listing_html(page_html: str) -> list[tuple[str, str]]:
+    listings: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for match in re.finditer(
+        r'href="(https://www\.hotfrog\.de/company/\d+)"[^>]*>([^<]+)<',
+        page_html,
+        re.IGNORECASE,
+    ):
+        detail_url = match.group(1)
+        name = html.unescape(re.sub(r"\s+", " ", match.group(2))).strip()
+        if detail_url in seen:
+            continue
+        seen.add(detail_url)
+        listings.append((name or name_from_url_slug(detail_url), detail_url))
+    for match in re.finditer(r'href="(https://www\.hotfrog\.de/company/\d+)"', page_html, re.IGNORECASE):
+        detail_url = match.group(1)
+        if detail_url in seen:
+            continue
+        seen.add(detail_url)
+        listings.append((name_from_url_slug(detail_url), detail_url))
+    return listings
+
+
+def parse_hotfrog_detail_name(page_html: str) -> str:
+    match = re.search(r"<h1[^>]*>([^<]+)</h1>", page_html, re.IGNORECASE)
+    if match:
+        return html.unescape(re.sub(r"\s+", " ", match.group(1))).strip()
+    match = re.search(r'itemprop="name"\s+content="([^"]+)"', page_html, re.IGNORECASE)
+    if match:
+        return html.unescape(match.group(1)).strip()
+    return ""
+
+
+def parse_hotfrog_detail_website(page_html: str) -> str:
+    for encoded in re.findall(r"continue=(https[^&\"']+)", page_html):
+        candidate = normalize_result_url(html.unescape(urllib.parse.unquote(encoded)))
+        if is_external_business_url(candidate):
+            return candidate
+    match = re.search(r'itemprop="url"\s+content="(https?://[^"]+)"', page_html, re.IGNORECASE)
+    if match:
+        candidate = normalize_result_url(html.unescape(match.group(1)))
+        if is_external_business_url(candidate):
+            return candidate
+    for match in re.finditer(
+        r'(?:Webseite|Website|Homepage)\s+(?:www\.)?([a-z0-9][a-z0-9.-]+\.[a-z]{2,})',
+        page_html,
+        re.IGNORECASE,
+    ):
+        candidate = normalize_result_url("https://" + match.group(1))
+        if is_external_business_url(candidate):
+            return candidate
+    return ""
 
 
 def parse_werkenntdenbesten_detail_website(page_html: str) -> str:
@@ -3061,8 +3150,31 @@ def scrape_cylex(category: str, location: str, limit: int) -> list[DirectoryEntr
     )[:limit]
 
 
+def hotfrog_location_slug(location: str) -> str:
+    return golocal_location_slug(location)
+
+
+def hotfrog_category_slug(category: str) -> str:
+    slug = directory_lower_hyphen_slug(category) or "unternehmen"
+    aliases = {
+        "hotel": "hotels",
+        "pension": "hotels",
+        "restaurant": "restaurants",
+        "cafe": "cafes",
+        "friseur": "friseure",
+        "fitnessstudio": "fitnessstudios",
+    }
+    return aliases.get(slug, slug)
+
+
+def build_hotfrog_url(category: str, location: str) -> str:
+    location_slug = hotfrog_location_slug(location)
+    category_slug = hotfrog_category_slug(category)
+    return f"https://www.hotfrog.de/search/{location_slug}/{category_slug}"
+
+
 def scrape_hotfrog(category: str, location: str, limit: int) -> list[DirectoryEntry]:
-    source_url = f"https://www.hotfrog.de/search/{slug_for_directory_path(location)}/{slug_for_directory_path(category)}"
+    source_url = build_hotfrog_url(category, location)
     page_html = fetch_directory_html(source_url)
     entries: list[DirectoryEntry] = []
     seen: set[str] = set()
@@ -3080,8 +3192,27 @@ def scrape_hotfrog(category: str, location: str, limit: int) -> list[DirectoryEn
             )
         )
         if len(entries) >= limit:
-            break
-    return entries
+            return entries
+    listings = parse_hotfrog_listing_html(page_html)
+    if listings and len(entries) < limit:
+        detail_entries = enrich_detail_name_and_website(
+            listings,
+            max_detail_fetches=limit - len(entries),
+            parse_detail_name=parse_hotfrog_detail_name,
+            parse_detail_website=parse_hotfrog_detail_website,
+            source_name="Hotfrog",
+        )
+        for entry in detail_entries:
+            if not entry.website:
+                continue
+            key = entry.website.lower().rstrip("/")
+            if key in seen:
+                continue
+            seen.add(key)
+            entries.append(entry)
+            if len(entries) >= limit:
+                break
+    return entries[:limit]
 
 
 def scrape_werkenntdenbesten(category: str, location: str, limit: int) -> list[DirectoryEntry]:
