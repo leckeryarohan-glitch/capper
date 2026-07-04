@@ -60,7 +60,6 @@ CATEGORY_SOURCE_PROFILES: dict[str, tuple[str, ...]] = {
     ),
     "hotel": (
         "branchen_hotels",
-        "golocal",
         "gelbeseiten",
         "herold",
         "yelp",

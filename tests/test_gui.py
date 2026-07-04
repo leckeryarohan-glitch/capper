@@ -101,6 +101,7 @@ class GuiArgumentTests(unittest.TestCase):
                         "use_duckduckgo": False,
                         "use_directories": False,
                         "use_zenrows_google": False,
+                        "use_google_maps": False,
                         "use_serpapi": False,
                     },
                     events,
