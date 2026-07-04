@@ -207,12 +207,31 @@ class DirectoryParserTests(unittest.TestCase):
         self.assertEqual(website, "http://www.palace.de/")
 
     def test_parse_hotfrog_redirect_websites(self) -> None:
-        from lead_research.directories import parse_hotfrog_redirect_websites
+        from lead_research.directories import (
+            build_hotfrog_url,
+            parse_hotfrog_detail_website,
+            parse_hotfrog_listing_html,
+            parse_hotfrog_redirect_websites,
+            zenrows_directory_fetch_profiles,
+        )
 
+        self.assertEqual(build_hotfrog_url("hotel", "Berlin"), "https://www.hotfrog.de/search/berlin/hotels")
+        self.assertEqual(build_hotfrog_url("hotel", "München"), "https://www.hotfrog.de/search/muenchen/hotels")
+        self.assertEqual(build_hotfrog_url("hotel", "Frankfurt am Main"), "https://www.hotfrog.de/search/frankfurt/hotels")
+        profiles = zenrows_directory_fetch_profiles("https://www.hotfrog.de/search/berlin/hotels", "de")
+        self.assertEqual(profiles[0].get("js_render"), "true")
         websites = parse_hotfrog_redirect_websites(
             'href="https://x.yext-wrap.com/plclick?continue=https%3A%2F%2Fwww.example-hotel.de%2F"'
         )
         self.assertEqual(websites, ["https://www.example-hotel.de/"])
+        listings = parse_hotfrog_listing_html(
+            '<a href="https://www.hotfrog.de/company/1123017778122752">Demo Hotel</a>'
+        )
+        self.assertEqual(listings[0][0], "Demo Hotel")
+        self.assertEqual(
+            parse_hotfrog_detail_website('Webseite www.demo-hotel.example Tel: 030'),
+            "https://demo-hotel.example",
+        )
 
     def test_parse_goyellow_listing_html(self) -> None:
         from lead_research.directories import parse_goyellow_listing_html
