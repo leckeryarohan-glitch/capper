@@ -138,7 +138,7 @@ def collect_gui_settings(values: Mapping[str, str | bool]) -> dict[str, object]:
         "use_duckduckgo": bool(values.get("use_duckduckgo", True)),
         "use_directories": bool(values.get("use_directories", True)),
         "use_zenrows_google": bool(values.get("use_zenrows_google", True)),
-        "use_google_maps": bool(values.get("use_google_maps", False)),
+        "use_google_maps": bool(values.get("use_google_maps", True)),
         "use_serpapi": bool(values.get("use_serpapi", True)),
         "directory_sources": sorted(selected_directory_source_ids(values)),
     }
@@ -167,7 +167,7 @@ def checkpoint_settings_for_gui(path: Path) -> dict[str, object] | None:
         "use_duckduckgo": bool(gui_settings.get("use_duckduckgo", True)),
         "use_directories": bool(gui_settings.get("use_directories", True)),
         "use_zenrows_google": bool(gui_settings.get("use_zenrows_google", True)),
-        "use_google_maps": bool(gui_settings.get("use_google_maps", False)),
+        "use_google_maps": bool(gui_settings.get("use_google_maps", True)),
         "use_serpapi": bool(gui_settings.get("use_serpapi", False)),
         "directory_sources": list(gui_settings.get("directory_sources", [])),
         "progress_summary": checkpoint_progress_summary(checkpoint),
@@ -192,7 +192,7 @@ def apply_gui_settings(values: dict[str, object], settings: Mapping[str, object]
     values["use_duckduckgo"] = bool(settings.get("use_duckduckgo", True))
     values["use_directories"] = bool(settings.get("use_directories", True))
     values["use_zenrows_google"] = bool(settings.get("use_zenrows_google", True))
-    values["use_google_maps"] = bool(settings.get("use_google_maps", False))
+    values["use_google_maps"] = bool(settings.get("use_google_maps", True))
     values["use_serpapi"] = bool(settings.get("use_serpapi", False))
 
     directory_sources = settings.get("directory_sources")
@@ -234,7 +234,7 @@ def run_gui_discovery(
     use_duckduckgo = bool(values.get("use_duckduckgo", True))
     use_directories = bool(values.get("use_directories", True))
     use_zenrows_google = bool(values.get("use_zenrows_google", True))
-    use_google_maps = bool(values.get("use_google_maps", False))
+    use_google_maps = bool(values.get("use_google_maps", True))
     use_serpapi = bool(values.get("use_serpapi", True))
 
     needs_zenrows = use_directories or use_zenrows_google or use_google_maps
@@ -339,7 +339,7 @@ def run_gui() -> int:
             self.use_duckduckgo = tk.BooleanVar(value=True)
             self.use_directories = tk.BooleanVar(value=True)
             self.use_zenrows_google = tk.BooleanVar(value=True)
-            self.use_google_maps = tk.BooleanVar(value=False)
+            self.use_google_maps = tk.BooleanVar(value=True)
             self.use_serpapi = tk.BooleanVar(value=True)
             self.directory_source_vars: dict[str, tk.BooleanVar] = {}
             for spec in build_directory_source_registry():
@@ -683,7 +683,7 @@ def run_gui() -> int:
             self.use_duckduckgo.set(bool(values["use_duckduckgo"]))
             self.use_directories.set(bool(values["use_directories"]))
             self.use_zenrows_google.set(bool(values["use_zenrows_google"]))
-            self.use_google_maps.set(bool(values.get("use_google_maps", False)))
+            self.use_google_maps.set(bool(values.get("use_google_maps", True)))
             self.use_serpapi.set(bool(values["use_serpapi"]))
             self.country_de.set(bool(values["country_de"]))
             self.country_at.set(bool(values["country_at"]))

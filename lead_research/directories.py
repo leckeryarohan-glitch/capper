@@ -513,6 +513,38 @@ def treatwell_location_slug(location: str) -> str:
     return slug
 
 
+def golocal_location_slug(location: str) -> str:
+    cleaned = re.sub(r"\s*\([^)]*\)", "", location).strip()
+    lowered = cleaned.lower()
+    for separator in (" an der ", " am ", " im ", " in der "):
+        idx = lowered.find(separator)
+        if idx >= 0:
+            cleaned = cleaned[:idx].strip()
+            lowered = cleaned.lower()
+            break
+    slug = directory_lower_hyphen_slug(cleaned) or "berlin"
+    for old, new in (("ä", "ae"), ("ö", "oe"), ("ü", "ue"), ("ß", "ss")):
+        slug = slug.replace(old, new)
+    return slug
+
+
+def golocal_category_slug(category: str) -> str:
+    slug = directory_lower_hyphen_slug(category) or "unternehmen"
+    aliases = {
+        "hotel": "hotels",
+        "pension": "hotels",
+        "friseur": "friseure",
+        "fitnessstudio": "fitnessstudios",
+        "fitness": "fitnessstudios",
+        "restaurant": "restaurants",
+        "cafe": "cafes",
+        "baeckerei": "baeckereien",
+        "bäckerei": "baeckereien",
+        "immobilienmakler": "immobilienmakler",
+    }
+    return aliases.get(slug, slug)
+
+
 def sanego_path_segment(value: str) -> str:
     cleaned = re.sub(r"\s+", " ", value.strip())
     if not cleaned:
@@ -2498,8 +2530,8 @@ def build_wko_url(category: str, location: str, page: int) -> str:
 
 
 def build_golocal_url(category: str, location: str, page: int) -> str:
-    location_slug = directory_lower_hyphen_slug(location) or "berlin"
-    category_slug = directory_lower_hyphen_slug(category) or "unternehmen"
+    location_slug = golocal_location_slug(location)
+    category_slug = golocal_category_slug(category)
     if page <= 1:
         return f"https://www.golocal.de/{location_slug}/{category_slug}/"
     return f"https://www.golocal.de/{location_slug}/{category_slug}/?p={page}"

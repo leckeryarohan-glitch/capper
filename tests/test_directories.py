@@ -734,6 +734,8 @@ class DirectoryParserTests(unittest.TestCase):
     def test_parse_golocal_listing_and_detail(self) -> None:
         from lead_research.directories import (
             build_golocal_url,
+            golocal_category_slug,
+            golocal_location_slug,
             parse_golocal_detail_name,
             parse_golocal_detail_website,
             parse_golocal_listing_html,
@@ -743,6 +745,14 @@ class DirectoryParserTests(unittest.TestCase):
             build_golocal_url("Steuerberater", "Berlin", 2),
             "https://www.golocal.de/berlin/steuerberater/?p=2",
         )
+        self.assertEqual(build_golocal_url("hotel", "München", 1), "https://www.golocal.de/muenchen/hotels/")
+        self.assertEqual(build_golocal_url("hotel", "Köln", 1), "https://www.golocal.de/koeln/hotels/")
+        self.assertEqual(
+            build_golocal_url("hotel", "Frankfurt am Main", 1),
+            "https://www.golocal.de/frankfurt/hotels/",
+        )
+        self.assertEqual(golocal_category_slug("hotel"), "hotels")
+        self.assertEqual(golocal_location_slug("Mülheim an der Ruhr"), "muelheim")
         listings = parse_golocal_listing_html(
             """
             <li class="listEntry ">
