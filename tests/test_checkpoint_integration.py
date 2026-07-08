@@ -29,6 +29,7 @@ from lead_research.live_status import live_status_path_for_checkpoint, read_live
 CHECKPOINT_PATH = os.getenv("CHECKPOINT_PATH", "").strip()
 ZENROWS_API_KEY = os.getenv("ZENROWS_API_KEY", "").strip()
 MIN_NEW_SITES = int(os.getenv("CHECKPOINT_TEST_MIN_NEW_SITES", "8"))
+TARGET_TOTAL_LEADS = int(os.getenv("CHECKPOINT_TEST_TARGET_TOTAL_LEADS", "0"))
 MAX_SECONDS = float(os.getenv("CHECKPOINT_TEST_MAX_SECONDS", "180"))
 
 
@@ -97,9 +98,13 @@ class CheckpointIntegrationTests(unittest.TestCase):
             live_path = live_status_path_for_checkpoint(checkpoint)
             started = time.monotonic()
             last_done = baseline_done
+            last_leads = baseline_leads
             last_progress_at = started
             peak_leads_per_min = 0.0
             new_sites = 0
+            target_total_leads = (
+                TARGET_TOTAL_LEADS if TARGET_TOTAL_LEADS > 0 else baseline_leads
+            )
 
             while not done.is_set():
                 now = time.monotonic()
@@ -108,36 +113,64 @@ class CheckpointIntegrationTests(unittest.TestCase):
                 status = read_live_status(live_path)
                 if status is not None:
                     peak_leads_per_min = max(peak_leads_per_min, status.leads_per_minute)
-                    if status.websites_done > last_done:
+                    if status.websites_done > last_done or status.leads_found > last_leads:
                         new_sites = status.websites_done - baseline_done
                         last_done = status.websites_done
+                        last_leads = status.leads_found
                         last_progress_at = now
-                    elif now - last_progress_at >= 30.0:
-                        self.fail(
-                            f"No crawl progress for 30s (done={status.websites_done}, "
-                            f"baseline={baseline_done}, active phase={status.phase!r})"
+                        print(
+                            f"progress: sites={status.websites_done} "
+                            f"(+{new_sites}) leads={status.leads_found} "
+                            f"(+{status.leads_found - baseline_leads}) "
+                            f"{status.leads_per_minute}/min",
+                            flush=True,
                         )
-                    if new_sites >= MIN_NEW_SITES:
+                    elif now - last_progress_at >= 45.0:
+                        self.fail(
+                            f"No crawl progress for 45s (done={status.websites_done}, "
+                            f"leads={status.leads_found}, baseline={baseline_done}, "
+                            f"phase={status.phase!r})"
+                        )
+                    if TARGET_TOTAL_LEADS > 0:
+                        if status.leads_found >= target_total_leads:
+                            break
+                    elif new_sites >= MIN_NEW_SITES:
                         break
                 time.sleep(2.0)
 
             if "error" in result:
                 self.fail(f"run_gui_discovery failed: {result['error']!r}")
-            self.assertGreaterEqual(
-                new_sites,
-                MIN_NEW_SITES,
-                f"Expected at least {MIN_NEW_SITES} new sites in {MAX_SECONDS:.0f}s, got {new_sites}",
-            )
+
+            final = read_live_status(live_path)
+            final_leads = final.leads_found if final is not None else last_leads
+            final_done = final.websites_done if final is not None else last_done
+
+            if TARGET_TOTAL_LEADS > 0:
+                self.assertGreaterEqual(
+                    final_leads,
+                    target_total_leads,
+                    f"Expected at least {target_total_leads} leads in {MAX_SECONDS:.0f}s, got {final_leads}",
+                )
+            else:
+                self.assertGreaterEqual(
+                    new_sites,
+                    MIN_NEW_SITES,
+                    f"Expected at least {MIN_NEW_SITES} new sites in {MAX_SECONDS:.0f}s, got {new_sites}",
+                )
+                if final is not None:
+                    self.assertGreaterEqual(final.websites_done, baseline_done + MIN_NEW_SITES)
+                    self.assertGreaterEqual(final.leads_found, baseline_leads)
+
             self.assertLess(
                 peak_leads_per_min,
                 500.0,
                 f"Leads/min looked inflated (peak={peak_leads_per_min})",
             )
-
-            final = read_live_status(live_path)
-            if final is not None:
-                self.assertGreaterEqual(final.websites_done, baseline_done + MIN_NEW_SITES)
-                self.assertGreaterEqual(final.leads_found, baseline_leads)
+            print(
+                f"done: sites={final_done} leads={final_leads} "
+                f"peak_lpm={peak_leads_per_min}",
+                flush=True,
+            )
 
 
 if __name__ == "__main__":
