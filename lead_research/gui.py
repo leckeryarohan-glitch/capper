@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import queue
 import threading
+import time
 from pathlib import Path
 from typing import Mapping
 
@@ -145,10 +146,55 @@ def collect_gui_settings(values: Mapping[str, str | bool]) -> dict[str, object]:
 
 
 DEFAULT_GUI_LEAD_ROWS = 500
-GUI_MESSAGES_PER_POLL = 100
+GUI_POLL_INTERVAL_MS = 40
+GUI_POLL_TIME_BUDGET_MS = 30
+GUI_MESSAGES_PER_POLL = 150
+GUI_MAX_DRAIN_PER_CYCLE = 400
 GUI_LOG_EVERY_N_PAGES = 25
 GUI_MAX_LOG_LINES = 1500
+GUI_UI_UPDATE_INTERVAL_S = 0.25
+GUI_SITE_LOG_EVERY = 50
+GUI_LOG_SCROLL_EVERY = 8
 CHECKPOINT_PATH_DEBOUNCE_MS = 500
+
+
+def coalesce_gui_messages(messages: list[tuple]) -> list[tuple]:
+    """Collapse bursty crawl updates so the Tk main thread stays responsive."""
+    if len(messages) <= 1:
+        return messages
+
+    coalesced: list[tuple] = []
+    latest_progress: tuple | None = None
+    latest_site_done: tuple | None = None
+    latest_page: tuple | None = None
+
+    def flush_crawl_updates() -> None:
+        nonlocal latest_progress, latest_site_done, latest_page
+        if latest_site_done is not None:
+            coalesced.append(latest_site_done)
+            latest_site_done = None
+            latest_progress = None
+        elif latest_progress is not None:
+            coalesced.append(latest_progress)
+            latest_progress = None
+        if latest_page is not None:
+            coalesced.append(latest_page)
+            latest_page = None
+
+    for message in messages:
+        kind = message[0]
+        if kind == "progress":
+            latest_progress = message
+        elif kind == "site_done":
+            latest_site_done = message
+            latest_progress = None
+        elif kind == "page":
+            latest_page = message
+        else:
+            flush_crawl_updates()
+            coalesced.append(message)
+    flush_crawl_updates()
+    return coalesced
 
 
 def checkpoint_settings_for_gui(path: Path) -> dict[str, object] | None:
@@ -331,6 +377,10 @@ def run_gui() -> int:
             self.worker: threading.Thread | None = None
             self._checkpoint_debounce_id: str | None = None
             self._gui_leads_shown = 0
+            self._last_stats_refresh = 0.0
+            self._pending_stats: LeadStats | None = None
+            self._sites_since_log = 0
+            self._log_lines_since_scroll = 0
 
             self.category = tk.StringVar(value="hotel")
             self.location = tk.StringVar(value="")
@@ -821,6 +871,10 @@ def run_gui() -> int:
             self.stats_text.set("Statistik: Suche wird vorbereitet ...")
             self.current_page_text.set("Aktuelle Seite: -")
             self._gui_leads_shown = 0
+            self._sites_since_log = 0
+            self._pending_stats = None
+            self._last_stats_refresh = 0.0
+            self._log_lines_since_scroll = 0
             for item in self.lead_table.get_children():
                 self.lead_table.delete(item)
             self.log.configure(state="normal")
@@ -836,15 +890,53 @@ def run_gui() -> int:
             self.messages.put(("done", exit_code))
 
         def _poll_messages(self) -> None:
+            started = time.monotonic()
+            batch = self._drain_messages()
+            if len(batch) > 1:
+                batch = coalesce_gui_messages(batch)
             processed = 0
-            while processed < GUI_MESSAGES_PER_POLL:
-                try:
-                    message = self.messages.get_nowait()
-                except queue.Empty:
-                    break
+            for message in batch:
+                if processed >= GUI_MESSAGES_PER_POLL:
+                    self.messages.put(message)
+                    continue
+                if (time.monotonic() - started) * 1000 >= GUI_POLL_TIME_BUDGET_MS:
+                    self.messages.put(message)
+                    continue
                 self._handle_message(message)
                 processed += 1
-            self.root.after(100, self._poll_messages)
+            self._flush_stats_if_due()
+            self.root.after(GUI_POLL_INTERVAL_MS, self._poll_messages)
+
+        def _drain_messages(self) -> list[tuple]:
+            batch: list[tuple] = []
+            while len(batch) < GUI_MAX_DRAIN_PER_CYCLE:
+                try:
+                    batch.append(self.messages.get_nowait())
+                except queue.Empty:
+                    break
+            return batch
+
+        def _note_stats(self, stats: LeadStats) -> None:
+            self._pending_stats = stats
+
+        def _flush_stats_if_due(self, *, force: bool = False) -> None:
+            if self._pending_stats is None:
+                return
+            now = time.monotonic()
+            if not force and now - self._last_stats_refresh < GUI_UI_UPDATE_INTERVAL_S:
+                return
+            stats = self._pending_stats
+            self._pending_stats = None
+            self._last_stats_refresh = now
+            self._apply_stats(stats)
+
+        def _apply_stats(self, stats: LeadStats) -> None:
+            self.progress.configure(maximum=max(stats.websites_total, 1))
+            self.progress_value.set(stats.websites_done)
+            self.status_text.set(
+                f"Website {stats.websites_done}/{stats.websites_total} · {stats.leads_per_minute} Leads/min"
+            )
+            self._update_stats(stats)
 
         def _update_stats(self, stats: LeadStats) -> None:
             self.lead_count_text.set(f"Gefundene Leads: {stats.leads_found}")
@@ -895,12 +987,8 @@ def run_gui() -> int:
                 self.status_text.set(f"{message[1]} Websites gefunden. Starte paralleles Crawling ...")
             elif kind == "progress":
                 stats = message[1]
-                self.progress.configure(maximum=max(stats.websites_total, 1))
-                self.progress_value.set(stats.websites_done)
-                self.status_text.set(
-                    f"Website {stats.websites_done}/{stats.websites_total} · {stats.leads_per_minute} Leads/min"
-                )
-                self._update_stats(stats)
+                self._note_stats(stats)
+                self._flush_stats_if_due()
                 if stats.websites_done == 0 and stats.websites_total > 0:
                     self.stats_text.set(
                         f"Statistik: Crawling startet · {stats.leads_found} Leads bisher · "
@@ -912,18 +1000,22 @@ def run_gui() -> int:
                 if count == 1 or count % GUI_LOG_EVERY_N_PAGES == 0:
                     self._append_log(f"  geprueft: {url} ({count} Seiten)\n")
             elif kind == "site_done":
-                url, new_leads, stats = message[1], message[2], message[3]
-                self.progress.configure(maximum=max(stats.websites_total, 1))
-                self.progress_value.set(stats.websites_done)
-                self._update_stats(stats)
-                self._append_log(
-                    f"Website fertig ({stats.websites_done}/{stats.websites_total}): {url} (+{new_leads} Leads)\n"
-                )
+                _url, _new_leads, stats = message[1], message[2], message[3]
+                self._note_stats(stats)
+                self._flush_stats_if_due()
+                self._sites_since_log += 1
+                if self._sites_since_log >= GUI_SITE_LOG_EVERY:
+                    self._sites_since_log = 0
+                    self._append_log(
+                        f"Fortschritt: {stats.websites_done}/{stats.websites_total} Websites, "
+                        f"{stats.leads_found} Leads\n"
+                    )
             elif kind == "warning":
-                self._append_log("Hinweis: " + message[1] + "\n")
+                self._append_log("Hinweis: " + message[1] + "\n", scroll=True)
             elif kind == "lead":
-                lead, stats = message[1], message[2]
-                self._update_stats(stats)
+                lead = message[1]
+                if len(message) > 2:
+                    self._note_stats(message[2])
                 if self._gui_leads_shown < DEFAULT_GUI_LEAD_ROWS:
                     self.lead_table.insert(
                         "",
@@ -936,16 +1028,17 @@ def run_gui() -> int:
                         ),
                     )
                     self._gui_leads_shown += 1
-                    self._append_log(f"Lead gefunden: {lead.email} ({lead.company_name})\n")
                 elif self._gui_leads_shown == DEFAULT_GUI_LEAD_ROWS:
                     self._gui_leads_shown += 1
                     self._append_log(
                         f"Hinweis: Weitere Leads werden nur in der CSV gespeichert "
-                        f"(GUI-Anzeige auf {DEFAULT_GUI_LEAD_ROWS} begrenzt).\n"
+                        f"(GUI-Anzeige auf {DEFAULT_GUI_LEAD_ROWS} begrenzt).\n",
+                        scroll=True,
                     )
             elif kind == "finished":
                 stats, output = message[1], message[2]
-                self._update_stats(stats)
+                self._note_stats(stats)
+                self._flush_stats_if_due(force=True)
                 self.status_text.set(f"Fertig. {stats.leads_found} Leads geschrieben nach {output}.")
                 self._append_log(
                     f"Fertig. {stats.leads_found} Leads, {stats.duplicates_skipped} Duplikate uebersprungen, "
@@ -956,10 +1049,11 @@ def run_gui() -> int:
                 self._append_log("Fehler: " + message[1] + "\n")
                 messagebox.showerror("Capper", message[1])
             elif kind == "done":
+                self._flush_stats_if_due(force=True)
                 self.start_button.configure(state="normal")
-                self._append_log(f"Fertig mit Exit-Code {message[1]}.\n")
+                self._append_log(f"Fertig mit Exit-Code {message[1]}.\n", scroll=True)
 
-        def _append_log(self, text: str) -> None:
+        def _append_log(self, text: str, *, scroll: bool = False) -> None:
             self.log.configure(state="normal")
             self.log.insert("end", text)
             try:
@@ -968,7 +1062,10 @@ def run_gui() -> int:
                 line_count = 0
             if line_count > GUI_MAX_LOG_LINES:
                 self.log.delete("1.0", f"{line_count - GUI_MAX_LOG_LINES}.0")
-            self.log.see("end")
+            self._log_lines_since_scroll += text.count("\n")
+            if scroll or self._log_lines_since_scroll >= GUI_LOG_SCROLL_EVERY:
+                self.log.see("end")
+                self._log_lines_since_scroll = 0
             self.log.configure(state="disabled")
 
     root = tk.Tk()

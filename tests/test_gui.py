@@ -11,10 +11,12 @@ from lead_research.gui import (
     build_simple_gui_argv,
     checkpoint_settings_for_gui,
     collect_gui_settings,
+    coalesce_gui_messages,
     run_gui_discovery,
 )
 from lead_research.checkpoint import new_discovery_checkpoint, save_discovery_checkpoint
 from lead_research.models import Lead, SearchResult
+from lead_research.pipeline import LeadStats
 from lead_research.search import SearchProviderError
 
 
@@ -367,6 +369,28 @@ class GuiArgumentTests(unittest.TestCase):
                     },
                     events,
                 )
+
+    def test_coalesce_gui_messages_keeps_latest_crawl_stats(self) -> None:
+        stats_old = LeadStats(websites_total=100, websites_done=1, leads_found=1)
+        stats_new = LeadStats(websites_total=100, websites_done=9, leads_found=4)
+        messages = [
+            ("progress", stats_old),
+            ("site_done", "a.test", 0, stats_old),
+            ("progress", stats_new),
+            ("lead", Lead(
+                category="hotel",
+                source_url="https://a.test",
+                website="https://a.test",
+                email="info@a.test",
+                company_name="Example",
+            ), stats_new),
+            ("status", "Crawling laeuft ..."),
+        ]
+        coalesced = coalesce_gui_messages(messages)
+        kinds = [message[0] for message in coalesced]
+        self.assertEqual(kinds, ["site_done", "lead", "status"])
+        self.assertEqual(coalesced[0][3].websites_done, 1)
+        self.assertEqual(coalesced[1][1].email, "info@a.test")
 
 
 if __name__ == "__main__":

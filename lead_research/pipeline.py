@@ -394,7 +394,8 @@ def run_discovery(
                     new_leads = stats.leads_found - leads_before
                     sites_since_checkpoint += 1
                 emit("site_done", search_result_display_label(result), new_leads, stats)
-                emit("progress", stats)
+                if stats.websites_done % 10 == 0 or stats.websites_done == stats.websites_total:
+                    emit("progress", stats)
                 maybe_save_checkpoint()
                 if stats.leads_found >= config.max_leads:
                     stop_submitting = True
