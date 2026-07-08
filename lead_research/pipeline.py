@@ -280,9 +280,21 @@ def run_discovery(
     page_lock = threading.Lock()
     state_lock = threading.Lock()
     sites_since_checkpoint = 0
-    checkpoint_writer = AsyncCheckpointWriter()
+    checkpoint_writer = AsyncCheckpointWriter(
+        initial_crawled_count=len(checkpoint_state.crawled_urls),
+        initial_leads_count=len(checkpoint_state.leads),
+    )
     checkpoint_save_every = checkpoint_save_interval(checkpoint_state)
     pages_since_emit = 0
+    gui_quiet_mode = resume and pending_count >= 50
+    skipped_site_warnings = 0
+
+    if gui_quiet_mode:
+        emit("quiet", True)
+        emit(
+            "status",
+            "GUI-Leichtmodus aktiv: Fortschritt alle 10 Websites, Leads nur in CSV.",
+        )
 
     def checkpoint_snapshot() -> tuple[DiscoveryCheckpoint, bool]:
         incremental = checkpoint_uses_sidecar(checkpoint_state)
@@ -294,6 +306,8 @@ def run_discovery(
             stats.pages_fetched += 1
             count = stats.pages_fetched
             pages_since_emit += 1
+        if gui_quiet_mode:
+            return
         if pages_since_emit == 1 or pages_since_emit >= PAGE_EVENT_INTERVAL:
             pages_since_emit = 0
             emit("page", url, count)
@@ -321,13 +335,13 @@ def run_discovery(
         finally:
             socket.setdefaulttimeout(previous_socket_timeout)
 
-    def store_lead(lead: Lead) -> None:
+    def accept_lead(lead: Lead) -> Lead | None:
         if suppression.is_suppressed(lead):
             stats.suppressed_skipped += 1
-            return
+            return None
         if not dedup.is_new(lead):
             stats.duplicates_skipped += 1
-            return
+            return None
         stats.leads_found += 1
         if lead.consent_status == ConsentStatus.BUSINESS_PUBLIC:
             stats.business_leads += 1
@@ -337,12 +351,16 @@ def run_discovery(
         if host:
             domains.add(host)
             stats.unique_domains = len(domains)
+        append_lead(checkpoint_state, lead)
+        return lead
+
+    def persist_lead(lead: Lead) -> None:
         if writer is not None:
             writer.write(lead)
         else:
             collected.append(lead)
-        append_lead(checkpoint_state, lead)
-        emit("lead", lead, stats)
+        if not gui_quiet_mode:
+            emit("lead", lead, stats)
 
     def maybe_save_checkpoint(force: bool = False) -> None:
         nonlocal sites_since_checkpoint
@@ -382,20 +400,37 @@ def run_discovery(
                     active_started[future] = time.monotonic()
 
             def finish_site(result: SearchResult, site_leads: list[Lead], warning: str | None = None) -> bool:
-                nonlocal sites_since_checkpoint, stop_submitting
+                nonlocal sites_since_checkpoint, stop_submitting, skipped_site_warnings
                 if warning:
-                    emit("warning", warning)
+                    skipped_site_warnings += 1
+                accepted_leads: list[Lead] = []
                 with state_lock:
                     stats.websites_done += 1
                     mark_result_crawled(checkpoint_state, result)
-                    leads_before = stats.leads_found
                     for lead in site_leads:
-                        store_lead(lead)
-                    new_leads = stats.leads_found - leads_before
+                        accepted = accept_lead(lead)
+                        if accepted is not None:
+                            accepted_leads.append(accepted)
                     sites_since_checkpoint += 1
-                emit("site_done", search_result_display_label(result), new_leads, stats)
-                if stats.websites_done % 10 == 0 or stats.websites_done == stats.websites_total:
-                    emit("progress", stats)
+                for lead in accepted_leads:
+                    persist_lead(lead)
+                if gui_quiet_mode:
+                    if skipped_site_warnings and (
+                        stats.websites_done % 10 == 0 or stats.websites_done == stats.websites_total
+                    ):
+                        emit(
+                            "warning",
+                            f"{skipped_site_warnings} Websites uebersprungen oder haengen geblieben.",
+                        )
+                        skipped_site_warnings = 0
+                    if stats.websites_done % 10 == 0 or stats.websites_done == stats.websites_total:
+                        emit("progress", stats)
+                else:
+                    if warning:
+                        emit("warning", warning)
+                    emit("site_done", search_result_display_label(result), len(accepted_leads), stats)
+                    if stats.websites_done % 10 == 0 or stats.websites_done == stats.websites_total:
+                        emit("progress", stats)
                 maybe_save_checkpoint()
                 if stats.leads_found >= config.max_leads:
                     stop_submitting = True

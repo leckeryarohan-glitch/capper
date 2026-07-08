@@ -388,9 +388,22 @@ class GuiArgumentTests(unittest.TestCase):
         ]
         coalesced = coalesce_gui_messages(messages)
         kinds = [message[0] for message in coalesced]
-        self.assertEqual(kinds, ["site_done", "lead", "status"])
-        self.assertEqual(coalesced[0][3].websites_done, 1)
-        self.assertEqual(coalesced[1][1].email, "info@a.test")
+        self.assertEqual(kinds, ["lead", "site_done", "status"])
+        site_done = next(message for message in coalesced if message[0] == "site_done")
+        self.assertEqual(site_done[3].websites_done, 1)
+        lead = next(message for message in coalesced if message[0] == "lead")
+        self.assertEqual(lead[1].email, "info@a.test")
+
+    def test_coalesce_gui_messages_batches_warnings(self) -> None:
+        messages = [
+            ("warning", "timeout a"),
+            ("warning", "timeout b"),
+            ("status", "Crawling laeuft"),
+        ]
+        coalesced = coalesce_gui_messages(messages)
+        self.assertEqual(coalesced[0][0], "warning")
+        self.assertIn("2x Hinweise", coalesced[0][1])
+        self.assertEqual(coalesced[1], ("status", "Crawling laeuft"))
 
 
 if __name__ == "__main__":

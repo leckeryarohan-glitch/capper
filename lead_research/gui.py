@@ -4,6 +4,7 @@ import os
 import queue
 import threading
 import time
+from collections import deque
 from pathlib import Path
 from typing import Mapping
 
@@ -146,10 +147,12 @@ def collect_gui_settings(values: Mapping[str, str | bool]) -> dict[str, object]:
 
 
 DEFAULT_GUI_LEAD_ROWS = 500
-GUI_POLL_INTERVAL_MS = 40
-GUI_POLL_TIME_BUDGET_MS = 30
-GUI_MESSAGES_PER_POLL = 150
-GUI_MAX_DRAIN_PER_CYCLE = 400
+GUI_POLL_INTERVAL_MS = 50
+GUI_POLL_TIME_BUDGET_MS = 20
+GUI_MESSAGES_PER_POLL = 80
+GUI_MAX_DRAIN_PER_CYCLE = 250
+GUI_MAX_PENDING_MESSAGES = 300
+GUI_LEADS_PER_POLL = 2
 GUI_LOG_EVERY_N_PAGES = 25
 GUI_MAX_LOG_LINES = 1500
 GUI_UI_UPDATE_INTERVAL_S = 0.25
@@ -167,9 +170,18 @@ def coalesce_gui_messages(messages: list[tuple]) -> list[tuple]:
     latest_progress: tuple | None = None
     latest_site_done: tuple | None = None
     latest_page: tuple | None = None
+    warning_count = 0
+    warning_sample = ""
 
     def flush_crawl_updates() -> None:
-        nonlocal latest_progress, latest_site_done, latest_page
+        nonlocal latest_progress, latest_site_done, latest_page, warning_count, warning_sample
+        if warning_count:
+            text = warning_sample
+            if warning_count > 1:
+                text = f"{warning_count}x Hinweise (zuletzt: {warning_sample})"
+            coalesced.append(("warning", text))
+            warning_count = 0
+            warning_sample = ""
         if latest_site_done is not None:
             coalesced.append(latest_site_done)
             latest_site_done = None
@@ -190,6 +202,11 @@ def coalesce_gui_messages(messages: list[tuple]) -> list[tuple]:
             latest_progress = None
         elif kind == "page":
             latest_page = message
+        elif kind == "warning":
+            warning_count += 1
+            warning_sample = str(message[1])
+        elif kind == "lead":
+            coalesced.append(message)
         else:
             flush_crawl_updates()
             coalesced.append(message)
@@ -381,6 +398,9 @@ def run_gui() -> int:
             self._pending_stats: LeadStats | None = None
             self._sites_since_log = 0
             self._log_lines_since_scroll = 0
+            self._quiet_mode = False
+            self._leads_this_poll = 0
+            self._pending_messages: deque[tuple] = deque()
 
             self.category = tk.StringVar(value="hotel")
             self.location = tk.StringVar(value="")
@@ -875,6 +895,9 @@ def run_gui() -> int:
             self._pending_stats = None
             self._last_stats_refresh = 0.0
             self._log_lines_since_scroll = 0
+            self._quiet_mode = False
+            self._leads_this_poll = 0
+            self._pending_messages.clear()
             for item in self.lead_table.get_children():
                 self.lead_table.delete(item)
             self.log.configure(state="normal")
@@ -891,19 +914,28 @@ def run_gui() -> int:
 
         def _poll_messages(self) -> None:
             started = time.monotonic()
-            batch = self._drain_messages()
+            batch: list[tuple] = []
+            while self._pending_messages and len(batch) < GUI_MAX_DRAIN_PER_CYCLE:
+                batch.append(self._pending_messages.popleft())
+            batch.extend(self._drain_messages())
             if len(batch) > 1:
                 batch = coalesce_gui_messages(batch)
             processed = 0
+            self._leads_this_poll = 0
+            leftover: list[tuple] = []
             for message in batch:
                 if processed >= GUI_MESSAGES_PER_POLL:
-                    self.messages.put(message)
+                    leftover.append(message)
                     continue
                 if (time.monotonic() - started) * 1000 >= GUI_POLL_TIME_BUDGET_MS:
-                    self.messages.put(message)
+                    leftover.append(message)
                     continue
                 self._handle_message(message)
                 processed += 1
+            if leftover:
+                if len(leftover) > GUI_MAX_PENDING_MESSAGES:
+                    leftover = coalesce_gui_messages(leftover)[-GUI_MAX_PENDING_MESSAGES:]
+                self._pending_messages.extend(leftover)
             self._flush_stats_if_due()
             self.root.after(GUI_POLL_INTERVAL_MS, self._poll_messages)
 
@@ -985,6 +1017,8 @@ def run_gui() -> int:
                 self.progress.configure(maximum=total)
                 self.progress_value.set(0)
                 self.status_text.set(f"{message[1]} Websites gefunden. Starte paralleles Crawling ...")
+            elif kind == "quiet":
+                self._quiet_mode = bool(message[1])
             elif kind == "progress":
                 stats = message[1]
                 self._note_stats(stats)
@@ -1011,8 +1045,14 @@ def run_gui() -> int:
                         f"{stats.leads_found} Leads\n"
                     )
             elif kind == "warning":
-                self._append_log("Hinweis: " + message[1] + "\n", scroll=True)
+                self._append_log("Hinweis: " + message[1] + "\n")
             elif kind == "lead":
+                if self._quiet_mode:
+                    if len(message) > 2:
+                        self._note_stats(message[2])
+                    return
+                if self._leads_this_poll >= GUI_LEADS_PER_POLL:
+                    return
                 lead = message[1]
                 if len(message) > 2:
                     self._note_stats(message[2])
@@ -1028,6 +1068,7 @@ def run_gui() -> int:
                         ),
                     )
                     self._gui_leads_shown += 1
+                    self._leads_this_poll += 1
                 elif self._gui_leads_shown == DEFAULT_GUI_LEAD_ROWS:
                     self._gui_leads_shown += 1
                     self._append_log(
