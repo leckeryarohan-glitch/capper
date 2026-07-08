@@ -23,6 +23,30 @@ class LiveStatusTests(unittest.TestCase):
         self.assertEqual(loaded.phase, "crawl")
         self.assertEqual(loaded.status, "Crawling")
 
+    def test_live_status_round_trips_activity_events(self) -> None:
+        stats = LeadStats(websites_total=100, websites_done=12, leads_found=3)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "capper-live-status.json"
+            write_live_status(
+                path,
+                stats,
+                phase="crawl",
+                status="Crawling",
+                min_interval_seconds=0.0,
+                active_sites=8,
+                current_site="https://example.com",
+                recent_events=[(1, "[+] example.com: +1 Leads"), (2, "[.] test.de: keine")],
+            )
+            loaded = read_live_status(path)
+
+        assert loaded is not None
+        self.assertEqual(loaded.active_sites, 8)
+        self.assertEqual(loaded.current_site, "https://example.com")
+        self.assertEqual(
+            loaded.recent_events,
+            ((1, "[+] example.com: +1 Leads"), (2, "[.] test.de: keine")),
+        )
+
     def test_live_status_to_lead_stats_uses_rates_from_file(self) -> None:
         from lead_research.live_status import LiveRunStatus, live_status_to_lead_stats
 
