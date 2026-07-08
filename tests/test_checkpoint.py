@@ -7,12 +7,16 @@ from unittest.mock import patch
 
 from lead_research.checkpoint import (
     DiscoveryCheckpoint,
+    append_crawled_urls_sidecar,
+    checkpoint_crawled_path,
+    checkpoint_to_payload,
     load_checkpoint_gui_metadata,
     load_discovery_checkpoint,
     mark_result_crawled,
     new_discovery_checkpoint,
     save_discovery_checkpoint,
     validate_checkpoint_config,
+    write_discovery_checkpoint_payload,
 )
 from lead_research.models import Lead, SearchResult
 from lead_research.pipeline import DiscoveryConfig, run_discovery
@@ -235,6 +239,35 @@ class CheckpointTests(unittest.TestCase):
 
         assert loaded is not None
         self.assertEqual(len(loaded.search_results), 5100)
+
+    def test_incremental_checkpoint_loads_crawled_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "checkpoint.json"
+            checkpoint = new_discovery_checkpoint(
+                category="hotel",
+                location="Berlin",
+                countries=("DE",),
+                limit=6000,
+                max_leads=20000,
+                dedupe_by="email",
+            )
+            checkpoint.search_complete = True
+            checkpoint.search_results = [
+                {"title": f"Hotel {idx}", "url": f"https://hotel{idx}.example/", "snippet": ""}
+                for idx in range(5100)
+            ]
+            append_crawled_urls_sidecar(path, ["https://done0.example/", "https://done1.example/"])
+            payload = checkpoint_to_payload(checkpoint, path, incremental=True)
+            payload["crawled_urls_external"] = True
+            write_discovery_checkpoint_payload(path, payload, create_backup=False)
+            loaded = load_discovery_checkpoint(path)
+
+            assert loaded is not None
+            self.assertEqual(
+                loaded.crawled_urls,
+                ["https://done0.example/", "https://done1.example/"],
+            )
+            self.assertTrue(checkpoint_crawled_path(path).exists())
 
     def test_load_discovery_checkpoint_recovers_from_backup(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

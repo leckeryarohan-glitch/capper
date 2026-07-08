@@ -12,6 +12,7 @@ from .models import ConsentStatus, Lead, SearchResult, search_result_crawl_key
 
 CHECKPOINT_VERSION = 1
 LARGE_CHECKPOINT_RESULT_COUNT = 5000
+CRAWLED_URLS_EXTERNAL_THRESHOLD = 500
 CHECKPOINT_SAVE_MIN_SECONDS = 90
 
 
@@ -70,6 +71,14 @@ def search_result_crawl_key_from_dict(item: dict[str, str]) -> str:
 
 def checkpoint_search_results_path(path: Path) -> Path:
     return path.with_name(f"{path.stem}-search{path.suffix}")
+
+
+def checkpoint_crawled_path(path: Path) -> Path:
+    return path.with_name(f"{path.stem}-crawled.jsonl")
+
+
+def checkpoint_leads_delta_path(path: Path) -> Path:
+    return path.with_name(f"{path.stem}-leads.jsonl")
 
 
 def checkpoint_backup_path(path: Path) -> Path:
@@ -222,6 +231,16 @@ def load_discovery_checkpoint(
             sidecar_payload = _read_checkpoint_payload(sidecar)
             if isinstance(sidecar_payload, dict):
                 search_results = list(sidecar_payload.get("search_results", []))
+    crawled_urls = list(payload.get("crawled_urls", []))
+    leads = list(payload.get("leads", []))
+    if payload.get("crawled_urls_external"):
+        crawled_sidecar = checkpoint_crawled_path(path)
+        if crawled_sidecar.exists():
+            crawled_urls.extend(_read_jsonl_strings(crawled_sidecar))
+    if payload.get("leads_external"):
+        leads_sidecar = checkpoint_leads_delta_path(path)
+        if leads_sidecar.exists():
+            leads.extend(_read_jsonl_objects(leads_sidecar))
     checkpoint = DiscoveryCheckpoint(
         version=int(payload.get("version", CHECKPOINT_VERSION)),
         config=dict(payload.get("config", {})),
@@ -231,8 +250,8 @@ def load_discovery_checkpoint(
         directory_completed_locations=list(payload.get("directory_completed_locations", [])),
         directory_partial_results=list(payload.get("directory_partial_results", [])),
         directory_seen_keys=list(payload.get("directory_seen_keys", [])),
-        crawled_urls=list(payload.get("crawled_urls", [])),
-        leads=list(payload.get("leads", [])),
+        crawled_urls=crawled_urls,
+        leads=leads,
     )
     checkpoint.crawled_url_set  # build cache once after load
     return checkpoint
@@ -452,6 +471,56 @@ def checkpoint_uses_sidecar(checkpoint: DiscoveryCheckpoint) -> bool:
     )
 
 
+def checkpoint_uses_crawled_sidecar(checkpoint: DiscoveryCheckpoint) -> bool:
+    return len(checkpoint.crawled_urls) >= CRAWLED_URLS_EXTERNAL_THRESHOLD
+
+
+def append_crawled_urls_sidecar(path: Path, urls: list[str]) -> None:
+    if not urls:
+        return
+    sidecar = checkpoint_crawled_path(path)
+    sidecar.parent.mkdir(parents=True, exist_ok=True)
+    with sidecar.open("a", encoding="utf-8") as handle:
+        for url in urls:
+            handle.write(json.dumps(url, ensure_ascii=False))
+            handle.write("\n")
+
+
+def append_leads_sidecar(path: Path, leads: list[dict[str, object]]) -> None:
+    if not leads:
+        return
+    sidecar = checkpoint_leads_delta_path(path)
+    sidecar.parent.mkdir(parents=True, exist_ok=True)
+    with sidecar.open("a", encoding="utf-8") as handle:
+        for lead in leads:
+            handle.write(json.dumps(lead, ensure_ascii=False, separators=(",", ":")))
+            handle.write("\n")
+
+
+def _read_jsonl_strings(path: Path) -> list[str]:
+    values: list[str] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        value = json.loads(stripped)
+        if isinstance(value, str):
+            values.append(value)
+    return values
+
+
+def _read_jsonl_objects(path: Path) -> list[dict[str, object]]:
+    values: list[dict[str, object]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        value = json.loads(stripped)
+        if isinstance(value, dict):
+            values.append(value)
+    return values
+
+
 def save_discovery_checkpoint(
     path: Path | None,
     checkpoint: DiscoveryCheckpoint,
@@ -478,9 +547,9 @@ def save_discovery_checkpoint(
 def checkpoint_save_interval(checkpoint: DiscoveryCheckpoint) -> int:
     size = max(len(checkpoint.search_results), len(checkpoint.crawled_urls), len(checkpoint.leads))
     if size >= LARGE_CHECKPOINT_RESULT_COUNT:
-        return 100
+        return 250
     if size >= 1000:
-        return 50
+        return 100
     return 10
 
 
@@ -501,6 +570,8 @@ def checkpoint_to_payload(
         and checkpoint.search_complete
         and len(checkpoint.search_results) >= LARGE_CHECKPOINT_RESULT_COUNT
     )
+    use_crawled_sidecar = incremental and checkpoint_uses_crawled_sidecar(checkpoint)
+    use_leads_sidecar = incremental and len(checkpoint.leads) >= CRAWLED_URLS_EXTERNAL_THRESHOLD
     payload: dict[str, object] = {
         "version": checkpoint.version,
         "config": checkpoint.config,
@@ -515,9 +586,17 @@ def checkpoint_to_payload(
         "directory_completed_locations": checkpoint.directory_completed_locations,
         "directory_partial_results": checkpoint.directory_partial_results,
         "directory_seen_keys": checkpoint.directory_seen_keys,
-        "crawled_urls": checkpoint.crawled_urls,
-        "leads": checkpoint.leads,
     }
+    if use_crawled_sidecar:
+        payload["crawled_urls_external"] = True
+        payload["crawled_urls"] = []
+    else:
+        payload["crawled_urls"] = checkpoint.crawled_urls
+    if use_leads_sidecar:
+        payload["leads_external"] = True
+        payload["leads"] = []
+    else:
+        payload["leads"] = checkpoint.leads
     if use_sidecar:
         payload["search_results_external"] = True
         payload["search_results"] = []
