@@ -234,12 +234,35 @@ class DirectoryParserTests(unittest.TestCase):
         )
 
     def test_parse_goyellow_listing_html(self) -> None:
-        from lead_research.directories import parse_goyellow_listing_html
+        from lead_research.directories import (
+            build_goyellow_url,
+            goyellow_listing_page_limit,
+            parse_goyellow_detail_email,
+            parse_goyellow_detail_website,
+            parse_goyellow_listing_html,
+            zenrows_directory_fetch_profiles,
+        )
 
         listings = parse_goyellow_listing_html(
             '<div data-seourl="/home/hotel-demo-berlin--abc123.html"></div>'
+            '<a href="/home/sex-erotik-hetaera-berlin--4514mp.html">Bad</a>',
+            category="hotel",
         )
+        self.assertEqual(len(listings), 1)
         self.assertEqual(listings[0][1], "https://www.goyellow.de/home/hotel-demo-berlin--abc123.html")
+        self.assertEqual(build_goyellow_url("hotel", "Berlin", 2), "https://www.goyellow.de/suche/hotel/Berlin/seite-2")
+        self.assertGreaterEqual(goyellow_listing_page_limit(500), 10)
+        profiles = zenrows_directory_fetch_profiles("https://www.goyellow.de/suche/hotel/Berlin", "de")
+        self.assertEqual(profiles[0].get("js_render"), "true")
+        self.assertEqual(
+            parse_goyellow_detail_email('<input type="hidden" id="subscriberEmail" value="berlin@ihg.com"/>'),
+            "berlin@ihg.com",
+        )
+        website = parse_goyellow_detail_website(
+            '<a href="https://www.ihg.com/intercontinental/hotels/de/berlin/berha/hoteldetail" '
+            'itemprop="url" title="zur Webseite">Webseite</a>'
+        )
+        self.assertEqual(website, "https://www.ihg.com/intercontinental/hotels/de/berlin/berha/hoteldetail")
 
     def test_parse_yelp_listing_and_detail(self) -> None:
         from lead_research.directories import parse_yelp_detail_website, parse_yelp_listing_html
