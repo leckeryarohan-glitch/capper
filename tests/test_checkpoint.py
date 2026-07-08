@@ -190,6 +190,72 @@ class CheckpointTests(unittest.TestCase):
         self.assertIn("15 Leads", str(metadata["progress_summary"]))
         self.assertEqual(len(loaded.search_results), 250)
 
+    def test_large_checkpoint_uses_search_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "checkpoint.json"
+            checkpoint = new_discovery_checkpoint(
+                category="hotel",
+                location="Berlin",
+                countries=("DE",),
+                limit=6000,
+                max_leads=20000,
+                dedupe_by="email",
+            )
+            checkpoint.search_complete = True
+            checkpoint.search_results = [
+                {"title": f"Hotel {idx}", "url": f"https://hotel{idx}.example/", "snippet": ""}
+                for idx in range(5100)
+            ]
+            checkpoint.crawled_urls = ["https://done0.example/"]
+            save_discovery_checkpoint(path, checkpoint)
+            sidecar = path.with_name(f"{path.stem}-search{path.suffix}")
+            self.assertTrue(sidecar.exists())
+
+            incremental_payload = {
+                "version": 1,
+                "config": checkpoint.config,
+                "search_complete": True,
+                "search_results_external": True,
+                "search_results": [],
+                "stats": {
+                    "search_results": 5100,
+                    "crawled_urls": 1,
+                    "leads": 0,
+                    "directory_completed_locations": 0,
+                },
+                "zenrows_completed_plans": [],
+                "directory_completed_locations": [],
+                "directory_partial_results": [],
+                "directory_seen_keys": [],
+                "crawled_urls": ["https://done0.example/"],
+                "leads": [],
+            }
+            path.write_text(__import__("json").dumps(incremental_payload), encoding="utf-8")
+            loaded = load_discovery_checkpoint(path)
+
+        assert loaded is not None
+        self.assertEqual(len(loaded.search_results), 5100)
+
+    def test_load_discovery_checkpoint_recovers_from_backup(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "checkpoint.json"
+            checkpoint = new_discovery_checkpoint(
+                category="hotel",
+                location="Berlin",
+                countries=("DE",),
+                limit=10,
+                max_leads=10,
+                dedupe_by="email",
+            )
+            checkpoint.search_results = [{"title": "Hotel", "url": "https://hotel.example/", "snippet": ""}]
+            save_discovery_checkpoint(path, checkpoint)
+            save_discovery_checkpoint(path, checkpoint)
+            path.write_text("{broken", encoding="utf-8")
+            loaded = load_discovery_checkpoint(path)
+
+        assert loaded is not None
+        self.assertEqual(loaded.search_result_objects()[0].url, "https://hotel.example/")
+
 
 class ResumableDiscoveryTests(unittest.TestCase):
     def test_run_discovery_resumes_crawl_from_checkpoint(self) -> None:

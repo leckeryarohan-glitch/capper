@@ -150,6 +150,18 @@ class LeadDeduplicator:
                 if key:
                     self._seen.add(key)
 
+    def add_existing_dicts(self, lead_dicts: Iterable[dict[str, object]]) -> None:
+        with self._lock:
+            for item in lead_dicts:
+                if self.by == "email":
+                    email = str(item.get("email", "")).strip().lower()
+                    if email:
+                        self._seen.add(email)
+                else:
+                    website = str(item.get("website", "")).strip().lower().rstrip("/")
+                    if website:
+                        self._seen.add(website)
+
     def __len__(self) -> int:
         with self._lock:
             return len(self._seen)
