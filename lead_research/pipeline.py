@@ -48,6 +48,7 @@ from .crawl import (
     DEFAULT_REQUEST_TIMEOUT_SECONDS,
     DEFAULT_SITE_TIMEOUT_SECONDS,
     LeadCrawler,
+    RESUME_MAX_PAGES_PER_SITE,
     RESUME_READ_TIMEOUT_SECONDS,
     RESUME_REQUEST_TIMEOUT_SECONDS,
     RESUME_SITE_TIMEOUT_SECONDS,
@@ -65,15 +66,18 @@ from .suppression import SuppressionList
 DEFAULT_WORKERS = recommended_workers()
 _crawl_local = threading.local()
 FUTURE_RESULT_GRACE_SECONDS = 8
-CRAWL_ACTIVE_BATCH_MULTIPLIER = 1
+CRAWL_ACTIVE_BATCH_MULTIPLIER = 2
 CRAWL_WAIT_HEARTBEAT_SECONDS = 15
 PAGE_EVENT_INTERVAL = 25
 
 
 def build_crawl_config(*, config: DiscoveryConfig, resume: bool, pending_sites: int) -> CrawlConfig:
     fast_resume = resume and pending_sites >= 100
+    max_pages = config.max_pages_per_site
+    if fast_resume:
+        max_pages = min(max_pages, RESUME_MAX_PAGES_PER_SITE)
     return CrawlConfig(
-        max_pages_per_site=config.max_pages_per_site,
+        max_pages_per_site=max_pages,
         delay_seconds=0.0 if fast_resume else config.delay,
         include_personal=config.include_personal,
         respect_robots=not fast_resume and config.respect_robots,
@@ -316,16 +320,11 @@ def run_discovery(
     publish_live_status(phase="crawl", status="Crawling wird vorbereitet ...")
 
     if resume and checkpoint and checkpoint_state is not None:
-        threading.Thread(
-            target=ensure_checkpoint_sidecars,
-            kwargs={
-                "path": checkpoint,
-                "checkpoint": checkpoint_state,
-                "on_status": lambda msg: emit("status", msg),
-            },
-            name="capper-sidecar-migrate",
-            daemon=True,
-        ).start()
+        ensure_checkpoint_sidecars(
+            checkpoint,
+            checkpoint_state,
+            on_status=lambda msg: emit("status", msg),
+        )
 
     is_json = output.suffix.lower() == ".json"
     writer = None if is_json else StreamingCsvWriter(output, append=resume and output.exists())
