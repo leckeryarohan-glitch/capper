@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import multiprocessing as mp
 import os
 import queue
 import threading
@@ -18,6 +19,11 @@ from .directory_profiles import resolve_category_directory_sources
 from .directory_registry import directory_sources_by_category
 from .locations import DEFAULT_COUNTRIES
 from .checkpoint import load_checkpoint_gui_metadata
+from .live_status import (
+    live_status_path_for_checkpoint,
+    live_status_to_lead_stats,
+    read_live_status,
+)
 from .pipeline import DEFAULT_WORKERS, DiscoveryConfig, LeadStats, run_discovery
 from .search import (
     DEFAULT_DIRECTORY_PARALLEL_REQUESTS,
@@ -38,6 +44,29 @@ DEFAULT_WORKERS_TEXT = str(recommended_workers())
 DEFAULT_DIRECTORY_PARALLEL_TEXT = str(DEFAULT_DIRECTORY_PARALLEL_REQUESTS)
 DEFAULT_DIRECTORY_DETAIL_PARALLEL_TEXT = str(DEFAULT_DIRECTORY_DETAIL_PARALLEL)
 DEFAULT_PROVIDER = "all"
+
+
+class _QueuePutAdapter:
+    """Adapt multiprocessing.Queue for run_gui_discovery event callbacks."""
+
+    def __init__(self, target_queue) -> None:
+        self._queue = target_queue
+
+    def put(self, item: tuple) -> None:
+        try:
+            self._queue.put_nowait(item)
+        except Exception:
+            pass
+
+
+def _discovery_process_entry(values: dict[str, object], events_queue: mp.Queue) -> None:
+    adapter = _QueuePutAdapter(events_queue)
+    try:
+        exit_code = run_gui_discovery(values, adapter)  # type: ignore[arg-type]
+    except Exception as exc:  # noqa: BLE001 - surface failures to GUI process
+        adapter.put(("error", str(exc)))
+        exit_code = 2
+    adapter.put(("done", exit_code))
 
 
 def build_simple_gui_argv(values: Mapping[str, str | bool]) -> list[str]:
@@ -157,6 +186,7 @@ GUI_LOG_EVERY_N_PAGES = 25
 GUI_MAX_LOG_LINES = 1500
 GUI_UI_UPDATE_INTERVAL_S = 0.25
 GUI_QUIET_UI_INTERVAL_MS = 1000
+GUI_FILE_STATUS_INTERVAL_MS = 1000
 GUI_SITE_LOG_EVERY = 50
 GUI_LOG_SCROLL_EVERY = 8
 CHECKPOINT_PATH_DEBOUNCE_MS = 500
@@ -391,8 +421,12 @@ def run_gui() -> int:
         def __init__(self, root: "tk.Tk"):
             self.root = root
             self.root.title("Capper Lead Finder")
-            self.messages: "queue.Queue[tuple]" = queue.Queue()
-            self.worker: threading.Thread | None = None
+            self._mp_ctx = mp.get_context("spawn")
+            self.messages = self._mp_ctx.Queue(maxsize=64)
+            self.worker: threading.Thread | mp.Process | None = None
+            self._use_subprocess_worker = True
+            self._live_status_path = live_status_path_for_checkpoint(None)
+            self._last_file_status_poll = 0.0
             self._checkpoint_debounce_id: str | None = None
             self._gui_leads_shown = 0
             self._last_stats_refresh = 0.0
@@ -840,7 +874,7 @@ def run_gui() -> int:
             self._load_checkpoint_into_form(show_errors=False)
 
         def _start(self) -> None:
-            if self.worker and self.worker.is_alive():
+            if self._worker_running():
                 messagebox.showinfo("Capper", "Die Suche laeuft bereits.")
                 return
 
@@ -883,8 +917,39 @@ def run_gui() -> int:
             self._reset_run()
             self._append_log("\nStarte vollautomatische Suche fuer Kategorie: " + self.category.get().strip() + "\n")
             self.start_button.configure(state="disabled")
-            self.worker = threading.Thread(target=self._run_discovery, args=(values,), daemon=True)
-            self.worker.start()
+            checkpoint_path = Path(self.checkpoint.get().strip() or DEFAULT_CHECKPOINT)
+            self._live_status_path = live_status_path_for_checkpoint(checkpoint_path)
+            if self._use_subprocess_worker:
+                self.worker = self._mp_ctx.Process(
+                    target=_discovery_process_entry,
+                    args=(values, self.messages),
+                    daemon=True,
+                    name="capper-discovery",
+                )
+                self.worker.start()
+            else:
+                self.worker = threading.Thread(target=self._run_discovery, args=(values,), daemon=True)
+                self.worker.start()
+
+        def _worker_running(self) -> bool:
+            if self.worker is None:
+                return False
+            return self.worker.is_alive()
+
+        def _refresh_from_live_status_file(self) -> None:
+            if not self._worker_running():
+                return
+            now = time.monotonic()
+            if now - self._last_file_status_poll < (GUI_FILE_STATUS_INTERVAL_MS / 1000.0):
+                return
+            self._last_file_status_poll = now
+            status = read_live_status(self._live_status_path)
+            if status is None:
+                return
+            stats = live_status_to_lead_stats(status)
+            self._apply_stats(stats)
+            if status.status:
+                self.status_text.set(status.status)
 
         def _reset_run(self) -> None:
             self.progress.configure(maximum=1)
@@ -918,6 +983,8 @@ def run_gui() -> int:
             self.messages.put(("done", exit_code))
 
         def _poll_messages(self) -> None:
+            if self._worker_running():
+                self._refresh_from_live_status_file()
             started = time.monotonic()
             batch: list[tuple] = []
             while self._pending_messages and len(batch) < GUI_MAX_DRAIN_PER_CYCLE:
@@ -988,8 +1055,8 @@ def run_gui() -> int:
             self._quiet_ui_tick_scheduled = False
             if not self._quiet_mode:
                 return
-            self._flush_stats_if_due(force=True)
-            if self.worker and self.worker.is_alive():
+            self._refresh_from_live_status_file()
+            if self._worker_running():
                 self._schedule_quiet_ui_tick()
 
         def _update_stats(self, stats: LeadStats) -> None:
@@ -1005,6 +1072,14 @@ def run_gui() -> int:
 
         def _handle_message(self, message: tuple) -> None:
             kind = message[0]
+            if self._use_subprocess_worker and self._worker_running() and kind in {
+                "progress",
+                "site_done",
+                "page",
+                "lead",
+                "status",
+            }:
+                return
             if kind == "checkpoint_settings":
                 settings, path, show_errors = message[1], message[2], message[3]
                 self._apply_checkpoint_settings_message(settings, path, show_errors=show_errors)
@@ -1124,7 +1199,11 @@ def run_gui() -> int:
                 messagebox.showerror("Capper", message[1])
             elif kind == "done":
                 self._flush_stats_if_due(force=True)
+                self._refresh_from_live_status_file()
+                if isinstance(self.worker, mp.Process):
+                    self.worker.join(timeout=2.0)
                 self.start_button.configure(state="normal")
+                self.worker = None
                 self._append_log(f"Fertig mit Exit-Code {message[1]}.\n", scroll=True)
 
         def _append_log(self, text: str, *, scroll: bool = False) -> None:

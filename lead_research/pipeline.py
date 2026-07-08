@@ -53,6 +53,7 @@ from .crawl import (
 )
 from .export import StreamingCsvWriter, write_json
 from .extract import normalized_host
+from .live_status import live_status_path_for_checkpoint, write_live_status
 from .models import ConsentStatus, Lead, LeadDeduplicator, SearchResult, search_result_crawl_key, search_result_display_label
 from .locations import DEFAULT_COUNTRIES
 from .search import SearchProvider, ZenRowsResumeState, find_zenrows_provider, is_zenrows_only_provider
@@ -167,6 +168,11 @@ def run_discovery(
 
     emit = on_event or (lambda *args, **kwargs: None)
     stats = LeadStats()
+    live_status_path = live_status_path_for_checkpoint(checkpoint)
+
+    def publish_live_status(*, phase: str = "crawl", status: str = "") -> None:
+        write_live_status(live_status_path, stats, phase=phase, status=status)
+
     expected_config = config_fingerprint(
         category=config.category,
         location=config.location,
@@ -280,6 +286,7 @@ def run_discovery(
             f"Crawling wird fortgesetzt: {pending_count} von {stats.websites_total} Websites offen.",
         )
     emit("progress", stats)
+    publish_live_status(phase="crawl", status="Crawling wird vorbereitet ...")
 
     if resume and checkpoint and checkpoint_state is not None:
         threading.Thread(
@@ -468,13 +475,26 @@ def run_discovery(
                         )
                         skipped_site_warnings = 0
                     if stats.websites_done % 10 == 0 or stats.websites_done == stats.websites_total:
-                        emit("progress", stats)
+                        publish_live_status(
+                            phase="crawl",
+                            status=(
+                                f"Website {stats.websites_done}/{stats.websites_total} · "
+                                f"{stats.leads_found} Leads"
+                            ),
+                        )
                 else:
                     if warning:
                         emit("warning", warning)
                     emit("site_done", search_result_display_label(result), len(accepted_leads), stats)
                     if stats.websites_done % 10 == 0 or stats.websites_done == stats.websites_total:
                         emit("progress", stats)
+                        publish_live_status(
+                            phase="crawl",
+                            status=(
+                                f"Website {stats.websites_done}/{stats.websites_total} · "
+                                f"{stats.leads_found} Leads"
+                            ),
+                        )
                 maybe_save_checkpoint()
                 if stats.leads_found >= config.max_leads:
                     stop_submitting = True
@@ -580,7 +600,13 @@ def run_discovery(
                         gui_quiet_mode
                         and now - last_wait_notice >= CRAWL_WAIT_HEARTBEAT_SECONDS
                     ):
-                        emit("progress", stats)
+                        publish_live_status(
+                            phase="crawl",
+                            status=(
+                                f"Crawling laeuft: {len(active_futures)} aktiv, "
+                                f"{stats.websites_done}/{stats.websites_total} Websites"
+                            ),
+                        )
                         last_wait_notice = now
                     continue
                 for future in done:
@@ -601,6 +627,7 @@ def run_discovery(
             write_json(collected, output)
 
     emit("finished", stats, str(output))
+    publish_live_status(phase="finished", status=f"Fertig · {stats.leads_found} Leads")
     if checkpoint:
         emit("status", f"Checkpoint gespeichert: {checkpoint}")
     return stats
