@@ -25,7 +25,7 @@ from .checkpoint import (
     update_search_results,
     validate_checkpoint_config,
 )
-from .concurrency import AsyncCheckpointWriter, recommended_workers
+from .concurrency import AsyncCheckpointWriter, recommended_crawl_workers, recommended_workers
 from .crawl import CrawlConfig, DEFAULT_SITE_TIMEOUT_SECONDS, LeadCrawler
 from .export import StreamingCsvWriter, write_json
 from .extract import normalized_host
@@ -39,7 +39,8 @@ from .suppression import SuppressionList
 DEFAULT_WORKERS = recommended_workers()
 _crawl_local = threading.local()
 FUTURE_RESULT_GRACE_SECONDS = 8
-CRAWL_ACTIVE_BATCH_MULTIPLIER = 4
+CRAWL_ACTIVE_BATCH_MULTIPLIER = 1
+CRAWL_WAIT_HEARTBEAT_SECONDS = 15
 PAGE_EVENT_INTERVAL = 25
 
 
@@ -187,12 +188,6 @@ def run_discovery(
         if checkpoint_state.search_complete
         else len(search_results)
     )
-    worker_count = recommended_workers(config.workers)
-    emit(
-        "status",
-        f"{stats.websites_total} Websites gefunden. Starte Crawling mit {worker_count} parallelen Threads ...",
-    )
-    emit("total", stats.websites_total)
 
     dedup = LeadDeduplicator(by=config.dedupe_by)
     domains: set[str] = set()
@@ -230,6 +225,18 @@ def run_discovery(
             for result in search_results
             if search_result_crawl_key(result) not in crawled_urls
         )
+    worker_count = recommended_crawl_workers(config.workers, pending_sites=pending_count)
+    if worker_count < recommended_workers(config.workers):
+        emit(
+            "status",
+            f"Crawling mit {worker_count} parallelen Websites "
+            f"(Limit fuer stabile Resume-Laeufe, eingestellt: {recommended_workers(config.workers)}).",
+        )
+    emit(
+        "status",
+        f"{stats.websites_total} Websites gefunden. Starte Crawling mit {worker_count} parallelen Threads ...",
+    )
+    emit("total", stats.websites_total)
     if stats.websites_done:
         emit(
             "status",
@@ -373,8 +380,25 @@ def run_discovery(
                 )
             elif pending_count == 0:
                 emit("status", "Alle Websites aus dem Checkpoint sind bereits gecrawlt.")
+            last_wait_notice = time.monotonic()
             while active_futures:
-                done, _ = wait(active_futures.keys(), return_when=FIRST_COMPLETED)
+                done, _ = wait(
+                    active_futures.keys(),
+                    timeout=CRAWL_WAIT_HEARTBEAT_SECONDS,
+                    return_when=FIRST_COMPLETED,
+                )
+                if not done:
+                    now = time.monotonic()
+                    if now - last_wait_notice >= CRAWL_WAIT_HEARTBEAT_SECONDS:
+                        emit(
+                            "status",
+                            f"Crawling laeuft: {len(active_futures)} aktiv, "
+                            f"{stats.websites_done}/{stats.websites_total} fertig, "
+                            f"{stats.pages_fetched} Seiten ...",
+                        )
+                        emit("progress", stats)
+                        last_wait_notice = now
+                    continue
                 for future in done:
                     if process_completed(future):
                         break

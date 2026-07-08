@@ -19,6 +19,9 @@ from .checkpoint import (
 
 CHECKPOINT_SAVE_INTERVAL = 10
 MAX_WORKERS = 128
+CRAWL_MAX_WORKERS = 20
+CRAWL_LARGE_RESUME_WORKERS = 12
+CRAWL_LARGE_RESUME_PENDING = 500
 
 
 def recommended_workers(requested: int | None = None) -> int:
@@ -28,6 +31,13 @@ def recommended_workers(requested: int | None = None) -> int:
     if requested is None:
         return auto
     return max(1, min(requested, MAX_WORKERS))
+
+
+def recommended_crawl_workers(requested: int | None = None, *, pending_sites: int = 0) -> int:
+    workers = min(recommended_workers(requested), CRAWL_MAX_WORKERS)
+    if pending_sites >= CRAWL_LARGE_RESUME_PENDING:
+        workers = min(workers, CRAWL_LARGE_RESUME_WORKERS)
+    return max(1, workers)
 
 
 class AsyncCheckpointWriter:
