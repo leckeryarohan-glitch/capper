@@ -770,8 +770,11 @@ def run_gui() -> int:
                 messagebox.showinfo("Capper", "Die Suche laeuft bereits.")
                 return
 
-            if self.resume.get() and not self._load_checkpoint_into_form(sync=True):
-                return
+            if self.resume.get():
+                path = Path(self.checkpoint.get().strip() or DEFAULT_CHECKPOINT)
+                if not path.exists():
+                    messagebox.showwarning("Checkpoint", f"Datei nicht gefunden: {path}")
+                    return
 
             values = {
                 "category": self.category.get(),

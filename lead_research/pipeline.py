@@ -11,17 +11,20 @@ from typing import Callable
 from .checkpoint import (
     DiscoveryCheckpoint,
     append_lead,
+    checkpoint_save_interval,
     clear_directory_search_progress,
     config_fingerprint,
     load_discovery_checkpoint,
     mark_result_crawled,
     new_discovery_checkpoint,
     save_discovery_checkpoint,
+    search_result_crawl_key_from_dict,
+    search_result_from_dict,
     update_directory_search_progress,
     update_search_results,
     validate_checkpoint_config,
 )
-from .concurrency import CHECKPOINT_SAVE_INTERVAL, AsyncCheckpointWriter, recommended_workers
+from .concurrency import AsyncCheckpointWriter, recommended_workers
 from .crawl import CrawlConfig, DEFAULT_SITE_TIMEOUT_SECONDS, LeadCrawler
 from .export import StreamingCsvWriter, write_json
 from .extract import normalized_host
@@ -36,6 +39,7 @@ DEFAULT_WORKERS = recommended_workers()
 _crawl_local = threading.local()
 FUTURE_RESULT_GRACE_SECONDS = 8
 CRAWL_ACTIVE_BATCH_MULTIPLIER = 4
+PAGE_EVENT_INTERVAL = 25
 
 
 @dataclass
@@ -125,6 +129,7 @@ def run_discovery(
 
     checkpoint_state: DiscoveryCheckpoint | None = None
     if resume and checkpoint:
+        emit("status", f"Lade Checkpoint {checkpoint} ...")
         loaded = load_discovery_checkpoint(checkpoint)
         if loaded is not None:
             validate_checkpoint_config(loaded, expected_config)
@@ -167,7 +172,11 @@ def run_discovery(
         checkpoint_path=checkpoint,
         emit=emit,
     )
-    stats.websites_total = len(search_results)
+    stats.websites_total = (
+        len(checkpoint_state.search_results)
+        if checkpoint_state.search_complete
+        else len(search_results)
+    )
     worker_count = recommended_workers(config.workers)
     emit(
         "status",
@@ -179,28 +188,46 @@ def run_discovery(
     domains: set[str] = set()
     collected: list[Lead] = []
     crawled_urls = checkpoint_state.crawled_url_set
-    for lead in checkpoint_state.lead_objects():
-        dedup.is_new(lead)
-        host = normalized_host(lead.website)
+    dedup.add_existing_dicts(checkpoint_state.leads)
+    for lead_dict in checkpoint_state.leads:
+        host = normalized_host(str(lead_dict.get("website", "")))
         if host:
             domains.add(host)
         stats.leads_found += 1
-        if lead.consent_status == ConsentStatus.BUSINESS_PUBLIC:
+        consent = str(lead_dict.get("consent_status", ConsentStatus.BUSINESS_PUBLIC.value))
+        if consent == ConsentStatus.BUSINESS_PUBLIC.value:
             stats.business_leads += 1
         else:
             stats.personal_leads += 1
     stats.unique_domains = len(domains)
     stats.websites_done = len(crawled_urls)
 
-    pending_results = [
-        result
-        for result in search_results
-        if search_result_crawl_key(result) not in crawled_urls
-    ]
+    if checkpoint_state.search_complete:
+        pending_count = sum(
+            1
+            for item in checkpoint_state.search_results
+            if search_result_crawl_key_from_dict(item) not in crawled_urls
+        )
+
+        def iter_pending_results():
+            for item in checkpoint_state.search_results:
+                if search_result_crawl_key_from_dict(item) not in crawled_urls:
+                    yield search_result_from_dict(item)
+
+        pending_iter = iter_pending_results()
+    else:
+        pending_count = sum(
+            1 for result in search_results if search_result_crawl_key(result) not in crawled_urls
+        )
+        pending_iter = (
+            result
+            for result in search_results
+            if search_result_crawl_key(result) not in crawled_urls
+        )
     if stats.websites_done:
         emit(
             "status",
-            f"Crawling wird fortgesetzt: {len(pending_results)} von {stats.websites_total} Websites offen.",
+            f"Crawling wird fortgesetzt: {pending_count} von {stats.websites_total} Websites offen.",
         )
 
     is_json = output.suffix.lower() == ".json"
@@ -212,12 +239,22 @@ def run_discovery(
     state_lock = threading.Lock()
     sites_since_checkpoint = 0
     checkpoint_writer = AsyncCheckpointWriter()
+    checkpoint_save_every = checkpoint_save_interval(checkpoint_state)
+    pages_since_emit = 0
+
+    def checkpoint_snapshot() -> tuple[DiscoveryCheckpoint, bool]:
+        incremental = checkpoint_state.search_complete and len(checkpoint_state.search_results) >= 5000
+        return checkpoint_state, incremental
 
     def on_page(url: str) -> None:
+        nonlocal pages_since_emit
         with page_lock:
             stats.pages_fetched += 1
             count = stats.pages_fetched
-        emit("page", url, count)
+            pages_since_emit += 1
+        if pages_since_emit == 1 or pages_since_emit >= PAGE_EVENT_INTERVAL:
+            pages_since_emit = 0
+            emit("page", url, count)
 
     crawl_config = CrawlConfig(
         max_pages_per_site=config.max_pages_per_site,
@@ -262,14 +299,13 @@ def run_discovery(
 
     def maybe_save_checkpoint(force: bool = False) -> None:
         nonlocal sites_since_checkpoint
-        if not force and sites_since_checkpoint < CHECKPOINT_SAVE_INTERVAL:
+        if not force and not checkpoint_writer.should_save(sites_since_checkpoint, checkpoint_save_every):
             return
         sites_since_checkpoint = 0
-        checkpoint_writer.submit(checkpoint, checkpoint_state)
+        checkpoint_writer.submit(checkpoint, checkpoint_snapshot, state_lock)
 
     try:
         with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="capper-crawl") as executor:
-            pending_iter = iter(pending_results)
             active_futures: dict = {}
             stop_submitting = False
             batch_limit = max(worker_count * CRAWL_ACTIVE_BATCH_MULTIPLIER, worker_count + 1)
@@ -326,12 +362,11 @@ def run_discovery(
                     break
                 submit_more()
     finally:
-        checkpoint_writer.close(checkpoint, checkpoint_state)
+        checkpoint_writer.close(checkpoint, checkpoint_snapshot, state_lock)
         if writer is not None:
             writer.close()
         else:
             write_json(collected, output)
-        save_discovery_checkpoint(checkpoint, checkpoint_state)
 
     emit("finished", stats, str(output))
     if checkpoint:
@@ -348,7 +383,8 @@ def _discover_websites(
     emit: EventCallback,
 ) -> list[SearchResult]:
     if checkpoint_state.search_complete:
-        return checkpoint_state.search_result_objects()
+        emit("status", f"Verwende {len(checkpoint_state.search_results)} Websites aus Checkpoint ...")
+        return []
 
     scope = f" in {config.location}" if config.location.strip() else ""
     emit("status", f"Suche Quellen fuer '{config.category}'{scope} (max. {config.limit} Websites) ...")

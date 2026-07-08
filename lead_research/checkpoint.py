@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -9,6 +10,8 @@ from .models import ConsentStatus, Lead, SearchResult, search_result_crawl_key
 
 
 CHECKPOINT_VERSION = 1
+LARGE_CHECKPOINT_RESULT_COUNT = 5000
+CHECKPOINT_SAVE_MIN_SECONDS = 90
 
 
 @dataclass
@@ -48,6 +51,28 @@ class DiscoveryCheckpoint:
 
     def lead_objects(self) -> list[Lead]:
         return [lead_from_dict(item) for item in self.leads]
+
+
+def search_result_crawl_key_from_dict(item: dict[str, str]) -> str:
+    url = str(item.get("url", "")).strip()
+    if url:
+        return url.lower().rstrip("/")
+    email = str(item.get("directory_email", "")).strip().lower()
+    if email:
+        return f"directory-email:{email}"
+    source = str(item.get("directory_source_url", "")).strip().lower().rstrip("/")
+    if source:
+        return f"directory-source:{source}"
+    title = str(item.get("title", "")).strip().lower()
+    return f"directory-title:{title}" if title else "directory-empty"
+
+
+def checkpoint_search_results_path(path: Path) -> Path:
+    return path.with_name(f"{path.stem}-search{path.suffix}")
+
+
+def checkpoint_backup_path(path: Path) -> Path:
+    return path.with_suffix(path.suffix + ".bak")
 
 
 def config_fingerprint(
@@ -175,16 +200,23 @@ def new_discovery_checkpoint(
 
 
 def load_discovery_checkpoint(path: Path | None) -> DiscoveryCheckpoint | None:
-    if path is None or not path.exists():
+    if path is None:
         return None
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError(f"Ungueltiger Checkpoint: {path}")
+    payload = _read_checkpoint_payload(path)
+    if payload is None:
+        return None
+    search_results = list(payload.get("search_results", []))
+    if not search_results and payload.get("search_results_external"):
+        sidecar = checkpoint_search_results_path(path)
+        if sidecar.exists():
+            sidecar_payload = _read_checkpoint_payload(sidecar)
+            if isinstance(sidecar_payload, dict):
+                search_results = list(sidecar_payload.get("search_results", []))
     checkpoint = DiscoveryCheckpoint(
         version=int(payload.get("version", CHECKPOINT_VERSION)),
         config=dict(payload.get("config", {})),
         search_complete=bool(payload.get("search_complete", False)),
-        search_results=list(payload.get("search_results", [])),
+        search_results=search_results,
         zenrows_completed_plans=list(payload.get("zenrows_completed_plans", [])),
         directory_completed_locations=list(payload.get("directory_completed_locations", [])),
         directory_partial_results=list(payload.get("directory_partial_results", [])),
@@ -194,6 +226,30 @@ def load_discovery_checkpoint(path: Path | None) -> DiscoveryCheckpoint | None:
     )
     checkpoint.crawled_url_set  # build cache once after load
     return checkpoint
+
+
+def _read_checkpoint_payload(path: Path) -> dict[str, object] | None:
+    if not path.exists():
+        return None
+    candidates = [path, path.with_suffix(path.suffix + ".tmp"), checkpoint_backup_path(path)]
+    last_error: Exception | None = None
+    for candidate in candidates:
+        if not candidate.exists():
+            continue
+        try:
+            payload = json.loads(candidate.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            last_error = exc
+            continue
+        if not isinstance(payload, dict):
+            raise ValueError(f"Ungueltiger Checkpoint: {candidate}")
+        return payload
+    if last_error is not None:
+        raise ValueError(
+            f"Checkpoint beschädigt oder unvollständig: {path}. "
+            "Falls vorhanden capper-checkpoint.json.bak oder .tmp prüfen."
+        ) from last_error
+    return None
 
 
 def _find_json_value_start(text: str, key: str) -> int:
@@ -379,14 +435,51 @@ def load_checkpoint_gui_metadata(path: Path | None) -> dict[str, object] | None:
     }
 
 
-def save_discovery_checkpoint(path: Path | None, checkpoint: DiscoveryCheckpoint) -> None:
+def save_discovery_checkpoint(
+    path: Path | None,
+    checkpoint: DiscoveryCheckpoint,
+    *,
+    incremental: bool = False,
+) -> None:
     if path is None:
         return
-    write_discovery_checkpoint_payload(path, checkpoint_to_payload(checkpoint))
+    payload = checkpoint_to_payload(checkpoint, path, incremental=incremental)
+    write_discovery_checkpoint_payload(path, payload, backup_source=path if path.exists() else None)
+    if (
+        not incremental
+        and checkpoint.search_complete
+        and len(checkpoint.search_results) >= LARGE_CHECKPOINT_RESULT_COUNT
+    ):
+        write_search_results_sidecar(path, checkpoint.search_results)
 
 
-def checkpoint_to_payload(checkpoint: DiscoveryCheckpoint) -> dict[str, object]:
-    return {
+def checkpoint_save_interval(checkpoint: DiscoveryCheckpoint) -> int:
+    size = max(len(checkpoint.search_results), len(checkpoint.crawled_urls), len(checkpoint.leads))
+    if size >= LARGE_CHECKPOINT_RESULT_COUNT:
+        return 100
+    if size >= 1000:
+        return 50
+    return 10
+
+
+def write_search_results_sidecar(path: Path, search_results: list[dict[str, str]]) -> None:
+    sidecar = checkpoint_search_results_path(path)
+    payload = {"version": CHECKPOINT_VERSION, "search_results": search_results}
+    write_discovery_checkpoint_payload(sidecar, payload)
+
+
+def checkpoint_to_payload(
+    checkpoint: DiscoveryCheckpoint,
+    path: Path | None = None,
+    *,
+    incremental: bool = False,
+) -> dict[str, object]:
+    use_sidecar = (
+        incremental
+        and checkpoint.search_complete
+        and len(checkpoint.search_results) >= LARGE_CHECKPOINT_RESULT_COUNT
+    )
+    payload: dict[str, object] = {
         "version": checkpoint.version,
         "config": checkpoint.config,
         "search_complete": checkpoint.search_complete,
@@ -396,18 +489,35 @@ def checkpoint_to_payload(checkpoint: DiscoveryCheckpoint) -> dict[str, object]:
             "leads": len(checkpoint.leads),
             "directory_completed_locations": len(checkpoint.directory_completed_locations),
         },
-        "search_results": list(checkpoint.search_results),
-        "zenrows_completed_plans": list(checkpoint.zenrows_completed_plans),
-        "directory_completed_locations": list(checkpoint.directory_completed_locations),
-        "directory_partial_results": list(checkpoint.directory_partial_results),
-        "directory_seen_keys": list(checkpoint.directory_seen_keys),
-        "crawled_urls": list(checkpoint.crawled_urls),
-        "leads": list(checkpoint.leads),
+        "zenrows_completed_plans": checkpoint.zenrows_completed_plans,
+        "directory_completed_locations": checkpoint.directory_completed_locations,
+        "directory_partial_results": checkpoint.directory_partial_results,
+        "directory_seen_keys": checkpoint.directory_seen_keys,
+        "crawled_urls": checkpoint.crawled_urls,
+        "leads": checkpoint.leads,
     }
+    if use_sidecar:
+        payload["search_results_external"] = True
+        payload["search_results"] = []
+    else:
+        payload["search_results"] = checkpoint.search_results
+    if path is not None and use_sidecar:
+        payload["search_results_path"] = checkpoint_search_results_path(path).name
+    return payload
 
 
-def write_discovery_checkpoint_payload(path: Path, payload: dict[str, object]) -> None:
+def write_discovery_checkpoint_payload(
+    path: Path,
+    payload: dict[str, object],
+    *,
+    backup_source: Path | None = None,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    if backup_source is not None and backup_source.exists():
+        try:
+            shutil.copy2(backup_source, checkpoint_backup_path(backup_source))
+        except OSError:
+            pass
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     tmp.replace(path)
