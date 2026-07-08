@@ -235,6 +235,7 @@ def run_discovery(
             "status",
             f"Crawling wird fortgesetzt: {pending_count} von {stats.websites_total} Websites offen.",
         )
+    emit("progress", stats)
 
     is_json = output.suffix.lower() == ".json"
     writer = None if is_json else StreamingCsvWriter(output, append=resume and output.exists())
@@ -251,15 +252,6 @@ def run_discovery(
     def checkpoint_snapshot() -> tuple[DiscoveryCheckpoint, bool]:
         incremental = checkpoint_uses_sidecar(checkpoint_state)
         return checkpoint_state, incremental
-
-    if (
-        resume
-        and checkpoint
-        and checkpoint_uses_sidecar(checkpoint_state)
-        and not _checkpoint_payload_has_external_search(checkpoint)
-    ):
-        emit("status", "Optimiere Checkpoint-Format im Hintergrund ...")
-        checkpoint_writer.submit(checkpoint, checkpoint_snapshot, state_lock)
 
     def on_page(url: str) -> None:
         nonlocal pages_since_emit
@@ -317,6 +309,12 @@ def run_discovery(
         if not force and not checkpoint_writer.should_save(sites_since_checkpoint, checkpoint_save_every):
             return
         sites_since_checkpoint = 0
+        if (
+            checkpoint
+            and checkpoint_uses_sidecar(checkpoint_state)
+            and not _checkpoint_payload_has_external_search(checkpoint)
+        ):
+            emit("status", "Optimiere Checkpoint-Format im Hintergrund ...")
         checkpoint_writer.submit(checkpoint, checkpoint_snapshot, state_lock)
 
     try:
@@ -368,6 +366,13 @@ def run_discovery(
                 return False
 
             submit_more()
+            if active_futures:
+                emit(
+                    "status",
+                    f"Crawling aktiv ({len(active_futures)} Websites parallel, erste Ergebnisse in 1-2 Min.) ...",
+                )
+            elif pending_count == 0:
+                emit("status", "Alle Websites aus dem Checkpoint sind bereits gecrawlt.")
             while active_futures:
                 done, _ = wait(active_futures.keys(), return_when=FIRST_COMPLETED)
                 for future in done:

@@ -98,16 +98,15 @@ class AsyncCheckpointWriter:
     ) -> None:
         with lock:
             checkpoint, incremental = snapshot_builder()
-            payload = checkpoint_to_payload(checkpoint, path, incremental=incremental)
-            search_results = list(checkpoint.search_results)
-            write_sidecar = checkpoint_uses_sidecar(checkpoint)
+        payload = checkpoint_to_payload(checkpoint, path, incremental=incremental)
+        search_results = list(checkpoint.search_results) if checkpoint_uses_sidecar(checkpoint) else []
         write_discovery_checkpoint_payload(
             path,
             payload,
             backup_source=path if path.exists() else None,
             create_backup=not incremental,
         )
-        if write_sidecar and search_results:
+        if search_results:
             write_search_results_sidecar(path, search_results)
         self._last_save_at = time.monotonic()
 

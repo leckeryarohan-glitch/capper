@@ -871,6 +871,10 @@ def run_gui() -> int:
             elif kind == "status":
                 self.status_text.set(message[1])
                 text = str(message[1])
+                if "fortgesetzt" in text or "Crawling aktiv" in text:
+                    self.stats_text.set("Statistik: Crawling läuft, erste Website wird geprüft ...")
+                elif "Checkpoint geladen" in text:
+                    self.stats_text.set("Statistik: Checkpoint geladen, bereite Crawling vor ...")
                 if any(
                     marker in text
                     for marker in (
@@ -897,6 +901,11 @@ def run_gui() -> int:
                     f"Website {stats.websites_done}/{stats.websites_total} · {stats.leads_per_minute} Leads/min"
                 )
                 self._update_stats(stats)
+                if stats.websites_done == 0 and stats.websites_total > 0:
+                    self.stats_text.set(
+                        f"Statistik: Crawling startet · {stats.leads_found} Leads bisher · "
+                        f"0/{stats.websites_total} Websites in diesem Lauf"
+                    )
             elif kind == "page":
                 url, count = message[1], message[2]
                 self.current_page_text.set(f"Aktuelle Seite ({count}): {url}")
