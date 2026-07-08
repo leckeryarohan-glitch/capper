@@ -510,6 +510,8 @@ def run_discovery(
                     ),
                 )
                 if gui_quiet_mode:
+                    if stats.websites_done % 10 == 0 or stats.websites_done == stats.websites_total:
+                        emit("progress", stats)
                     if skipped_site_warnings and (
                         stats.websites_done % 10 == 0 or stats.websites_done == stats.websites_total
                     ):
@@ -630,13 +632,13 @@ def run_discovery(
                         gui_quiet_mode
                         and now - last_wait_notice >= CRAWL_WAIT_HEARTBEAT_SECONDS
                     ):
-                        publish_live_status(
-                            phase="crawl",
-                            status=(
-                                f"Crawling laeuft: {len(active_futures)} aktiv, "
-                                f"{stats.websites_done}/{stats.websites_total} Websites"
-                            ),
+                        heartbeat = (
+                            f"Crawling laeuft: {len(active_futures)} aktiv, "
+                            f"{stats.websites_done}/{stats.websites_total} Websites, "
+                            f"{stats.leads_found} Leads, {stats.leads_per_minute}/min"
                         )
+                        emit("status", heartbeat)
+                        publish_live_status(phase="crawl", status=heartbeat)
                         last_wait_notice = now
                     continue
                 for future in done:

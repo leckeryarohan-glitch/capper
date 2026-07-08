@@ -348,6 +348,15 @@ def run_discover(args: argparse.Namespace) -> int:
     def report(kind: str, *payload: object) -> None:
         if kind == "status":
             print(payload[0])
+        elif kind == "warning":
+            print(f"WARN: {payload[0]}")
+        elif kind == "progress":
+            run_stats = payload[0]
+            print(
+                f"[{run_stats.websites_done}/{run_stats.websites_total}] "
+                f"leads={run_stats.leads_found} pages={run_stats.pages_fetched} "
+                f"{run_stats.leads_per_minute}/min"
+            )
         elif kind == "site_done":
             url, new_leads, run_stats = payload
             print(
