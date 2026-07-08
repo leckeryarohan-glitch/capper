@@ -21,9 +21,35 @@ from .checkpoint import (
 CHECKPOINT_SAVE_INTERVAL = 10
 MAX_WORKERS = 128
 CRAWL_MAX_WORKERS = 20
-CRAWL_LARGE_RESUME_WORKERS = 8
+CRAWL_LARGE_RESUME_WORKERS = 4
 CRAWL_LARGE_RESUME_PENDING = 500
-CRAWL_EXECUTOR_OVERSUBSCRIBE = 3
+CRAWL_EXECUTOR_OVERSUBSCRIBE = 2
+STALL_RECOVERY_SECONDS = 40.0
+
+
+def run_with_hard_timeout(fn: Callable[[], object], timeout_seconds: float) -> object:
+    """Run blocking work on a daemon thread so pool workers cannot hang forever."""
+    if timeout_seconds <= 0:
+        return fn()
+    holder: list[object] = []
+    errors: list[BaseException] = []
+
+    def target() -> None:
+        try:
+            holder.append(fn())
+        except BaseException as exc:  # noqa: BLE001 - propagate any failure
+            errors.append(exc)
+
+    thread = threading.Thread(target=target, daemon=True, name="capper-crawl-hard-timeout")
+    thread.start()
+    thread.join(timeout_seconds)
+    if thread.is_alive():
+        raise TimeoutError(f"hard timeout after {timeout_seconds:.0f}s")
+    if errors:
+        raise errors[0]
+    if not holder:
+        raise RuntimeError("crawl worker returned no result")
+    return holder[0]
 
 
 def recommended_workers(requested: int | None = None) -> int:

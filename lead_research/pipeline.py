@@ -36,8 +36,10 @@ from .checkpoint import (
 from .concurrency import (
     AsyncCheckpointWriter,
     CRAWL_EXECUTOR_OVERSUBSCRIBE,
+    STALL_RECOVERY_SECONDS,
     recommended_crawl_workers,
     recommended_workers,
+    run_with_hard_timeout,
 )
 from .crawl import (
     CrawlConfig,
@@ -280,11 +282,16 @@ def run_discovery(
     emit("progress", stats)
 
     if resume and checkpoint and checkpoint_state is not None:
-        ensure_checkpoint_sidecars(
-            checkpoint,
-            checkpoint_state,
-            on_status=lambda msg: emit("status", msg),
-        )
+        threading.Thread(
+            target=ensure_checkpoint_sidecars,
+            kwargs={
+                "path": checkpoint,
+                "checkpoint": checkpoint_state,
+                "on_status": lambda msg: emit("status", msg),
+            },
+            name="capper-sidecar-migrate",
+            daemon=True,
+        ).start()
 
     is_json = output.suffix.lower() == ".json"
     writer = None if is_json else StreamingCsvWriter(output, append=resume and output.exists())
@@ -353,12 +360,20 @@ def run_discovery(
         return crawler
 
     def crawl_site(result: SearchResult) -> tuple[SearchResult, list[Lead]]:
-        previous_socket_timeout = socket.getdefaulttimeout()
-        socket.setdefaulttimeout(crawl_config.request_timeout_seconds)
+        hard_limit = max(crawl_config.site_timeout_seconds + 4.0, 12.0)
+
+        def _crawl() -> tuple[SearchResult, list[Lead]]:
+            previous_socket_timeout = socket.getdefaulttimeout()
+            socket.setdefaulttimeout(crawl_config.request_timeout_seconds)
+            try:
+                return result, thread_crawler().crawl_result(result, config.category)
+            finally:
+                socket.setdefaulttimeout(previous_socket_timeout)
+
         try:
-            return result, thread_crawler().crawl_result(result, config.category)
-        finally:
-            socket.setdefaulttimeout(previous_socket_timeout)
+            return run_with_hard_timeout(_crawl, hard_limit)  # type: ignore[return-value]
+        except TimeoutError:
+            return result, []
 
     def accept_lead(lead: Lead) -> Lead | None:
         if suppression.is_suppressed(lead):
@@ -485,13 +500,16 @@ def run_discovery(
                     return finish_site(result, site_leads, warning)
                 return finish_site(result, site_leads)
 
-            def evict_stale_futures() -> int:
+            def evict_stale_futures(*, force_all: bool = False) -> int:
                 now = time.monotonic()
-                stale_futures = [
-                    future
-                    for future, started_at in active_started.items()
-                    if now - started_at >= stale_limit
-                ]
+                if force_all:
+                    stale_futures = list(active_futures.keys())
+                else:
+                    stale_futures = [
+                        future
+                        for future, started_at in active_started.items()
+                        if now - started_at >= stale_limit
+                    ]
                 for future in stale_futures:
                     result = active_futures.pop(future, None)
                     active_started.pop(future, None)
@@ -514,6 +532,8 @@ def run_discovery(
             elif pending_count == 0:
                 emit("status", "Alle Websites aus dem Checkpoint sind bereits gecrawlt.")
             last_wait_notice = time.monotonic()
+            last_websites_done = stats.websites_done
+            last_progress_at = time.monotonic()
             while active_futures:
                 done, _ = wait(
                     active_futures.keys(),
@@ -521,6 +541,23 @@ def run_discovery(
                     return_when=FIRST_COMPLETED,
                 )
                 if not done:
+                    now = time.monotonic()
+                    if stats.websites_done != last_websites_done:
+                        last_websites_done = stats.websites_done
+                        last_progress_at = now
+                    elif now - last_progress_at >= STALL_RECOVERY_SECONDS:
+                        emit(
+                            "warning",
+                            f"Kein Fortschritt seit {STALL_RECOVERY_SECONDS:.0f}s — "
+                            f"haengende Websites werden uebersprungen ({len(active_futures)} aktiv).",
+                        )
+                        evicted = evict_stale_futures(force_all=True)
+                        last_progress_at = now
+                        if evicted:
+                            submit_more()
+                            if stop_submitting:
+                                break
+                        continue
                     evicted = evict_stale_futures()
                     if evicted:
                         submit_more()
