@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -21,6 +22,39 @@ class LiveStatusTests(unittest.TestCase):
         self.assertEqual(loaded.leads_found, 3)
         self.assertEqual(loaded.phase, "crawl")
         self.assertEqual(loaded.status, "Crawling")
+
+    def test_live_status_to_lead_stats_uses_rates_from_file(self) -> None:
+        from lead_research.live_status import LiveRunStatus, live_status_to_lead_stats
+
+        status = LiveRunStatus(
+            websites_done=500,
+            websites_total=45000,
+            leads_found=1200,
+            pages_fetched=800,
+            unique_domains=400,
+            duplicates_skipped=10,
+            suppressed_skipped=2,
+            leads_per_minute=4.2,
+            phase="crawl",
+            status="Crawling",
+            updated_at=time.time(),
+            websites_per_minute=18.5,
+        )
+        stats = live_status_to_lead_stats(status)
+        self.assertEqual(stats.leads_per_minute, 4.2)
+        self.assertEqual(stats.websites_per_minute, 18.5)
+
+    def test_leads_per_minute_uses_session_baseline_on_resume(self) -> None:
+        stats = LeadStats(
+            websites_done=500,
+            websites_total=45000,
+            leads_found=1205,
+            leads_baseline=1200,
+            websites_baseline=500,
+        )
+        stats.session_started_at = time.monotonic() - 60.0
+        self.assertEqual(stats.leads_per_minute, 5.0)
+        self.assertEqual(stats.websites_per_minute, 0.0)
 
 
 if __name__ == "__main__":
