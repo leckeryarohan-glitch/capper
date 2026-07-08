@@ -27,6 +27,7 @@ class LiveRunStatus:
     phase: str
     status: str
     updated_at: float
+    websites_per_minute: float = 0.0
 
 
 def live_status_path_for_checkpoint(checkpoint: Path | None) -> Path:
@@ -57,6 +58,7 @@ def write_live_status(
         "duplicates_skipped": int(getattr(stats, "duplicates_skipped", 0)),
         "suppressed_skipped": int(getattr(stats, "suppressed_skipped", 0)),
         "leads_per_minute": float(getattr(stats, "leads_per_minute", 0.0)),
+        "websites_per_minute": float(getattr(stats, "websites_per_minute", 0.0)),
         "phase": phase,
         "status": status,
         "updated_at": time.time(),
@@ -88,18 +90,24 @@ def read_live_status(path: Path) -> LiveRunStatus | None:
         phase=str(payload.get("phase", "")),
         status=str(payload.get("status", "")),
         updated_at=float(payload.get("updated_at", 0.0)),
+        websites_per_minute=float(payload.get("websites_per_minute", 0.0)),
     )
 
 
 def live_status_to_lead_stats(status: LiveRunStatus) -> LeadStats:
     from .pipeline import LeadStats
 
-    stats = LeadStats()
-    stats.websites_done = status.websites_done
-    stats.websites_total = status.websites_total
-    stats.leads_found = status.leads_found
-    stats.pages_fetched = status.pages_fetched
-    stats.unique_domains = status.unique_domains
-    stats.duplicates_skipped = status.duplicates_skipped
-    stats.suppressed_skipped = status.suppressed_skipped
-    return stats
+    return LeadStats(
+        websites_done=status.websites_done,
+        websites_total=status.websites_total,
+        leads_found=status.leads_found,
+        pages_fetched=status.pages_fetched,
+        unique_domains=status.unique_domains,
+        duplicates_skipped=status.duplicates_skipped,
+        suppressed_skipped=status.suppressed_skipped,
+        leads_baseline=status.leads_found,
+        websites_baseline=status.websites_done,
+        session_started_at=time.monotonic(),
+        display_leads_per_minute=status.leads_per_minute,
+        display_websites_per_minute=status.websites_per_minute,
+    )

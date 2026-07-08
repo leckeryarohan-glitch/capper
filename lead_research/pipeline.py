@@ -36,6 +36,7 @@ from .checkpoint import (
 from .concurrency import (
     AsyncCheckpointWriter,
     CRAWL_EXECUTOR_OVERSUBSCRIBE,
+    HARD_TIMEOUT_GRACE_SECONDS,
     STALL_RECOVERY_SECONDS,
     recommended_crawl_workers,
     recommended_workers,
@@ -106,17 +107,39 @@ class LeadStats:
     suppressed_skipped: int = 0
     unique_domains: int = 0
     started_at: float = field(default_factory=time.monotonic)
+    session_started_at: float = field(default_factory=time.monotonic)
+    leads_baseline: int = 0
+    websites_baseline: int = 0
+    display_leads_per_minute: float | None = None
+    display_websites_per_minute: float | None = None
 
     @property
     def elapsed_seconds(self) -> float:
         return max(time.monotonic() - self.started_at, 0.0)
 
     @property
+    def session_elapsed_seconds(self) -> float:
+        return max(time.monotonic() - self.session_started_at, 0.0)
+
+    @property
     def leads_per_minute(self) -> float:
-        elapsed = self.elapsed_seconds
+        if self.display_leads_per_minute is not None:
+            return self.display_leads_per_minute
+        elapsed = self.session_elapsed_seconds
         if elapsed <= 0:
             return 0.0
-        return round(self.leads_found / elapsed * 60.0, 1)
+        new_leads = max(0, self.leads_found - self.leads_baseline)
+        return round(new_leads / elapsed * 60.0, 1)
+
+    @property
+    def websites_per_minute(self) -> float:
+        if self.display_websites_per_minute is not None:
+            return self.display_websites_per_minute
+        elapsed = self.session_elapsed_seconds
+        if elapsed <= 0:
+            return 0.0
+        new_sites = max(0, self.websites_done - self.websites_baseline)
+        return round(new_sites / elapsed * 60.0, 1)
 
     def as_dict(self) -> dict:
         return {
@@ -129,8 +152,9 @@ class LeadStats:
             "duplicates_skipped": self.duplicates_skipped,
             "suppressed_skipped": self.suppressed_skipped,
             "unique_domains": self.unique_domains,
-            "elapsed_seconds": round(self.elapsed_seconds, 1),
+            "elapsed_seconds": round(self.session_elapsed_seconds, 1),
             "leads_per_minute": self.leads_per_minute,
+            "websites_per_minute": self.websites_per_minute,
         }
 
 
@@ -249,6 +273,9 @@ def run_discovery(
             stats.personal_leads += 1
     stats.unique_domains = len(domains)
     stats.websites_done = len(crawled_urls)
+    stats.leads_baseline = stats.leads_found
+    stats.websites_baseline = stats.websites_done
+    stats.session_started_at = time.monotonic()
 
     if checkpoint_state.search_complete:
         pending_count = max(0, len(checkpoint_state.search_results) - len(crawled_urls))
@@ -367,7 +394,7 @@ def run_discovery(
         return crawler
 
     def crawl_site(result: SearchResult) -> tuple[SearchResult, list[Lead]]:
-        hard_limit = max(crawl_config.site_timeout_seconds + 4.0, 12.0)
+        hard_limit = max(crawl_config.site_timeout_seconds + HARD_TIMEOUT_GRACE_SECONDS, 12.0)
 
         def _crawl() -> tuple[SearchResult, list[Lead]]:
             previous_socket_timeout = socket.getdefaulttimeout()
@@ -399,8 +426,6 @@ def run_discovery(
             domains.add(host)
             stats.unique_domains = len(domains)
         append_lead(checkpoint_state, lead)
-        if leads_sidecar_writer is not None:
-            leads_sidecar_writer.append(lead_to_dict(lead))
         return lead
 
     def persist_lead(lead: Lead) -> None:
@@ -427,14 +452,23 @@ def run_discovery(
     try:
         executor_workers = min(worker_count * CRAWL_EXECUTOR_OVERSUBSCRIBE, 48)
         stale_limit = crawl_config.site_timeout_seconds + FUTURE_RESULT_GRACE_SECONDS
-        with ThreadPoolExecutor(
+        executor = ThreadPoolExecutor(
             max_workers=executor_workers,
             thread_name_prefix="capper-crawl",
-        ) as executor:
+        )
+        try:
             active_futures: dict = {}
             active_started: dict = {}
             stop_submitting = False
             batch_limit = max(worker_count * CRAWL_ACTIVE_BATCH_MULTIPLIER, worker_count + 1)
+
+            def recycle_executor() -> None:
+                nonlocal executor
+                executor.shutdown(wait=False, cancel_futures=True)
+                executor = ThreadPoolExecutor(
+                    max_workers=executor_workers,
+                    thread_name_prefix="capper-crawl",
+                )
 
             def submit_more() -> None:
                 if stop_submitting:
@@ -453,18 +487,28 @@ def run_discovery(
                 if warning:
                     skipped_site_warnings += 1
                 accepted_leads: list[Lead] = []
+                crawled_key = search_result_crawl_key(result)
                 with state_lock:
                     stats.websites_done += 1
                     mark_result_crawled(checkpoint_state, result)
-                    if crawled_sidecar_writer is not None:
-                        crawled_sidecar_writer.append(search_result_crawl_key(result))
                     for lead in site_leads:
                         accepted = accept_lead(lead)
                         if accepted is not None:
                             accepted_leads.append(accepted)
                     sites_since_checkpoint += 1
+                if crawled_sidecar_writer is not None:
+                    crawled_sidecar_writer.append(crawled_key)
                 for lead in accepted_leads:
+                    if leads_sidecar_writer is not None:
+                        leads_sidecar_writer.append(lead_to_dict(lead))
                     persist_lead(lead)
+                publish_live_status(
+                    phase="crawl",
+                    status=(
+                        f"Website {stats.websites_done}/{stats.websites_total} · "
+                        f"{stats.leads_found} Leads · {stats.leads_per_minute}/min"
+                    ),
+                )
                 if gui_quiet_mode:
                     if skipped_site_warnings and (
                         stats.websites_done % 10 == 0 or stats.websites_done == stats.websites_total
@@ -474,27 +518,12 @@ def run_discovery(
                             f"{skipped_site_warnings} Websites uebersprungen oder haengen geblieben.",
                         )
                         skipped_site_warnings = 0
-                    if stats.websites_done % 10 == 0 or stats.websites_done == stats.websites_total:
-                        publish_live_status(
-                            phase="crawl",
-                            status=(
-                                f"Website {stats.websites_done}/{stats.websites_total} · "
-                                f"{stats.leads_found} Leads"
-                            ),
-                        )
                 else:
                     if warning:
                         emit("warning", warning)
                     emit("site_done", search_result_display_label(result), len(accepted_leads), stats)
                     if stats.websites_done % 10 == 0 or stats.websites_done == stats.websites_total:
                         emit("progress", stats)
-                        publish_live_status(
-                            phase="crawl",
-                            status=(
-                                f"Website {stats.websites_done}/{stats.websites_total} · "
-                                f"{stats.leads_found} Leads"
-                            ),
-                        )
                 maybe_save_checkpoint()
                 if stats.leads_found >= config.max_leads:
                     stop_submitting = True
@@ -574,6 +603,7 @@ def run_discovery(
                         evicted = evict_stale_futures(force_all=True)
                         last_progress_at = now
                         if evicted:
+                            recycle_executor()
                             submit_more()
                             if stop_submitting:
                                 break
@@ -615,6 +645,8 @@ def run_discovery(
                 if stop_submitting:
                     break
                 submit_more()
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
     finally:
         if crawled_sidecar_writer is not None:
             crawled_sidecar_writer.flush()
