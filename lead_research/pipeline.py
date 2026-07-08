@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -35,6 +35,7 @@ from .suppression import SuppressionList
 DEFAULT_WORKERS = recommended_workers()
 _crawl_local = threading.local()
 FUTURE_RESULT_GRACE_SECONDS = 8
+CRAWL_ACTIVE_BATCH_MULTIPLIER = 4
 
 
 @dataclass
@@ -268,10 +269,25 @@ def run_discovery(
 
     try:
         with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="capper-crawl") as executor:
-            futures = [executor.submit(crawl_site, result) for result in pending_results]
-            future_map = {future: result for future, result in zip(futures, pending_results, strict=False)}
-            for future in as_completed(future_map):
-                result = future_map[future]
+            pending_iter = iter(pending_results)
+            active_futures: dict = {}
+            stop_submitting = False
+            batch_limit = max(worker_count * CRAWL_ACTIVE_BATCH_MULTIPLIER, worker_count + 1)
+
+            def submit_more() -> None:
+                if stop_submitting:
+                    return
+                while len(active_futures) < batch_limit:
+                    try:
+                        result = next(pending_iter)
+                    except StopIteration:
+                        break
+                    future = executor.submit(crawl_site, result)
+                    active_futures[future] = result
+
+            def process_completed(future) -> bool:
+                nonlocal sites_since_checkpoint, stop_submitting
+                result = active_futures.pop(future)
                 site_timeout = crawl_config.site_timeout_seconds + FUTURE_RESULT_GRACE_SECONDS
                 try:
                     _, site_leads = future.result(timeout=site_timeout)
@@ -293,9 +309,22 @@ def run_discovery(
                 emit("progress", stats)
                 maybe_save_checkpoint()
                 if stats.leads_found >= config.max_leads:
-                    for pending in futures:
-                        pending.cancel()
+                    stop_submitting = True
+                    for pending_future in list(active_futures):
+                        pending_future.cancel()
+                    active_futures.clear()
+                    return True
+                return False
+
+            submit_more()
+            while active_futures:
+                done, _ = wait(active_futures.keys(), return_when=FIRST_COMPLETED)
+                for future in done:
+                    if process_completed(future):
+                        break
+                if stop_submitting:
                     break
+                submit_more()
     finally:
         checkpoint_writer.close(checkpoint, checkpoint_state)
         if writer is not None:
@@ -331,9 +360,14 @@ def _discover_websites(
     if use_resumable_zenrows and zenrows is not None:
         resume_state = None
         if checkpoint_state.search_results or checkpoint_state.zenrows_completed_plans:
+            restored_results = checkpoint_state.search_result_objects()
             resume_state = ZenRowsResumeState(
-                results=checkpoint_state.search_result_objects(),
-                seen_urls={result.url.lower().rstrip("/") for result in checkpoint_state.search_result_objects()},
+                results=restored_results,
+                seen_urls={
+                    result.url.lower().rstrip("/")
+                    for result in restored_results
+                    if result.url.strip()
+                },
                 completed_plans=set(checkpoint_state.zenrows_completed_plans),
             )
 

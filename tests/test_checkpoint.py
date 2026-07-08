@@ -7,7 +7,9 @@ from unittest.mock import patch
 
 from lead_research.checkpoint import (
     DiscoveryCheckpoint,
+    load_checkpoint_gui_metadata,
     load_discovery_checkpoint,
+    mark_result_crawled,
     new_discovery_checkpoint,
     save_discovery_checkpoint,
     validate_checkpoint_config,
@@ -121,6 +123,72 @@ class CheckpointTests(unittest.TestCase):
         assert loaded is not None
         self.assertEqual(loaded.directory_completed_locations, ["Berlin", "Hamburg"])
         self.assertEqual(loaded.directory_search_result_objects()[0].url, "https://berlin.example")
+
+    def test_mark_result_crawled_reuses_cached_set(self) -> None:
+        checkpoint = new_discovery_checkpoint(
+            category="hotel",
+            location="Berlin",
+            countries=("DE",),
+            limit=10,
+            max_leads=10,
+            dedupe_by="email",
+        )
+        first = SearchResult(title="A", url="https://a.example/")
+        second = SearchResult(title="B", url="https://b.example/")
+        mark_result_crawled(checkpoint, first)
+        crawled_set_id = id(checkpoint.crawled_url_set)
+        mark_result_crawled(checkpoint, second)
+        self.assertIs(checkpoint.crawled_url_set, checkpoint.crawled_url_set)
+        self.assertEqual(id(checkpoint.crawled_url_set), crawled_set_id)
+        self.assertEqual(len(checkpoint.crawled_urls), 2)
+
+    def test_load_checkpoint_gui_metadata_reads_config_without_full_arrays(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "checkpoint.json"
+            checkpoint = new_discovery_checkpoint(
+                category="hotel",
+                location="Berlin",
+                countries=("DE",),
+                limit=5000,
+                max_leads=20000,
+                dedupe_by="email",
+            )
+            checkpoint.config["gui_settings"] = {"workers": "16", "use_google_maps": False}
+            checkpoint.search_complete = True
+            checkpoint.search_results = [
+                {"title": f"Hotel {idx}", "url": f"https://hotel{idx}.example/", "snippet": ""}
+                for idx in range(250)
+            ]
+            checkpoint.crawled_urls = [f"https://done{idx}.example/" for idx in range(120)]
+            checkpoint.leads = [
+                {
+                    "category": "hotel",
+                    "source_url": "https://done0.example/",
+                    "website": "https://done0.example/",
+                    "email": f"lead{idx}@example.com",
+                    "company_name": "Hotel",
+                    "phone": "",
+                    "page_title": "",
+                    "consent_status": "business_public",
+                    "notes": [],
+                    "discovered_at": "2026-01-01T00:00:00+00:00",
+                }
+                for idx in range(15)
+            ]
+            save_discovery_checkpoint(path, checkpoint)
+            metadata = load_checkpoint_gui_metadata(path)
+            loaded = load_discovery_checkpoint(path)
+
+        assert metadata is not None
+        assert loaded is not None
+        self.assertEqual(metadata["category"], "hotel")
+        self.assertEqual(metadata["location"], "Berlin")
+        self.assertEqual(metadata["workers"], "16")
+        self.assertFalse(metadata["use_google_maps"])
+        self.assertIn("250 Websites", str(metadata["progress_summary"]))
+        self.assertIn("120 gecrawlt", str(metadata["progress_summary"]))
+        self.assertIn("15 Leads", str(metadata["progress_summary"]))
+        self.assertEqual(len(loaded.search_results), 250)
 
 
 class ResumableDiscoveryTests(unittest.TestCase):

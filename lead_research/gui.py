@@ -15,7 +15,7 @@ from .directories import (
 from .directory_profiles import resolve_category_directory_sources
 from .directory_registry import directory_sources_by_category
 from .locations import DEFAULT_COUNTRIES
-from .checkpoint import load_discovery_checkpoint, checkpoint_progress_summary
+from .checkpoint import load_checkpoint_gui_metadata
 from .pipeline import DEFAULT_WORKERS, DiscoveryConfig, LeadStats, run_discovery
 from .search import (
     DEFAULT_DIRECTORY_PARALLEL_REQUESTS,
@@ -144,35 +144,40 @@ def collect_gui_settings(values: Mapping[str, str | bool]) -> dict[str, object]:
     }
 
 
+DEFAULT_GUI_LEAD_ROWS = 500
+GUI_MESSAGES_PER_POLL = 100
+GUI_LOG_EVERY_N_PAGES = 25
+CHECKPOINT_PATH_DEBOUNCE_MS = 500
+
+
 def checkpoint_settings_for_gui(path: Path) -> dict[str, object] | None:
-    checkpoint = load_discovery_checkpoint(path)
-    if checkpoint is None:
+    metadata = load_checkpoint_gui_metadata(path)
+    if metadata is None:
         return None
 
-    config = checkpoint.config
-    gui_settings = dict(config.get("gui_settings", {}))
-    countries = list(config.get("countries", gui_settings.get("countries", list(DEFAULT_COUNTRIES))))
-    settings: dict[str, object] = {
-        "category": str(config.get("category", gui_settings.get("category", ""))),
-        "location": str(config.get("location", gui_settings.get("location", ""))),
+    countries = list(metadata.get("countries", list(DEFAULT_COUNTRIES)))
+    if not countries:
+        countries = list(DEFAULT_COUNTRIES)
+    return {
+        "category": str(metadata.get("category", "")),
+        "location": str(metadata.get("location", "")),
         "countries": countries,
-        "limit": int(config.get("limit", gui_settings.get("limit", DEFAULT_LIMIT))),
-        "max_leads": int(config.get("max_leads", gui_settings.get("max_leads", DEFAULT_MAX_LEADS))),
-        "workers": str(gui_settings.get("workers", DEFAULT_WORKERS_TEXT)),
-        "directory_parallel": str(gui_settings.get("directory_parallel", DEFAULT_DIRECTORY_PARALLEL_TEXT)),
+        "limit": int(metadata.get("limit") or DEFAULT_LIMIT),
+        "max_leads": int(metadata.get("max_leads") or DEFAULT_MAX_LEADS),
+        "workers": str(metadata.get("workers") or DEFAULT_WORKERS_TEXT),
+        "directory_parallel": str(metadata.get("directory_parallel") or DEFAULT_DIRECTORY_PARALLEL_TEXT),
         "directory_detail_parallel": str(
-            gui_settings.get("directory_detail_parallel", DEFAULT_DIRECTORY_DETAIL_PARALLEL_TEXT)
+            metadata.get("directory_detail_parallel") or DEFAULT_DIRECTORY_DETAIL_PARALLEL_TEXT
         ),
-        "use_osm": bool(gui_settings.get("use_osm", True)),
-        "use_duckduckgo": bool(gui_settings.get("use_duckduckgo", True)),
-        "use_directories": bool(gui_settings.get("use_directories", True)),
-        "use_zenrows_google": bool(gui_settings.get("use_zenrows_google", True)),
-        "use_google_maps": bool(gui_settings.get("use_google_maps", True)),
-        "use_serpapi": bool(gui_settings.get("use_serpapi", False)),
-        "directory_sources": list(gui_settings.get("directory_sources", [])),
-        "progress_summary": checkpoint_progress_summary(checkpoint),
+        "use_osm": bool(metadata.get("use_osm", True)),
+        "use_duckduckgo": bool(metadata.get("use_duckduckgo", True)),
+        "use_directories": bool(metadata.get("use_directories", True)),
+        "use_zenrows_google": bool(metadata.get("use_zenrows_google", True)),
+        "use_google_maps": bool(metadata.get("use_google_maps", True)),
+        "use_serpapi": bool(metadata.get("use_serpapi", False)),
+        "directory_sources": list(metadata.get("directory_sources", [])),
+        "progress_summary": str(metadata.get("progress_summary", "")),
     }
-    return settings
 
 
 def apply_gui_settings(values: dict[str, object], settings: Mapping[str, object]) -> None:
@@ -323,6 +328,8 @@ def run_gui() -> int:
             self.root.title("Capper Lead Finder")
             self.messages: "queue.Queue[tuple]" = queue.Queue()
             self.worker: threading.Thread | None = None
+            self._checkpoint_debounce_id: str | None = None
+            self._gui_leads_shown = 0
 
             self.category = tk.StringVar(value="hotel")
             self.location = tk.StringVar(value="")
@@ -690,34 +697,80 @@ def run_gui() -> int:
             for source_id, var in self.directory_source_vars.items():
                 var.set(bool(values.get(f"dir_source_{source_id}", var.get())))
 
-        def _load_checkpoint_into_form(self, *, show_errors: bool = True) -> bool:
+        def _load_checkpoint_into_form(self, *, show_errors: bool = True, sync: bool = False) -> bool:
             path = Path(self.checkpoint.get().strip() or DEFAULT_CHECKPOINT)
-            settings = checkpoint_settings_for_gui(path)
+            if sync:
+                try:
+                    settings = checkpoint_settings_for_gui(path)
+                except Exception as exc:  # noqa: BLE001 - surface load errors in the GUI
+                    if show_errors:
+                        messagebox.showerror("Checkpoint", f"Checkpoint konnte nicht gelesen werden: {exc}")
+                        self.resume.set(False)
+                    return False
+                if settings is None:
+                    if show_errors:
+                        messagebox.showwarning("Checkpoint", f"Datei nicht gefunden: {path}")
+                        self.resume.set(False)
+                    return False
+                self._apply_checkpoint_settings(settings)
+                summary = str(settings.get("progress_summary", ""))
+                self.status_text.set(f"Einstellungen aus Checkpoint geladen ({summary}).")
+                self._append_log(f"Checkpoint-Einstellungen geladen: {path} — {summary}\n")
+                return True
+
+            self.status_text.set("Lade Checkpoint-Metadaten ...")
+
+            def worker() -> None:
+                try:
+                    settings = checkpoint_settings_for_gui(path)
+                    self.messages.put(("checkpoint_settings", settings, str(path), show_errors))
+                except Exception as exc:  # noqa: BLE001 - surface load errors in the GUI
+                    self.messages.put(("checkpoint_error", str(exc), show_errors))
+
+            threading.Thread(target=worker, name="capper-checkpoint-gui", daemon=True).start()
+            return True
+
+        def _apply_checkpoint_settings_message(
+            self,
+            settings: dict[str, object] | None,
+            path: str,
+            *,
+            show_errors: bool,
+        ) -> None:
             if settings is None:
                 if show_errors:
                     messagebox.showwarning("Checkpoint", f"Datei nicht gefunden: {path}")
                     self.resume.set(False)
-                return False
+                return
             self._apply_checkpoint_settings(settings)
             summary = str(settings.get("progress_summary", ""))
             self.status_text.set(f"Einstellungen aus Checkpoint geladen ({summary}).")
             self._append_log(f"Checkpoint-Einstellungen geladen: {path} — {summary}\n")
-            return True
 
         def _on_resume_toggled(self) -> None:
             if self.resume.get():
                 self._load_checkpoint_into_form()
 
         def _on_checkpoint_path_changed(self, *_args: object) -> None:
-            if self.resume.get():
-                self._load_checkpoint_into_form(show_errors=False)
+            if not self.resume.get():
+                return
+            if self._checkpoint_debounce_id is not None:
+                self.root.after_cancel(self._checkpoint_debounce_id)
+            self._checkpoint_debounce_id = self.root.after(
+                CHECKPOINT_PATH_DEBOUNCE_MS,
+                self._debounced_checkpoint_load,
+            )
+
+        def _debounced_checkpoint_load(self) -> None:
+            self._checkpoint_debounce_id = None
+            self._load_checkpoint_into_form(show_errors=False)
 
         def _start(self) -> None:
             if self.worker and self.worker.is_alive():
                 messagebox.showinfo("Capper", "Die Suche laeuft bereits.")
                 return
 
-            if self.resume.get() and not self._load_checkpoint_into_form():
+            if self.resume.get() and not self._load_checkpoint_into_form(sync=True):
                 return
 
             values = {
@@ -763,6 +816,7 @@ def run_gui() -> int:
             self.lead_count_text.set("Gefundene Leads: 0")
             self.stats_text.set("Statistik: Suche wird vorbereitet ...")
             self.current_page_text.set("Aktuelle Seite: -")
+            self._gui_leads_shown = 0
             for item in self.lead_table.get_children():
                 self.lead_table.delete(item)
 
@@ -775,12 +829,14 @@ def run_gui() -> int:
             self.messages.put(("done", exit_code))
 
         def _poll_messages(self) -> None:
-            while True:
+            processed = 0
+            while processed < GUI_MESSAGES_PER_POLL:
                 try:
                     message = self.messages.get_nowait()
                 except queue.Empty:
                     break
                 self._handle_message(message)
+                processed += 1
             self.root.after(100, self._poll_messages)
 
         def _update_stats(self, stats: LeadStats) -> None:
@@ -796,7 +852,16 @@ def run_gui() -> int:
 
         def _handle_message(self, message: tuple) -> None:
             kind = message[0]
-            if kind == "status":
+            if kind == "checkpoint_settings":
+                settings, path, show_errors = message[1], message[2], message[3]
+                self._apply_checkpoint_settings_message(settings, path, show_errors=show_errors)
+            elif kind == "checkpoint_error":
+                error_text, show_errors = message[1], message[2]
+                if show_errors:
+                    messagebox.showerror("Checkpoint", f"Checkpoint konnte nicht gelesen werden: {error_text}")
+                    self.resume.set(False)
+                self.status_text.set("Checkpoint konnte nicht geladen werden.")
+            elif kind == "status":
                 self.status_text.set(message[1])
                 self._append_log(message[1] + "\n")
             elif kind == "total":
@@ -815,7 +880,8 @@ def run_gui() -> int:
             elif kind == "page":
                 url, count = message[1], message[2]
                 self.current_page_text.set(f"Aktuelle Seite ({count}): {url}")
-                self._append_log(f"  geprueft: {url}\n")
+                if count == 1 or count % GUI_LOG_EVERY_N_PAGES == 0:
+                    self._append_log(f"  geprueft: {url} ({count} Seiten)\n")
             elif kind == "site_done":
                 url, new_leads, stats = message[1], message[2], message[3]
                 self.progress.configure(maximum=max(stats.websites_total, 1))
@@ -829,17 +895,25 @@ def run_gui() -> int:
             elif kind == "lead":
                 lead, stats = message[1], message[2]
                 self._update_stats(stats)
-                self.lead_table.insert(
-                    "",
-                    "end",
-                    values=(
-                        lead.company_name,
-                        lead.email,
-                        lead.website,
-                        lead.consent_status.value,
-                    ),
-                )
-                self._append_log(f"Lead gefunden: {lead.email} ({lead.company_name})\n")
+                if self._gui_leads_shown < DEFAULT_GUI_LEAD_ROWS:
+                    self.lead_table.insert(
+                        "",
+                        "end",
+                        values=(
+                            lead.company_name,
+                            lead.email,
+                            lead.website,
+                            lead.consent_status.value,
+                        ),
+                    )
+                    self._gui_leads_shown += 1
+                    self._append_log(f"Lead gefunden: {lead.email} ({lead.company_name})\n")
+                elif self._gui_leads_shown == DEFAULT_GUI_LEAD_ROWS:
+                    self._gui_leads_shown += 1
+                    self._append_log(
+                        f"Hinweis: Weitere Leads werden nur in der CSV gespeichert "
+                        f"(GUI-Anzeige auf {DEFAULT_GUI_LEAD_ROWS} begrenzt).\n"
+                    )
             elif kind == "finished":
                 stats, output = message[1], message[2]
                 self._update_stats(stats)
