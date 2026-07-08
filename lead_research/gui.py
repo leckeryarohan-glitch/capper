@@ -6,7 +6,7 @@ import threading
 from pathlib import Path
 from typing import Mapping
 
-from .concurrency import recommended_workers
+from .concurrency import CRAWL_MAX_WORKERS, recommended_workers
 from .directories import (
     DEFAULT_DIRECTORY_DETAIL_PARALLEL,
     DIRECTORY_MAX_DETAIL_PARALLEL,
@@ -441,7 +441,7 @@ def run_gui() -> int:
             ).grid(row=1, column=4, columnspan=2, sticky="w", pady=(4, 0))
             ttk.Label(
                 limits_frame,
-                text="(Crawling; mehr = schneller, Standard auto)",
+                text=f"(Crawling; max {CRAWL_MAX_WORKERS} parallel fuer Stabilitaet)",
                 foreground="#555",
             ).grid(row=2, column=0, columnspan=6, sticky="w", pady=(2, 0))
 
