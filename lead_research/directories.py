@@ -34,6 +34,15 @@ DIRECTORY_MASS_LISTING_PAGE_CAP = 5
 DEFAULT_DIRECTORY_DETAIL_PARALLEL = 8
 DIRECTORY_MAX_DETAIL_PARALLEL = 50
 DEFAULT_DIRECTORY_MASS_DETAIL_PARALLEL = 12
+GOYELLOW_DEFAULT_LISTING_PAGES = 10
+GOYELLOW_MAX_DETAIL_FETCHES = 80
+GOYELLOW_SKIP_SLUG_MARKERS = (
+    "sex-erotik",
+    "begleit",
+    "escort",
+    "bordell",
+    "erotik",
+)
 
 
 def _env_float(name: str, default: float) -> float:
@@ -85,6 +94,21 @@ def cap_directory_detail_fetches(limit: int) -> int:
     if effective_cap is None:
         effective_cap = DIRECTORY_MAX_DETAIL_FETCHES
     return max(1, min(limit, effective_cap))
+
+
+def cap_goyellow_detail_fetches(limit: int) -> int:
+    return max(1, min(limit, GOYELLOW_MAX_DETAIL_FETCHES))
+
+
+def goyellow_listing_page_limit(limit: int) -> int:
+    raw = os.getenv("GOYELLOW_MAX_PAGES", "").strip()
+    if raw:
+        try:
+            return max(1, min(int(raw), 20))
+        except ValueError:
+            pass
+    pages = max(3, min(GOYELLOW_DEFAULT_LISTING_PAGES, (limit // 25) + 2))
+    return pages
 
 
 def directory_listing_page_limit() -> int:
@@ -372,7 +396,7 @@ def build_zenrows_directory_fetch_url(
 
 
 def zenrows_directory_fetch_profiles(url: str, proxy_country: str) -> list[dict[str, str]]:
-    if "hotfrog." in url:
+    if "goyellow.de" in url or "hotfrog." in url:
         return [
             {
                 "js_render": "true",
@@ -987,16 +1011,51 @@ def parse_11880_html(page_html: str, *, source_url: str) -> list[DirectoryEntry]
     return entries
 
 
-def parse_goyellow_listing_html(page_html: str) -> list[tuple[str, str]]:
+def parse_goyellow_listing_html(page_html: str, *, category: str = "") -> list[tuple[str, str]]:
     listings: list[tuple[str, str]] = []
     seen: set[str] = set()
-    for seourl in re.findall(r'data-seourl="(/home/[^"]+\.html)"', page_html):
+    category_lower = category.strip().lower()
+
+    def add_listing(seourl: str, name: str = "") -> None:
+        if not seourl.startswith("/home/") or not seourl.endswith(".html"):
+            return
+        slug_lower = seourl.lower()
+        if any(marker in slug_lower for marker in GOYELLOW_SKIP_SLUG_MARKERS):
+            return
+        if category_lower in {"hotel", "hotels", "pension", "unterkunft"} and "hotel" not in slug_lower:
+            if any(marker in slug_lower for marker in ("sex-erotik", "begleit", "escort")):
+                return
         detail_url = f"https://www.goyellow.de{html.unescape(seourl)}"
         if detail_url in seen:
-            continue
+            return
         seen.add(detail_url)
-        listings.append((name_from_url_slug(seourl), detail_url))
+        listings.append((name.strip() or name_from_url_slug(seourl), detail_url))
+
+    for seourl in re.findall(r'data-seourl="(/home/[^"]+\.html)"', page_html):
+        add_listing(seourl)
+    for seourl in re.findall(r'href="(/home/[^"]+\.html)"', page_html):
+        add_listing(seourl)
+    for match in re.finditer(
+        r'data-seourl="(/home/[^"]+\.html)"[\s\S]{0,500}?<h2[^>]*>([^<]+)</h2>',
+        page_html,
+        re.IGNORECASE,
+    ):
+        add_listing(match.group(1), html.unescape(match.group(2)))
     return listings
+
+
+def parse_goyellow_detail_email(page_html: str) -> str:
+    match = re.search(r'id="subscriberEmail"\s+value="([^"]+)"', page_html, re.IGNORECASE)
+    if match:
+        email = normalize_directory_email(match.group(1))
+        if email:
+            return email
+    match = re.search(r'itemprop="email"\s+content="([^"]+)"', page_html, re.IGNORECASE)
+    if match:
+        email = normalize_directory_email(match.group(1))
+        if email:
+            return email
+    return pick_directory_email(page_html)
 
 
 def parse_kompass_listing_html(page_html: str) -> list[tuple[str, str]]:
@@ -1307,6 +1366,47 @@ def enrich_gelbeseiten_entries(listings: list[tuple[str, str]], *, max_detail_fe
         return parse_gelbeseiten_detail_html(detail_html, name=name, source_url=detail_url)
 
     return _parallel_process_items(listings[:max_detail_fetches], fetch_listing)
+
+
+def enrich_goyellow_listing_details(
+    listings: list[tuple[str, str]],
+    *,
+    max_detail_fetches: int,
+) -> list[DirectoryEntry]:
+    max_detail_fetches = cap_goyellow_detail_fetches(max_detail_fetches)
+
+    def fetch_listing(item: tuple[str, str]) -> DirectoryEntry | None:
+        name, detail_url = item
+        try:
+            detail_html = fetch_directory_html(detail_url)
+        except DirectoryFetchError:
+            return None
+        website = parse_goyellow_detail_website(detail_html)
+        email = parse_goyellow_detail_email(detail_html)
+        if not website and not email:
+            return None
+        snippet_parts = ["GoYellow"]
+        if email:
+            snippet_parts.append(email)
+        return DirectoryEntry(
+            name=parse_goyellow_detail_name(detail_html) or name,
+            website=website,
+            source_url=detail_url,
+            snippet=" | ".join(snippet_parts),
+            email=email,
+        )
+
+    return _parallel_process_items(listings[:max_detail_fetches], fetch_listing)
+
+
+def parse_goyellow_detail_name(page_html: str) -> str:
+    match = re.search(r'<h1[^>]*itemprop="name"[^>]*>([^<]+)</h1>', page_html, re.IGNORECASE)
+    if match:
+        return html.unescape(re.sub(r"\s+", " ", match.group(1))).strip()
+    match = re.search(r"<h1[^>]*>([^<]+)</h1>", page_html, re.IGNORECASE)
+    if match:
+        return html.unescape(re.sub(r"\s+", " ", match.group(1))).strip()
+    return ""
 
 
 def enrich_named_listing_details(
@@ -3286,11 +3386,12 @@ def scrape_telefonbuch(category: str, location: str, limit: int) -> list[Directo
 
 def scrape_goyellow(category: str, location: str, limit: int) -> list[DirectoryEntry]:
     listings: list[tuple[str, str]] = []
+    page_limit = goyellow_listing_page_limit(limit)
     page = 1
-    while len(listings) < limit and page <= directory_listing_page_limit():
+    while len(listings) < limit and page <= page_limit:
         source_url = build_goyellow_url(category, location, page)
         page_html = fetch_directory_html(source_url)
-        page_listings = parse_goyellow_listing_html(page_html)
+        page_listings = parse_goyellow_listing_html(page_html, category=category)
         if not page_listings:
             break
         listings.extend(page_listings)
@@ -3298,11 +3399,9 @@ def scrape_goyellow(category: str, location: str, limit: int) -> list[DirectoryE
             break
         page += 1
         maybe_sleep(directory_request_delay())
-    return enrich_named_listing_details(
+    return enrich_goyellow_listing_details(
         listings,
         max_detail_fetches=limit,
-        parse_detail_website=parse_goyellow_detail_website,
-        source_name="GoYellow",
     )[:limit]
 
 
