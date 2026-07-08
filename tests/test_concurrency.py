@@ -21,8 +21,9 @@ class ConcurrencyTests(unittest.TestCase):
 
     def test_recommended_crawl_workers_caps_large_resume(self) -> None:
         self.assertEqual(recommended_crawl_workers(128, pending_sites=10), 20)
-        self.assertEqual(recommended_crawl_workers(128, pending_sites=1000), 4)
+        self.assertEqual(recommended_crawl_workers(128, pending_sites=1000), 8)
         self.assertEqual(recommended_crawl_workers(4, pending_sites=1000), 4)
+        self.assertEqual(recommended_crawl_workers(12, pending_sites=1000), 12)
 
     def test_run_with_hard_timeout_raises_when_work_blocks(self) -> None:
         def slow() -> str:

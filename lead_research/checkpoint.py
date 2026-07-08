@@ -547,6 +547,14 @@ def ensure_checkpoint_sidecars(
     on_status: Callable[[str], None] | None = None,
 ) -> None:
     """Migrate large in-memory crawl state to append-only sidecars before resume saves."""
+    if checkpoint_uses_sidecar(checkpoint):
+        search_sidecar = checkpoint_search_results_path(path)
+        if not search_sidecar.exists() and checkpoint.search_results:
+            if on_status:
+                on_status(
+                    f"Migriere {len(checkpoint.search_results)} Suchergebnisse in Sidecar-Format ..."
+                )
+            write_search_results_sidecar(path, checkpoint.search_results)
     if checkpoint_uses_crawled_sidecar(checkpoint):
         crawled_sidecar = checkpoint_crawled_path(path)
         if not crawled_sidecar.exists() and checkpoint.crawled_urls:
@@ -571,6 +579,10 @@ def ensure_checkpoint_sidecars(
                     checkpoint.leads[offset : offset + SIDECAR_MIGRATION_CHUNK],
                 )
                 time.sleep(0)
+    if checkpoint_uses_sidecar(checkpoint) or checkpoint_uses_crawled_sidecar(checkpoint):
+        if on_status:
+            on_status("Optimiere Checkpoint fuer schnelle Resume-Speicherung ...")
+        save_discovery_checkpoint(path, checkpoint, incremental=True)
 
 
 def _read_jsonl_strings(path: Path) -> list[str]:
