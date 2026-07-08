@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -199,9 +200,15 @@ def new_discovery_checkpoint(
     )
 
 
-def load_discovery_checkpoint(path: Path | None) -> DiscoveryCheckpoint | None:
+def load_discovery_checkpoint(
+    path: Path | None,
+    *,
+    on_status: Callable[[str], None] | None = None,
+) -> DiscoveryCheckpoint | None:
     if path is None:
         return None
+    if on_status:
+        on_status(f"Lese Checkpoint-Datei {path.name} ...")
     payload = _read_checkpoint_payload(path)
     if payload is None:
         return None
@@ -209,6 +216,9 @@ def load_discovery_checkpoint(path: Path | None) -> DiscoveryCheckpoint | None:
     if not search_results and payload.get("search_results_external"):
         sidecar = checkpoint_search_results_path(path)
         if sidecar.exists():
+            if on_status:
+                size_mb = sidecar.stat().st_size / (1024 * 1024)
+                on_status(f"Lese Suchergebnisse aus {sidecar.name} ({size_mb:.0f} MB) ...")
             sidecar_payload = _read_checkpoint_payload(sidecar)
             if isinstance(sidecar_payload, dict):
                 search_results = list(sidecar_payload.get("search_results", []))
@@ -435,6 +445,13 @@ def load_checkpoint_gui_metadata(path: Path | None) -> dict[str, object] | None:
     }
 
 
+def checkpoint_uses_sidecar(checkpoint: DiscoveryCheckpoint) -> bool:
+    return (
+        checkpoint.search_complete
+        and len(checkpoint.search_results) >= LARGE_CHECKPOINT_RESULT_COUNT
+    )
+
+
 def save_discovery_checkpoint(
     path: Path | None,
     checkpoint: DiscoveryCheckpoint,
@@ -444,7 +461,12 @@ def save_discovery_checkpoint(
     if path is None:
         return
     payload = checkpoint_to_payload(checkpoint, path, incremental=incremental)
-    write_discovery_checkpoint_payload(path, payload, backup_source=path if path.exists() else None)
+    write_discovery_checkpoint_payload(
+        path,
+        payload,
+        backup_source=path if path.exists() else None,
+        create_backup=not incremental,
+    )
     if (
         not incremental
         and checkpoint.search_complete
@@ -511,9 +533,10 @@ def write_discovery_checkpoint_payload(
     payload: dict[str, object],
     *,
     backup_source: Path | None = None,
+    create_backup: bool = True,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    if backup_source is not None and backup_source.exists():
+    if create_backup and backup_source is not None and backup_source.exists():
         try:
             shutil.copy2(backup_source, checkpoint_backup_path(backup_source))
         except OSError:

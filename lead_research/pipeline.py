@@ -12,6 +12,7 @@ from .checkpoint import (
     DiscoveryCheckpoint,
     append_lead,
     checkpoint_save_interval,
+    checkpoint_uses_sidecar,
     clear_directory_search_progress,
     config_fingerprint,
     load_discovery_checkpoint,
@@ -40,6 +41,16 @@ _crawl_local = threading.local()
 FUTURE_RESULT_GRACE_SECONDS = 8
 CRAWL_ACTIVE_BATCH_MULTIPLIER = 4
 PAGE_EVENT_INTERVAL = 25
+
+
+def _checkpoint_payload_has_external_search(path: Path | None) -> bool:
+    if path is None or not path.exists():
+        return False
+    try:
+        head = path.read_text(encoding="utf-8", errors="replace")[:4096]
+    except OSError:
+        return False
+    return '"search_results_external":true' in head.replace(" ", "")
 
 
 @dataclass
@@ -130,7 +141,7 @@ def run_discovery(
     checkpoint_state: DiscoveryCheckpoint | None = None
     if resume and checkpoint:
         emit("status", f"Lade Checkpoint {checkpoint} ...")
-        loaded = load_discovery_checkpoint(checkpoint)
+        loaded = load_discovery_checkpoint(checkpoint, on_status=lambda msg: emit("status", msg))
         if loaded is not None:
             validate_checkpoint_config(loaded, expected_config)
             checkpoint_state = loaded
@@ -157,7 +168,6 @@ def run_discovery(
 
     if gui_settings is not None:
         checkpoint_state.config["gui_settings"] = gui_settings
-        save_discovery_checkpoint(checkpoint, checkpoint_state)
 
     emit("status", "Bereite Suche vor ...")
     try:
@@ -203,11 +213,7 @@ def run_discovery(
     stats.websites_done = len(crawled_urls)
 
     if checkpoint_state.search_complete:
-        pending_count = sum(
-            1
-            for item in checkpoint_state.search_results
-            if search_result_crawl_key_from_dict(item) not in crawled_urls
-        )
+        pending_count = max(0, len(checkpoint_state.search_results) - len(crawled_urls))
 
         def iter_pending_results():
             for item in checkpoint_state.search_results:
@@ -243,8 +249,17 @@ def run_discovery(
     pages_since_emit = 0
 
     def checkpoint_snapshot() -> tuple[DiscoveryCheckpoint, bool]:
-        incremental = checkpoint_state.search_complete and len(checkpoint_state.search_results) >= 5000
+        incremental = checkpoint_uses_sidecar(checkpoint_state)
         return checkpoint_state, incremental
+
+    if (
+        resume
+        and checkpoint
+        and checkpoint_uses_sidecar(checkpoint_state)
+        and not _checkpoint_payload_has_external_search(checkpoint)
+    ):
+        emit("status", "Optimiere Checkpoint-Format im Hintergrund ...")
+        checkpoint_writer.submit(checkpoint, checkpoint_snapshot, state_lock)
 
     def on_page(url: str) -> None:
         nonlocal pages_since_emit
