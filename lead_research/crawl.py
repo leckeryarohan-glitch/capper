@@ -20,6 +20,9 @@ DEFAULT_REQUEST_TIMEOUT_SECONDS = 10.0
 DEFAULT_ROBOTS_TIMEOUT_SECONDS = 6.0
 DEFAULT_SITE_TIMEOUT_SECONDS = 40.0
 DEFAULT_READ_TIMEOUT_SECONDS = 15.0
+RESUME_REQUEST_TIMEOUT_SECONDS = 8.0
+RESUME_SITE_TIMEOUT_SECONDS = 22.0
+RESUME_READ_TIMEOUT_SECONDS = 10.0
 
 # German businesses are legally required to publish an Impressum with contact
 # details, so try these common paths even when they are not linked.

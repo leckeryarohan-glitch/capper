@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from lead_research.concurrency import recommended_workers
+from lead_research.concurrency import recommended_crawl_workers, recommended_workers
 from lead_research.search import zenrows_parallel_workers
 
 
@@ -17,6 +17,11 @@ class ConcurrencyTests(unittest.TestCase):
         self.assertEqual(zenrows_parallel_workers(12, True, 10), 1)
         self.assertEqual(zenrows_parallel_workers(12, True, 200), 6)
         self.assertEqual(zenrows_parallel_workers(2, True, 200), 2)
+
+    def test_recommended_crawl_workers_caps_large_resume(self) -> None:
+        self.assertEqual(recommended_crawl_workers(128, pending_sites=10), 20)
+        self.assertEqual(recommended_crawl_workers(128, pending_sites=1000), 8)
+        self.assertEqual(recommended_crawl_workers(4, pending_sites=1000), 4)
 
 
 if __name__ == "__main__":

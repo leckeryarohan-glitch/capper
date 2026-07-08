@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import socket
 import threading
 import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
@@ -25,8 +26,22 @@ from .checkpoint import (
     update_search_results,
     validate_checkpoint_config,
 )
-from .concurrency import AsyncCheckpointWriter, recommended_crawl_workers, recommended_workers
-from .crawl import CrawlConfig, DEFAULT_SITE_TIMEOUT_SECONDS, LeadCrawler
+from .concurrency import (
+    AsyncCheckpointWriter,
+    CRAWL_EXECUTOR_OVERSUBSCRIBE,
+    recommended_crawl_workers,
+    recommended_workers,
+)
+from .crawl import (
+    CrawlConfig,
+    DEFAULT_READ_TIMEOUT_SECONDS,
+    DEFAULT_REQUEST_TIMEOUT_SECONDS,
+    DEFAULT_SITE_TIMEOUT_SECONDS,
+    LeadCrawler,
+    RESUME_READ_TIMEOUT_SECONDS,
+    RESUME_REQUEST_TIMEOUT_SECONDS,
+    RESUME_SITE_TIMEOUT_SECONDS,
+)
 from .export import StreamingCsvWriter, write_json
 from .extract import normalized_host
 from .models import ConsentStatus, Lead, LeadDeduplicator, SearchResult, search_result_crawl_key, search_result_display_label
@@ -42,6 +57,19 @@ FUTURE_RESULT_GRACE_SECONDS = 8
 CRAWL_ACTIVE_BATCH_MULTIPLIER = 1
 CRAWL_WAIT_HEARTBEAT_SECONDS = 15
 PAGE_EVENT_INTERVAL = 25
+
+
+def build_crawl_config(*, config: DiscoveryConfig, resume: bool, pending_sites: int) -> CrawlConfig:
+    fast_resume = resume and pending_sites >= 100
+    return CrawlConfig(
+        max_pages_per_site=config.max_pages_per_site,
+        delay_seconds=0.0 if fast_resume else config.delay,
+        include_personal=config.include_personal,
+        respect_robots=not fast_resume and config.respect_robots,
+        request_timeout_seconds=RESUME_REQUEST_TIMEOUT_SECONDS if fast_resume else DEFAULT_REQUEST_TIMEOUT_SECONDS,
+        site_timeout_seconds=RESUME_SITE_TIMEOUT_SECONDS if fast_resume else DEFAULT_SITE_TIMEOUT_SECONDS,
+        read_timeout_seconds=RESUME_READ_TIMEOUT_SECONDS if fast_resume else DEFAULT_READ_TIMEOUT_SECONDS,
+    )
 
 
 def _checkpoint_payload_has_external_search(path: Path | None) -> bool:
@@ -270,13 +298,13 @@ def run_discovery(
             pages_since_emit = 0
             emit("page", url, count)
 
-    crawl_config = CrawlConfig(
-        max_pages_per_site=config.max_pages_per_site,
-        delay_seconds=config.delay,
-        include_personal=config.include_personal,
-        respect_robots=config.respect_robots,
-        site_timeout_seconds=DEFAULT_SITE_TIMEOUT_SECONDS,
-    )
+    crawl_config = build_crawl_config(config=config, resume=resume, pending_sites=pending_count)
+    if resume and pending_count >= 100:
+        emit(
+            "status",
+            f"Schneller Resume-Modus: kuerzere Timeouts ({crawl_config.site_timeout_seconds:.0f}s/Site), "
+            f"ohne Robots.txt und ohne Delay.",
+        )
 
     def thread_crawler() -> LeadCrawler:
         crawler = getattr(_crawl_local, "crawler", None)
@@ -286,7 +314,12 @@ def run_discovery(
         return crawler
 
     def crawl_site(result: SearchResult) -> tuple[SearchResult, list[Lead]]:
-        return result, thread_crawler().crawl_result(result, config.category)
+        previous_socket_timeout = socket.getdefaulttimeout()
+        socket.setdefaulttimeout(crawl_config.request_timeout_seconds)
+        try:
+            return result, thread_crawler().crawl_result(result, config.category)
+        finally:
+            socket.setdefaulttimeout(previous_socket_timeout)
 
     def store_lead(lead: Lead) -> None:
         if suppression.is_suppressed(lead):
@@ -325,8 +358,14 @@ def run_discovery(
         checkpoint_writer.submit(checkpoint, checkpoint_snapshot, state_lock)
 
     try:
-        with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="capper-crawl") as executor:
+        executor_workers = min(worker_count * CRAWL_EXECUTOR_OVERSUBSCRIBE, 48)
+        stale_limit = crawl_config.site_timeout_seconds + FUTURE_RESULT_GRACE_SECONDS
+        with ThreadPoolExecutor(
+            max_workers=executor_workers,
+            thread_name_prefix="capper-crawl",
+        ) as executor:
             active_futures: dict = {}
+            active_started: dict = {}
             stop_submitting = False
             batch_limit = max(worker_count * CRAWL_ACTIVE_BATCH_MULTIPLIER, worker_count + 1)
 
@@ -340,19 +379,12 @@ def run_discovery(
                         break
                     future = executor.submit(crawl_site, result)
                     active_futures[future] = result
+                    active_started[future] = time.monotonic()
 
-            def process_completed(future) -> bool:
+            def finish_site(result: SearchResult, site_leads: list[Lead], warning: str | None = None) -> bool:
                 nonlocal sites_since_checkpoint, stop_submitting
-                result = active_futures.pop(future)
-                site_timeout = crawl_config.site_timeout_seconds + FUTURE_RESULT_GRACE_SECONDS
-                try:
-                    _, site_leads = future.result(timeout=site_timeout)
-                except TimeoutError:
-                    site_leads = []
-                    emit("warning", f"Website-Timeout (uebersprungen): {search_result_display_label(result)}")
-                except Exception as exc:  # noqa: BLE001 - keep run alive on a single site failure
-                    site_leads = []
-                    emit("warning", f"Website-Fehler: {exc}")
+                if warning:
+                    emit("warning", warning)
                 with state_lock:
                     stats.websites_done += 1
                     mark_result_crawled(checkpoint_state, result)
@@ -369,8 +401,44 @@ def run_discovery(
                     for pending_future in list(active_futures):
                         pending_future.cancel()
                     active_futures.clear()
+                    active_started.clear()
                     return True
                 return False
+
+            def process_completed(future) -> bool:
+                result = active_futures.pop(future)
+                active_started.pop(future, None)
+                try:
+                    _, site_leads = future.result(timeout=FUTURE_RESULT_GRACE_SECONDS)
+                except TimeoutError:
+                    site_leads = []
+                    warning = f"Website-Timeout (uebersprungen): {search_result_display_label(result)}"
+                    return finish_site(result, site_leads, warning)
+                except Exception as exc:  # noqa: BLE001 - keep run alive on a single site failure
+                    site_leads = []
+                    warning = f"Website-Fehler: {exc}"
+                    return finish_site(result, site_leads, warning)
+                return finish_site(result, site_leads)
+
+            def evict_stale_futures() -> int:
+                now = time.monotonic()
+                stale_futures = [
+                    future
+                    for future, started_at in active_started.items()
+                    if now - started_at >= stale_limit
+                ]
+                for future in stale_futures:
+                    result = active_futures.pop(future, None)
+                    active_started.pop(future, None)
+                    if result is None:
+                        continue
+                    warning = (
+                        f"Website haengt (uebersprungen nach {crawl_config.site_timeout_seconds:.0f}s): "
+                        f"{search_result_display_label(result)}"
+                    )
+                    if finish_site(result, [], warning):
+                        return len(stale_futures)
+                return len(stale_futures)
 
             submit_more()
             if active_futures:
@@ -388,6 +456,11 @@ def run_discovery(
                     return_when=FIRST_COMPLETED,
                 )
                 if not done:
+                    evicted = evict_stale_futures()
+                    if evicted:
+                        submit_more()
+                        if stop_submitting:
+                            break
                     now = time.monotonic()
                     if now - last_wait_notice >= CRAWL_WAIT_HEARTBEAT_SECONDS:
                         emit(
