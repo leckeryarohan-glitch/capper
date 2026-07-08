@@ -20,8 +20,9 @@ from .checkpoint import (
 CHECKPOINT_SAVE_INTERVAL = 10
 MAX_WORKERS = 128
 CRAWL_MAX_WORKERS = 20
-CRAWL_LARGE_RESUME_WORKERS = 12
+CRAWL_LARGE_RESUME_WORKERS = 8
 CRAWL_LARGE_RESUME_PENDING = 500
+CRAWL_EXECUTOR_OVERSUBSCRIBE = 3
 
 
 def recommended_workers(requested: int | None = None) -> int:
@@ -85,7 +86,8 @@ class AsyncCheckpointWriter:
         snapshot_builder: Callable[[], tuple[DiscoveryCheckpoint, bool]],
         lock: threading.Lock,
     ) -> None:
-        self.flush(path, snapshot_builder, lock)
+        if path is not None:
+            self.submit(path, snapshot_builder, lock)
         self._queue.put(None)
         self._thread.join(timeout=300)
 

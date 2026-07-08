@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from lead_research.models import Lead, LeadDeduplicator, SearchResult, dedupe_leads
-from lead_research.pipeline import DiscoveryConfig, run_discovery
+from lead_research.pipeline import DiscoveryConfig, build_crawl_config, run_discovery
 from lead_research.suppression import SuppressionList
 
 
@@ -135,6 +135,16 @@ class PipelineTests(unittest.TestCase):
                 )
 
         self.assertLessEqual(stats.leads_found, 2)
+
+    def test_build_crawl_config_uses_fast_resume_for_large_pending(self) -> None:
+        config = DiscoveryConfig(category="hotel", delay=2.0, respect_robots=True)
+        fast = build_crawl_config(config=config, resume=True, pending_sites=500)
+        normal = build_crawl_config(config=config, resume=False, pending_sites=500)
+
+        self.assertEqual(fast.delay_seconds, 0.0)
+        self.assertFalse(fast.respect_robots)
+        self.assertLess(fast.site_timeout_seconds, normal.site_timeout_seconds)
+        self.assertLess(fast.request_timeout_seconds, normal.request_timeout_seconds)
 
 
 if __name__ == "__main__":
