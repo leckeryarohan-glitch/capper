@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -24,10 +25,20 @@ class DiscoveryCheckpoint:
     directory_seen_keys: list[str] = field(default_factory=list)
     crawled_urls: list[str] = field(default_factory=list)
     leads: list[dict[str, object]] = field(default_factory=list)
+    _crawled_url_set: set[str] | None = field(default=None, repr=False, compare=False)
 
     @property
     def crawled_url_set(self) -> set[str]:
-        return {url.lower().rstrip("/") for url in self.crawled_urls}
+        if self._crawled_url_set is None:
+            self._crawled_url_set = {url.lower().rstrip("/") for url in self.crawled_urls}
+        return self._crawled_url_set
+
+    def remember_crawled_url(self, url: str) -> None:
+        normalized = url.lower().rstrip("/")
+        if normalized in self.crawled_url_set:
+            return
+        self.crawled_urls.append(url)
+        self.crawled_url_set.add(normalized)
 
     def search_result_objects(self) -> list[SearchResult]:
         return [search_result_from_dict(item) for item in self.search_results]
@@ -74,15 +85,29 @@ def validate_checkpoint_config(checkpoint: DiscoveryCheckpoint, expected: dict[s
         )
 
 
-def checkpoint_progress_summary(checkpoint: DiscoveryCheckpoint) -> str:
+def checkpoint_progress_summary(
+    checkpoint: DiscoveryCheckpoint,
+    *,
+    search_results: int | None = None,
+    crawled_urls: int | None = None,
+    leads: int | None = None,
+    directory_locations: int | None = None,
+) -> str:
     parts = [
-        f"{len(checkpoint.search_results)} Websites",
-        f"{len(checkpoint.crawled_urls)} gecrawlt",
-        f"{len(checkpoint.leads)} Leads",
+        f"{search_results if search_results is not None else len(checkpoint.search_results)} Websites",
+        f"{crawled_urls if crawled_urls is not None else len(checkpoint.crawled_urls)} gecrawlt",
+        f"{leads if leads is not None else len(checkpoint.leads)} Leads",
     ]
-    if checkpoint.directory_completed_locations and not checkpoint.search_complete:
+    completed_count = (
+        directory_locations
+        if directory_locations is not None
+        else len(checkpoint.directory_completed_locations)
+    )
+    if completed_count and not checkpoint.search_complete:
         completed = checkpoint.directory_completed_locations
-        if len(completed) <= 3:
+        if directory_locations is not None and not completed:
+            parts.append(f"{completed_count} Branchenorte")
+        elif len(completed) <= 3:
             parts.append(f"{len(completed)} Branchenorte ({', '.join(completed)})")
         else:
             parts.append(f"{len(completed)} Branchenorte")
@@ -155,7 +180,7 @@ def load_discovery_checkpoint(path: Path | None) -> DiscoveryCheckpoint | None:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise ValueError(f"Ungueltiger Checkpoint: {path}")
-    return DiscoveryCheckpoint(
+    checkpoint = DiscoveryCheckpoint(
         version=int(payload.get("version", CHECKPOINT_VERSION)),
         config=dict(payload.get("config", {})),
         search_complete=bool(payload.get("search_complete", False)),
@@ -167,6 +192,191 @@ def load_discovery_checkpoint(path: Path | None) -> DiscoveryCheckpoint | None:
         crawled_urls=list(payload.get("crawled_urls", [])),
         leads=list(payload.get("leads", [])),
     )
+    checkpoint.crawled_url_set  # build cache once after load
+    return checkpoint
+
+
+def _find_json_value_start(text: str, key: str) -> int:
+    match = re.search(rf'"{re.escape(key)}"\s*:\s*', text)
+    if not match:
+        return -1
+    return match.end()
+
+
+def _find_json_array_start(text: str, key: str) -> int:
+    for match in re.finditer(rf'"{re.escape(key)}"\s*:\s*', text):
+        pos = match.end()
+        while pos < len(text) and text[pos].isspace():
+            pos += 1
+        if pos < len(text) and text[pos] == "[":
+            return pos
+    return -1
+
+
+def _parse_json_value_at(text: str, start: int) -> tuple[object, int]:
+    decoder = json.JSONDecoder()
+    while start < len(text) and text[start].isspace():
+        start += 1
+    return decoder.raw_decode(text, start)
+
+
+def _count_json_array_elements(text: str, key: str) -> int:
+    """Count top-level JSON array elements without deserializing objects."""
+    pos = _find_json_array_start(text, key)
+    if pos < 0:
+        return 0
+    while pos < len(text) and text[pos].isspace():
+        pos += 1
+    if pos >= len(text) or text[pos] != "[":
+        return 0
+    pos += 1
+    count = 0
+    depth = 0
+    in_string = False
+    escape = False
+    expecting_element = True
+    while pos < len(text):
+        ch = text[pos]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            pos += 1
+            continue
+        if ch == '"':
+            in_string = True
+            if depth == 0 and expecting_element:
+                count += 1
+                expecting_element = False
+        elif ch == "{":
+            if depth == 0 and expecting_element:
+                count += 1
+                expecting_element = False
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+        elif ch == "]" and depth == 0:
+            break
+        elif ch == "," and depth == 0:
+            expecting_element = True
+        pos += 1
+    return count
+
+
+def _parse_json_string_array(text: str, key: str, *, max_items: int = 5) -> list[str]:
+    pos = _find_json_array_start(text, key)
+    if pos < 0:
+        return []
+    while pos < len(text) and text[pos].isspace():
+        pos += 1
+    if pos >= len(text) or text[pos] != "[":
+        return []
+    pos += 1
+    values: list[str] = []
+    in_string = False
+    escape = False
+    current: list[str] = []
+    depth = 0
+    while pos < len(text) and len(values) < max_items:
+        ch = text[pos]
+        if in_string:
+            if escape:
+                current.append(ch)
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+                if depth == 0:
+                    values.append("".join(current))
+                    current = []
+            else:
+                current.append(ch)
+            pos += 1
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch in "{[":
+            depth += 1
+        elif ch in "}]":
+            if depth == 0:
+                break
+            depth -= 1
+        pos += 1
+    return values
+
+
+def load_checkpoint_gui_metadata(path: Path | None) -> dict[str, object] | None:
+    """Load checkpoint settings for the GUI without deserializing large arrays."""
+    if path is None or not path.exists():
+        return None
+
+    text = path.read_text(encoding="utf-8")
+    config_pos = _find_json_value_start(text, "config")
+    if config_pos < 0:
+        return None
+    config_value, _ = _parse_json_value_at(text, config_pos)
+    if not isinstance(config_value, dict):
+        return None
+    config = dict(config_value)
+
+    stats_pos = _find_json_value_start(text, "stats")
+    if stats_pos >= 0:
+        stats_value, _ = _parse_json_value_at(text, stats_pos)
+        if isinstance(stats_value, dict):
+            search_count = int(stats_value.get("search_results", 0))
+            crawled_count = int(stats_value.get("crawled_urls", 0))
+            leads_count = int(stats_value.get("leads", 0))
+            directory_count = int(stats_value.get("directory_completed_locations", 0))
+        else:
+            search_count = _count_json_array_elements(text, "search_results")
+            crawled_count = _count_json_array_elements(text, "crawled_urls")
+            leads_count = _count_json_array_elements(text, "leads")
+            directory_count = _count_json_array_elements(text, "directory_completed_locations")
+    else:
+        search_count = _count_json_array_elements(text, "search_results")
+        crawled_count = _count_json_array_elements(text, "crawled_urls")
+        leads_count = _count_json_array_elements(text, "leads")
+        directory_count = _count_json_array_elements(text, "directory_completed_locations")
+
+    search_complete = bool(re.search(r'"search_complete"\s*:\s*true', text))
+    directory_locations = _parse_json_string_array(text, "directory_completed_locations")
+    summary_checkpoint = DiscoveryCheckpoint(
+        config=config,
+        search_complete=search_complete,
+        directory_completed_locations=directory_locations,
+    )
+    progress_summary = checkpoint_progress_summary(
+        summary_checkpoint,
+        search_results=search_count,
+        crawled_urls=crawled_count,
+        leads=leads_count,
+        directory_locations=directory_count if not directory_locations else None,
+    )
+
+    gui_settings = dict(config.get("gui_settings", {}))
+    countries = list(config.get("countries", gui_settings.get("countries", [])))
+    return {
+        "category": str(config.get("category", gui_settings.get("category", ""))),
+        "location": str(config.get("location", gui_settings.get("location", ""))),
+        "countries": countries,
+        "limit": int(config.get("limit", gui_settings.get("limit", 0))),
+        "max_leads": int(config.get("max_leads", gui_settings.get("max_leads", 0))),
+        "workers": str(gui_settings.get("workers", "")),
+        "directory_parallel": str(gui_settings.get("directory_parallel", "")),
+        "directory_detail_parallel": str(gui_settings.get("directory_detail_parallel", "")),
+        "use_osm": bool(gui_settings.get("use_osm", True)),
+        "use_duckduckgo": bool(gui_settings.get("use_duckduckgo", True)),
+        "use_directories": bool(gui_settings.get("use_directories", True)),
+        "use_zenrows_google": bool(gui_settings.get("use_zenrows_google", True)),
+        "use_google_maps": bool(gui_settings.get("use_google_maps", True)),
+        "use_serpapi": bool(gui_settings.get("use_serpapi", False)),
+        "directory_sources": list(gui_settings.get("directory_sources", [])),
+        "progress_summary": progress_summary,
+    }
 
 
 def save_discovery_checkpoint(path: Path | None, checkpoint: DiscoveryCheckpoint) -> None:
@@ -180,6 +390,12 @@ def checkpoint_to_payload(checkpoint: DiscoveryCheckpoint) -> dict[str, object]:
         "version": checkpoint.version,
         "config": checkpoint.config,
         "search_complete": checkpoint.search_complete,
+        "stats": {
+            "search_results": len(checkpoint.search_results),
+            "crawled_urls": len(checkpoint.crawled_urls),
+            "leads": len(checkpoint.leads),
+            "directory_completed_locations": len(checkpoint.directory_completed_locations),
+        },
         "search_results": list(checkpoint.search_results),
         "zenrows_completed_plans": list(checkpoint.zenrows_completed_plans),
         "directory_completed_locations": list(checkpoint.directory_completed_locations),
@@ -193,7 +409,7 @@ def checkpoint_to_payload(checkpoint: DiscoveryCheckpoint) -> dict[str, object]:
 def write_discovery_checkpoint_payload(path: Path, payload: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     tmp.replace(path)
 
 
@@ -202,15 +418,11 @@ def append_lead(checkpoint: DiscoveryCheckpoint, lead: Lead) -> None:
 
 
 def mark_url_crawled(checkpoint: DiscoveryCheckpoint, url: str) -> None:
-    normalized = url.lower().rstrip("/")
-    if normalized not in checkpoint.crawled_url_set:
-        checkpoint.crawled_urls.append(url)
+    checkpoint.remember_crawled_url(url)
 
 
 def mark_result_crawled(checkpoint: DiscoveryCheckpoint, result: SearchResult) -> None:
-    key = search_result_crawl_key(result)
-    if key not in checkpoint.crawled_url_set:
-        checkpoint.crawled_urls.append(key)
+    checkpoint.remember_crawled_url(search_result_crawl_key(result))
 
 
 def update_search_results(checkpoint: DiscoveryCheckpoint, results: list[SearchResult]) -> None:
