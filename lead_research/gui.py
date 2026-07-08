@@ -147,6 +147,7 @@ def collect_gui_settings(values: Mapping[str, str | bool]) -> dict[str, object]:
 DEFAULT_GUI_LEAD_ROWS = 500
 GUI_MESSAGES_PER_POLL = 100
 GUI_LOG_EVERY_N_PAGES = 25
+GUI_MAX_LOG_LINES = 1500
 CHECKPOINT_PATH_DEBOUNCE_MS = 500
 
 
@@ -822,6 +823,9 @@ def run_gui() -> int:
             self._gui_leads_shown = 0
             for item in self.lead_table.get_children():
                 self.lead_table.delete(item)
+            self.log.configure(state="normal")
+            self.log.delete("1.0", "end")
+            self.log.configure(state="disabled")
 
         def _run_discovery(self, values: Mapping[str, str | bool]) -> None:
             try:
@@ -866,7 +870,24 @@ def run_gui() -> int:
                 self.status_text.set("Checkpoint konnte nicht geladen werden.")
             elif kind == "status":
                 self.status_text.set(message[1])
-                self._append_log(message[1] + "\n")
+                text = str(message[1])
+                if "fortgesetzt" in text or "Crawling aktiv" in text:
+                    self.stats_text.set("Statistik: Crawling läuft, erste Website wird geprüft ...")
+                elif "Checkpoint geladen" in text:
+                    self.stats_text.set("Statistik: Checkpoint geladen, bereite Crawling vor ...")
+                if any(
+                    marker in text
+                    for marker in (
+                        "Checkpoint",
+                        "Fertig",
+                        "Fehler",
+                        "fortgesetzt",
+                        "Starte Crawling",
+                        "Websites gefunden",
+                        "Optimiere",
+                    )
+                ):
+                    self._append_log(text + "\n")
             elif kind == "total":
                 total = max(int(message[1]), 1)
                 self.progress.configure(maximum=total)
@@ -880,6 +901,11 @@ def run_gui() -> int:
                     f"Website {stats.websites_done}/{stats.websites_total} · {stats.leads_per_minute} Leads/min"
                 )
                 self._update_stats(stats)
+                if stats.websites_done == 0 and stats.websites_total > 0:
+                    self.stats_text.set(
+                        f"Statistik: Crawling startet · {stats.leads_found} Leads bisher · "
+                        f"0/{stats.websites_total} Websites in diesem Lauf"
+                    )
             elif kind == "page":
                 url, count = message[1], message[2]
                 self.current_page_text.set(f"Aktuelle Seite ({count}): {url}")
@@ -936,6 +962,12 @@ def run_gui() -> int:
         def _append_log(self, text: str) -> None:
             self.log.configure(state="normal")
             self.log.insert("end", text)
+            try:
+                line_count = int(self.log.index("end-1c").split(".")[0])
+            except (tk.TclError, ValueError):
+                line_count = 0
+            if line_count > GUI_MAX_LOG_LINES:
+                self.log.delete("1.0", f"{line_count - GUI_MAX_LOG_LINES}.0")
             self.log.see("end")
             self.log.configure(state="disabled")
 

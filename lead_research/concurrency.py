@@ -11,9 +11,9 @@ from .checkpoint import (
     CHECKPOINT_SAVE_MIN_SECONDS,
     DiscoveryCheckpoint,
     checkpoint_to_payload,
+    checkpoint_uses_sidecar,
     write_discovery_checkpoint_payload,
     write_search_results_sidecar,
-    LARGE_CHECKPOINT_RESULT_COUNT,
 )
 
 
@@ -98,8 +98,16 @@ class AsyncCheckpointWriter:
     ) -> None:
         with lock:
             checkpoint, incremental = snapshot_builder()
-            payload = checkpoint_to_payload(checkpoint, path, incremental=incremental)
-        write_discovery_checkpoint_payload(path, payload, backup_source=path if path.exists() else None)
+        payload = checkpoint_to_payload(checkpoint, path, incremental=incremental)
+        search_results = list(checkpoint.search_results) if checkpoint_uses_sidecar(checkpoint) else []
+        write_discovery_checkpoint_payload(
+            path,
+            payload,
+            backup_source=path if path.exists() else None,
+            create_backup=not incremental,
+        )
+        if search_results:
+            write_search_results_sidecar(path, search_results)
         self._last_save_at = time.monotonic()
 
     def should_save(self, sites_since_checkpoint: int, save_interval: int) -> bool:
