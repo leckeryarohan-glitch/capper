@@ -3,6 +3,12 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import pickle
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -13,7 +19,10 @@ from .models import ConsentStatus, Lead, SearchResult, search_result_crawl_key
 CHECKPOINT_VERSION = 1
 LARGE_CHECKPOINT_RESULT_COUNT = 5000
 CRAWLED_URLS_EXTERNAL_THRESHOLD = 500
-CHECKPOINT_SAVE_MIN_SECONDS = 90
+CHECKPOINT_SAVE_MIN_SECONDS = 120
+CHECKPOINT_BACKUP_MAX_BYTES = 2_000_000
+SIDECAR_FLUSH_EVERY = 25
+SIDECAR_MIGRATION_CHUNK = 500
 
 
 @dataclass
@@ -497,6 +506,73 @@ def append_leads_sidecar(path: Path, leads: list[dict[str, object]]) -> None:
             handle.write("\n")
 
 
+class BufferedSidecarWriter:
+    """Append crawl progress to JSONL sidecars in small batches."""
+
+    def __init__(
+        self,
+        append_fn: Callable[[Path, list], None],
+        checkpoint_path: Path,
+        *,
+        flush_every: int = SIDECAR_FLUSH_EVERY,
+    ) -> None:
+        self._append_fn = append_fn
+        self._checkpoint_path = checkpoint_path
+        self._flush_every = max(1, flush_every)
+        self._buffer: list = []
+        self._lock = threading.Lock()
+
+    def append(self, item) -> None:
+        with self._lock:
+            self._buffer.append(item)
+            if len(self._buffer) >= self._flush_every:
+                self._flush_unlocked()
+
+    def flush(self) -> None:
+        with self._lock:
+            self._flush_unlocked()
+
+    def _flush_unlocked(self) -> None:
+        if not self._buffer:
+            return
+        batch = self._buffer
+        self._buffer = []
+        self._append_fn(self._checkpoint_path, batch)
+
+
+def ensure_checkpoint_sidecars(
+    path: Path,
+    checkpoint: DiscoveryCheckpoint,
+    *,
+    on_status: Callable[[str], None] | None = None,
+) -> None:
+    """Migrate large in-memory crawl state to append-only sidecars before resume saves."""
+    if checkpoint_uses_crawled_sidecar(checkpoint):
+        crawled_sidecar = checkpoint_crawled_path(path)
+        if not crawled_sidecar.exists() and checkpoint.crawled_urls:
+            if on_status:
+                on_status(
+                    f"Migriere {len(checkpoint.crawled_urls)} gecrawlte URLs in Sidecar-Format ..."
+                )
+            for offset in range(0, len(checkpoint.crawled_urls), SIDECAR_MIGRATION_CHUNK):
+                append_crawled_urls_sidecar(
+                    path,
+                    checkpoint.crawled_urls[offset : offset + SIDECAR_MIGRATION_CHUNK],
+                )
+                time.sleep(0)
+    if len(checkpoint.leads) >= CRAWLED_URLS_EXTERNAL_THRESHOLD:
+        leads_sidecar = checkpoint_leads_delta_path(path)
+        if not leads_sidecar.exists() and checkpoint.leads:
+            if on_status:
+                on_status(f"Migriere {len(checkpoint.leads)} Leads in Sidecar-Format ...")
+            for offset in range(0, len(checkpoint.leads), SIDECAR_MIGRATION_CHUNK):
+                append_leads_sidecar(
+                    path,
+                    checkpoint.leads[offset : offset + SIDECAR_MIGRATION_CHUNK],
+                )
+                time.sleep(0)
+
+
 def _read_jsonl_strings(path: Path) -> list[str]:
     values: list[str] = []
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -547,9 +623,9 @@ def save_discovery_checkpoint(
 def checkpoint_save_interval(checkpoint: DiscoveryCheckpoint) -> int:
     size = max(len(checkpoint.search_results), len(checkpoint.crawled_urls), len(checkpoint.leads))
     if size >= LARGE_CHECKPOINT_RESULT_COUNT:
-        return 250
+        return 500
     if size >= 1000:
-        return 100
+        return 150
     return 10
 
 
@@ -597,6 +673,9 @@ def checkpoint_to_payload(
         payload["leads"] = []
     else:
         payload["leads"] = checkpoint.leads
+    if incremental and checkpoint.search_complete:
+        payload["directory_partial_results"] = []
+        payload["directory_seen_keys"] = []
     if use_sidecar:
         payload["search_results_external"] = True
         payload["search_results"] = []
@@ -607,19 +686,66 @@ def checkpoint_to_payload(
     return payload
 
 
+_CHECKPOINT_WRITE_SCRIPT = """
+import json
+import pickle
+import sys
+from pathlib import Path
+
+pickle_path = Path(sys.argv[1])
+dest = Path(sys.argv[2])
+payload = pickle.loads(pickle_path.read_bytes())
+tmp = dest.with_suffix(dest.suffix + ".tmp")
+tmp.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+tmp.replace(dest)
+try:
+    pickle_path.unlink()
+except OSError:
+    pass
+"""
+
+
+def _write_payload_subprocess(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("wb", delete=False, suffix=".pkl") as handle:
+        pickle.dump(payload, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        pickle_path = Path(handle.name)
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", _CHECKPOINT_WRITE_SCRIPT, str(pickle_path), str(path)],
+            capture_output=True,
+            timeout=180,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise OSError(result.stderr.decode("utf-8", errors="replace") or "checkpoint subprocess failed")
+    except Exception:
+        pickle_path.unlink(missing_ok=True)
+        raise
+
+
 def write_discovery_checkpoint_payload(
     path: Path,
     payload: dict[str, object],
     *,
     backup_source: Path | None = None,
     create_backup: bool = True,
+    use_subprocess: bool = False,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    if create_backup and backup_source is not None and backup_source.exists():
+    if (
+        create_backup
+        and backup_source is not None
+        and backup_source.exists()
+        and backup_source.stat().st_size <= CHECKPOINT_BACKUP_MAX_BYTES
+    ):
         try:
             shutil.copy2(backup_source, checkpoint_backup_path(backup_source))
         except OSError:
             pass
+    if use_subprocess:
+        _write_payload_subprocess(path, payload)
+        return
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     tmp.replace(path)

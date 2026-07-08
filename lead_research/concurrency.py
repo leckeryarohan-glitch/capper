@@ -9,12 +9,7 @@ from typing import Callable
 
 from .checkpoint import (
     CHECKPOINT_SAVE_MIN_SECONDS,
-    CRAWLED_URLS_EXTERNAL_THRESHOLD,
     DiscoveryCheckpoint,
-    append_crawled_urls_sidecar,
-    append_leads_sidecar,
-    checkpoint_crawled_path,
-    checkpoint_leads_delta_path,
     checkpoint_to_payload,
     checkpoint_uses_crawled_sidecar,
     checkpoint_uses_sidecar,
@@ -50,19 +45,12 @@ def recommended_crawl_workers(requested: int | None = None, *, pending_sites: in
 class AsyncCheckpointWriter:
     """Serialize checkpoint writes on a background thread so crawlers keep running."""
 
-    def __init__(
-        self,
-        *,
-        initial_crawled_count: int = 0,
-        initial_leads_count: int = 0,
-    ) -> None:
+    def __init__(self) -> None:
         self._queue: queue.Queue[
             tuple[Path, Callable[[], tuple[DiscoveryCheckpoint, bool]], threading.Lock] | None
         ] = queue.Queue(maxsize=1)
         self._thread = threading.Thread(target=self._run, name="capper-checkpoint", daemon=True)
         self._last_save_at = 0.0
-        self._last_crawled_count = max(0, initial_crawled_count)
-        self._last_leads_count = max(0, initial_leads_count)
         self._thread.start()
 
     def submit(
@@ -102,7 +90,7 @@ class AsyncCheckpointWriter:
         if path is not None:
             self.submit(path, snapshot_builder, lock)
         self._queue.put(None)
-        self._thread.join(timeout=300)
+        self._thread.join(timeout=60)
 
     def _run(self) -> None:
         while True:
@@ -123,28 +111,15 @@ class AsyncCheckpointWriter:
     ) -> None:
         with lock:
             checkpoint, incremental = snapshot_builder()
-        new_crawled = checkpoint.crawled_urls[self._last_crawled_count :]
-        new_leads = checkpoint.leads[self._last_leads_count :]
-        if incremental:
-            crawled_sidecar_exists = checkpoint_crawled_path(path).exists()
-            if checkpoint_uses_crawled_sidecar(checkpoint) and not crawled_sidecar_exists:
-                existing_crawled = checkpoint.crawled_urls[: self._last_crawled_count]
-                append_crawled_urls_sidecar(path, existing_crawled)
-            append_crawled_urls_sidecar(path, new_crawled)
-            leads_sidecar_exists = checkpoint_leads_delta_path(path).exists()
-            if len(checkpoint.leads) >= CRAWLED_URLS_EXTERNAL_THRESHOLD and not leads_sidecar_exists:
-                existing_leads = checkpoint.leads[: self._last_leads_count]
-                append_leads_sidecar(path, existing_leads)
-            append_leads_sidecar(path, new_leads)
-            self._last_crawled_count = len(checkpoint.crawled_urls)
-            self._last_leads_count = len(checkpoint.leads)
         payload = checkpoint_to_payload(checkpoint, path, incremental=incremental)
         search_results = list(checkpoint.search_results) if checkpoint_uses_sidecar(checkpoint) else []
+        use_subprocess = incremental or checkpoint_uses_crawled_sidecar(checkpoint)
         write_discovery_checkpoint_payload(
             path,
             payload,
             backup_source=path if path.exists() else None,
             create_backup=not incremental,
+            use_subprocess=use_subprocess,
         )
         if search_results:
             write_search_results_sidecar(path, search_results)

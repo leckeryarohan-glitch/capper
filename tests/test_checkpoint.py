@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,6 +8,7 @@ from unittest.mock import patch
 
 from lead_research.checkpoint import (
     DiscoveryCheckpoint,
+    BufferedSidecarWriter,
     append_crawled_urls_sidecar,
     checkpoint_crawled_path,
     checkpoint_to_payload,
@@ -268,6 +270,31 @@ class CheckpointTests(unittest.TestCase):
                 ["https://done0.example/", "https://done1.example/"],
             )
             self.assertTrue(checkpoint_crawled_path(path).exists())
+
+    def test_buffered_sidecar_writer_flushes_in_batches(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "checkpoint.json"
+            captured: list[list[str]] = []
+
+            def capture(_path: Path, urls: list[str]) -> None:
+                captured.append(list(urls))
+
+            writer = BufferedSidecarWriter(capture, path, flush_every=2)
+            writer.append("https://a.example/")
+            self.assertEqual(captured, [])
+            writer.append("https://b.example/")
+            self.assertEqual(captured, [["https://a.example/", "https://b.example/"]])
+            writer.append("https://c.example/")
+            writer.flush()
+            self.assertEqual(captured[-1], ["https://c.example/"])
+
+    def test_write_discovery_checkpoint_payload_subprocess(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "checkpoint.json"
+            payload = {"version": 1, "config": {}, "search_complete": True, "stats": {}}
+            write_discovery_checkpoint_payload(path, payload, use_subprocess=True)
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(loaded["version"], 1)
 
     def test_load_discovery_checkpoint_recovers_from_backup(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

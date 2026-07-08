@@ -10,12 +10,19 @@ from pathlib import Path
 from typing import Callable
 
 from .checkpoint import (
+    CRAWLED_URLS_EXTERNAL_THRESHOLD,
     DiscoveryCheckpoint,
     append_lead,
+    append_crawled_urls_sidecar,
+    append_leads_sidecar,
+    BufferedSidecarWriter,
     checkpoint_save_interval,
+    checkpoint_uses_crawled_sidecar,
     checkpoint_uses_sidecar,
     clear_directory_search_progress,
     config_fingerprint,
+    ensure_checkpoint_sidecars,
+    lead_to_dict,
     load_discovery_checkpoint,
     mark_result_crawled,
     new_discovery_checkpoint,
@@ -272,6 +279,13 @@ def run_discovery(
         )
     emit("progress", stats)
 
+    if resume and checkpoint and checkpoint_state is not None:
+        ensure_checkpoint_sidecars(
+            checkpoint,
+            checkpoint_state,
+            on_status=lambda msg: emit("status", msg),
+        )
+
     is_json = output.suffix.lower() == ".json"
     writer = None if is_json else StreamingCsvWriter(output, append=resume and output.exists())
     if is_json and resume and checkpoint_state.leads:
@@ -280,14 +294,25 @@ def run_discovery(
     page_lock = threading.Lock()
     state_lock = threading.Lock()
     sites_since_checkpoint = 0
-    checkpoint_writer = AsyncCheckpointWriter(
-        initial_crawled_count=len(checkpoint_state.crawled_urls),
-        initial_leads_count=len(checkpoint_state.leads),
-    )
+    checkpoint_writer = AsyncCheckpointWriter()
     checkpoint_save_every = checkpoint_save_interval(checkpoint_state)
     pages_since_emit = 0
     gui_quiet_mode = resume and pending_count >= 50
     skipped_site_warnings = 0
+    crawled_sidecar_writer = (
+        BufferedSidecarWriter(append_crawled_urls_sidecar, checkpoint)
+        if checkpoint and checkpoint_uses_crawled_sidecar(checkpoint_state)
+        else None
+    )
+    leads_sidecar_writer = (
+        BufferedSidecarWriter(append_leads_sidecar, checkpoint)
+        if checkpoint
+        and (
+            len(checkpoint_state.leads) >= CRAWLED_URLS_EXTERNAL_THRESHOLD
+            or gui_quiet_mode
+        )
+        else None
+    )
 
     if gui_quiet_mode:
         emit("quiet", True)
@@ -352,6 +377,8 @@ def run_discovery(
             domains.add(host)
             stats.unique_domains = len(domains)
         append_lead(checkpoint_state, lead)
+        if leads_sidecar_writer is not None:
+            leads_sidecar_writer.append(lead_to_dict(lead))
         return lead
 
     def persist_lead(lead: Lead) -> None:
@@ -407,6 +434,8 @@ def run_discovery(
                 with state_lock:
                     stats.websites_done += 1
                     mark_result_crawled(checkpoint_state, result)
+                    if crawled_sidecar_writer is not None:
+                        crawled_sidecar_writer.append(search_result_crawl_key(result))
                     for lead in site_leads:
                         accepted = accept_lead(lead)
                         if accepted is not None:
@@ -498,13 +527,22 @@ def run_discovery(
                         if stop_submitting:
                             break
                     now = time.monotonic()
-                    if now - last_wait_notice >= CRAWL_WAIT_HEARTBEAT_SECONDS:
+                    if (
+                        not gui_quiet_mode
+                        and now - last_wait_notice >= CRAWL_WAIT_HEARTBEAT_SECONDS
+                    ):
                         emit(
                             "status",
                             f"Crawling laeuft: {len(active_futures)} aktiv, "
                             f"{stats.websites_done}/{stats.websites_total} fertig, "
                             f"{stats.pages_fetched} Seiten ...",
                         )
+                        emit("progress", stats)
+                        last_wait_notice = now
+                    elif (
+                        gui_quiet_mode
+                        and now - last_wait_notice >= CRAWL_WAIT_HEARTBEAT_SECONDS
+                    ):
                         emit("progress", stats)
                         last_wait_notice = now
                     continue
@@ -515,6 +553,10 @@ def run_discovery(
                     break
                 submit_more()
     finally:
+        if crawled_sidecar_writer is not None:
+            crawled_sidecar_writer.flush()
+        if leads_sidecar_writer is not None:
+            leads_sidecar_writer.flush()
         checkpoint_writer.close(checkpoint, checkpoint_snapshot, state_lock)
         if writer is not None:
             writer.close()

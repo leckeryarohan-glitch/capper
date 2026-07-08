@@ -156,6 +156,7 @@ GUI_LEADS_PER_POLL = 2
 GUI_LOG_EVERY_N_PAGES = 25
 GUI_MAX_LOG_LINES = 1500
 GUI_UI_UPDATE_INTERVAL_S = 0.25
+GUI_QUIET_UI_INTERVAL_MS = 1000
 GUI_SITE_LOG_EVERY = 50
 GUI_LOG_SCROLL_EVERY = 8
 CHECKPOINT_PATH_DEBOUNCE_MS = 500
@@ -401,6 +402,8 @@ def run_gui() -> int:
             self._quiet_mode = False
             self._leads_this_poll = 0
             self._pending_messages: deque[tuple] = deque()
+            self._progress_total = 0
+            self._quiet_ui_tick_scheduled = False
 
             self.category = tk.StringVar(value="hotel")
             self.location = tk.StringVar(value="")
@@ -898,6 +901,8 @@ def run_gui() -> int:
             self._quiet_mode = False
             self._leads_this_poll = 0
             self._pending_messages.clear()
+            self._progress_total = 0
+            self._quiet_ui_tick_scheduled = False
             for item in self.lead_table.get_children():
                 self.lead_table.delete(item)
             self.log.configure(state="normal")
@@ -963,12 +968,29 @@ def run_gui() -> int:
             self._apply_stats(stats)
 
         def _apply_stats(self, stats: LeadStats) -> None:
-            self.progress.configure(maximum=max(stats.websites_total, 1))
+            total = max(stats.websites_total, 1)
+            if self._progress_total != total:
+                self.progress.configure(maximum=total)
+                self._progress_total = total
             self.progress_value.set(stats.websites_done)
             self.status_text.set(
                 f"Website {stats.websites_done}/{stats.websites_total} · {stats.leads_per_minute} Leads/min"
             )
             self._update_stats(stats)
+
+        def _schedule_quiet_ui_tick(self) -> None:
+            if self._quiet_ui_tick_scheduled:
+                return
+            self._quiet_ui_tick_scheduled = True
+            self.root.after(GUI_QUIET_UI_INTERVAL_MS, self._quiet_ui_tick)
+
+        def _quiet_ui_tick(self) -> None:
+            self._quiet_ui_tick_scheduled = False
+            if not self._quiet_mode:
+                return
+            self._flush_stats_if_due(force=True)
+            if self.worker and self.worker.is_alive():
+                self._schedule_quiet_ui_tick()
 
         def _update_stats(self, stats: LeadStats) -> None:
             self.lead_count_text.set(f"Gefundene Leads: {stats.leads_found}")
@@ -993,8 +1015,13 @@ def run_gui() -> int:
                     self.resume.set(False)
                 self.status_text.set("Checkpoint konnte nicht geladen werden.")
             elif kind == "status":
-                self.status_text.set(message[1])
                 text = str(message[1])
+                if self._quiet_mode:
+                    if any(marker in text for marker in ("Fehler", "Fertig", "Optimiere", "Checkpoint geladen")):
+                        self.status_text.set(text)
+                        self._append_log(text + "\n")
+                    return
+                self.status_text.set(text)
                 if "fortgesetzt" in text or "Crawling aktiv" in text:
                     self.stats_text.set("Statistik: Crawling läuft, erste Website wird geprüft ...")
                 elif "Checkpoint geladen" in text:
@@ -1019,9 +1046,13 @@ def run_gui() -> int:
                 self.status_text.set(f"{message[1]} Websites gefunden. Starte paralleles Crawling ...")
             elif kind == "quiet":
                 self._quiet_mode = bool(message[1])
+                if self._quiet_mode:
+                    self._schedule_quiet_ui_tick()
             elif kind == "progress":
                 stats = message[1]
                 self._note_stats(stats)
+                if self._quiet_mode:
+                    return
                 self._flush_stats_if_due()
                 if stats.websites_done == 0 and stats.websites_total > 0:
                     self.stats_text.set(
@@ -1036,6 +1067,8 @@ def run_gui() -> int:
             elif kind == "site_done":
                 _url, _new_leads, stats = message[1], message[2], message[3]
                 self._note_stats(stats)
+                if self._quiet_mode:
+                    return
                 self._flush_stats_if_due()
                 self._sites_since_log += 1
                 if self._sites_since_log >= GUI_SITE_LOG_EVERY:
