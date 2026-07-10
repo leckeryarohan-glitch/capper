@@ -123,6 +123,8 @@ NOMINATIM_ENDPOINT = "https://nominatim.openstreetmap.org/search"
 ZENROWS_CITIES_PER_COUNTRY = 12
 # so multi-city runs are not throttled to a tiny share each.
 OSM_MIN_PER_LOCATION = 100
+OSM_MIN_CITIES_PER_COUNTRY = 8
+OSM_MAX_CITIES_PER_COUNTRY = 40
 
 # Synonyms broaden discovery for categories where one keyword misses many businesses.
 CATEGORY_SEARCH_VARIANTS: dict[str, tuple[str, ...]] = {
@@ -1081,7 +1083,9 @@ class OpenStreetMapSearchProvider(SearchProvider):
 
         results: list[SearchResult] = []
         seen_urls: set[str] = set()
-        targets = osm_location_plan(location, countries)
+        targets = osm_location_plan(
+            location, countries, city_budget=osm_cities_budget(limit)
+        )
         per_location_limit = (
             limit
             if location.strip()
@@ -1181,13 +1185,32 @@ class OpenStreetMapSearchProvider(SearchProvider):
         return nominatim_items_to_results(data, limit, location)
 
 
+def osm_cities_budget(limit: int) -> int:
+    """How many top cities per country to sweep for a nationwide OSM search."""
+    return max(OSM_MIN_CITIES_PER_COUNTRY, min(OSM_MAX_CITIES_PER_COUNTRY, ceil(limit / 3)))
+
+
 def osm_location_plan(
     location: str,
     countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+    *,
+    city_budget: int = OSM_MAX_CITIES_PER_COUNTRY,
 ) -> tuple[OsmSearchTarget, ...]:
     stripped = location.strip()
     if stripped:
         return (OsmSearchTarget(label=stripped),)
+
+    # A single country-wide Overpass query for e.g. all hotels in Germany is far
+    # too heavy and times out server-side (returning 0). Sweep the biggest cities
+    # per country instead — small per-city areas answer quickly and reliably.
+    city_targets = tuple(
+        OsmSearchTarget(label=name)
+        for name, _code in top_cities_for_web_search(countries, per_country=city_budget)
+    )
+    if city_targets:
+        return city_targets
+
+    # Fallback when the city list is unavailable (e.g. first offline run).
     return tuple(
         OsmSearchTarget(label=country_label(code), country_code=code)
         for code in countries
