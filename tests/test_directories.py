@@ -1098,6 +1098,48 @@ class DirectoryLimitCapTests(unittest.TestCase):
         self.assertGreater(len(plans), 500)
         self.assertIn("Berlin", plans)
 
+    def test_is_transient_directory_error_flags_connection_reset(self) -> None:
+        from lead_research.directories import _is_transient_directory_error
+
+        self.assertTrue(
+            _is_transient_directory_error(
+                "[WinError 10054] Eine vorhandene Verbindung wurde vom Remotehost geschlossen"
+            )
+        )
+        self.assertTrue(_is_transient_directory_error("The read operation timed out"))
+        self.assertTrue(_is_transient_directory_error("HTTP Error 503: Service Unavailable"))
+        self.assertFalse(_is_transient_directory_error("HTTP Error 404: Not Found"))
+        self.assertFalse(_is_transient_directory_error("HTTP Error 422: Unprocessable"))
+
+    def test_zenrows_directory_fetch_retries_transient_error(self) -> None:
+        import lead_research.directories as directories
+
+        attempts = {"count": 0}
+
+        def flaky_urlopen(request, timeout=None):
+            attempts["count"] += 1
+            if attempts["count"] < 2:
+                raise OSError("[WinError 10054] Verbindung wurde vom Remotehost geschlossen")
+
+            class _Resp:
+                def __enter__(self_inner):
+                    return self_inner
+
+                def __exit__(self_inner, *args):
+                    return False
+
+            return _Resp()
+
+        with patch.object(directories, "urlopen", side_effect=flaky_urlopen), patch.object(
+            directories, "read_response_text", return_value="<html>ok</html>"
+        ), patch.object(directories.time, "sleep"):
+            html_text = directories.fetch_directory_html_via_zenrows(
+                "https://www.golocal.de/hamburg/hotels/", api_key="zr-key"
+            )
+
+        self.assertEqual(html_text, "<html>ok</html>")
+        self.assertEqual(attempts["count"], 2)
+
     @patch.dict("os.environ", {"DIRECTORY_MASS_MODE": "", "DIRECTORY_FAST_MODE": ""})
     def test_caps_detail_fetches_in_enrichment(self) -> None:
         listings = [(f"Firma {index}", f"https://example.test/{index}") for index in range(50)]

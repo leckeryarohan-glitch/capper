@@ -24,7 +24,12 @@ DIRECTORY_ZENROWS_DELAY_SECONDS = 0.5
 DIRECTORY_ZENROWS_ENDPOINT = "https://api.zenrows.com/v1/"
 DIRECTORY_ZENROWS_STEALTH_MODE = "auto"
 DIRECTORY_ZENROWS_TIMEOUT_SECONDS = 60
+DIRECTORY_ZENROWS_MAX_ATTEMPTS = 3
+DIRECTORY_ZENROWS_RETRY_BACKOFF_SECONDS = 2.0
 DIRECTORY_MAX_RESULTS_PER_SOURCE = 120
+# Floor so each directory source returns a useful number of listings per city
+# even when a small overall limit is spread across hundreds of cities.
+DIRECTORY_MIN_RESULTS_PER_SOURCE_PER_LOCATION = 10
 DIRECTORY_MAX_DETAIL_FETCHES = 30
 DIRECTORY_FAST_DETAIL_FETCH_CAP = 10
 DIRECTORY_FAST_LISTING_PAGE_CAP = 1
@@ -725,6 +730,29 @@ def fetch_directory_html_direct(url: str, *, timeout: int = 20) -> str:
         raise DirectoryFetchError(f"Directory request failed for {url}: {format_request_error(exc)}") from exc
 
 
+def _is_transient_directory_error(message: str) -> bool:
+    """True for network hiccups worth retrying (connection reset, timeout, 5xx)."""
+    lowered = message.casefold()
+    transient_tokens = (
+        "timed out",
+        "timeout",
+        "connection reset",
+        "reset by peer",
+        "10054",  # WinError: existing connection forcibly closed by remote host
+        "10053",  # WinError: connection aborted
+        "connection aborted",
+        "connection refused",
+        "temporarily unavailable",
+        "remotehost geschlossen",
+        "http error 429",
+        "http error 500",
+        "http error 502",
+        "http error 503",
+        "http error 504",
+    )
+    return any(token in lowered for token in transient_tokens)
+
+
 def fetch_directory_html_via_zenrows(
     url: str,
     *,
@@ -747,19 +775,31 @@ def fetch_directory_html_via_zenrows(
             },
             method="GET",
         )
-        try:
-            with urlopen(request, timeout=timeout) as response:
-                return read_response_text(response)
-        except OSError as exc:
-            message = format_request_error(exc)
-            if "HTTP Error 401" in message or "HTTP Error 403" in message:
-                raise DirectoryFetchError(
-                    "ZenRows API-Key ungueltig oder ohne Berechtigung fuer Branchenverzeichnisse. "
-                    "Bitte den Key im ZenRows-Dashboard pruefen."
-                ) from exc
-            last_error = DirectoryFetchError(f"ZenRows directory request failed for {url}: {message}")
-            if "HTTP Error 422" not in message:
-                raise last_error from exc
+        for attempt in range(DIRECTORY_ZENROWS_MAX_ATTEMPTS):
+            try:
+                with urlopen(request, timeout=timeout) as response:
+                    return read_response_text(response)
+            except OSError as exc:
+                message = format_request_error(exc)
+                if "HTTP Error 401" in message or "HTTP Error 403" in message:
+                    raise DirectoryFetchError(
+                        "ZenRows API-Key ungueltig oder ohne Berechtigung fuer Branchenverzeichnisse. "
+                        "Bitte den Key im ZenRows-Dashboard pruefen."
+                    ) from exc
+                last_error = DirectoryFetchError(
+                    f"ZenRows directory request failed for {url}: {message}"
+                )
+                # Retry transient network errors (e.g. WinError 10054) before giving up.
+                if (
+                    _is_transient_directory_error(message)
+                    and attempt + 1 < DIRECTORY_ZENROWS_MAX_ATTEMPTS
+                ):
+                    time.sleep(DIRECTORY_ZENROWS_RETRY_BACKOFF_SECONDS * (attempt + 1))
+                    continue
+                # HTTP 422 means "try the next fetch profile"; other errors abort.
+                if "HTTP Error 422" not in message:
+                    raise last_error from exc
+                break
     if last_error is not None:
         raise last_error
     raise DirectoryFetchError(f"ZenRows directory request failed for {url}")
