@@ -29,7 +29,9 @@ easy opt-out.
 - Website crawling with `robots.txt` checks enabled by default.
 - Contact and imprint page discovery, including automatically trying common
   `Impressum`/`Kontakt` paths (German sites must publish contact details there).
-- Public email extraction from websites and directory listings.
+- Public email extraction from websites and directory listings, including
+  Cloudflare-obfuscated (`data-cfemail`) addresses and addresses split by inline
+  HTML tags/comments (e.g. `info<span>@</span>hotel.de`).
 - Role-address preference (`info@`, `kontakt@`, `sales@`, etc.).
 - Personal-looking emails are excluded by default and can only be exported with
   an explicit review flag.
@@ -289,6 +291,20 @@ python3 -m lead_research discover \
 The same three switches are available in the desktop GUI under
 "Wiederholte Laeufe". The history files live next to the checkpoint and can be
 edited or merged by hand (one key per line).
+
+### Getting more leads per website
+
+Beyond finding more sites, you can raise how many leads each crawled site
+yields:
+
+- **Include personal emails** (GUI: "Auch persoenliche E-Mails aufnehmen";
+  CLI: `--include-personal-review`): many small businesses only publish an
+  owner-name address (`s.mueller@…`). These are exported as
+  `personal_review_required` for manual review instead of being dropped.
+- **Pages per website** (GUI: "Seiten/Website"; CLI: `--max-pages-per-site`):
+  more pages reach imprint/contact pages on deeper sites.
+- Cloudflare-obfuscated and tag-split addresses are now decoded automatically,
+  so sites that previously yielded no email can still produce a lead.
 
 ## Output fields
 
