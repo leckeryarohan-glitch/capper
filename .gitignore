@@ -17,4 +17,6 @@ capper-checkpoint-search.json
 capper-checkpoint-crawled.jsonl
 capper-checkpoint-leads.jsonl
 capper-live-status.json
+capper-known-leads.txt
+capper-known-sites.txt
 tmp_probe/
