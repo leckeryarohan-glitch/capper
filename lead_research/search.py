@@ -1663,6 +1663,7 @@ class DirectorySearchProvider(SearchProvider):
         on_location_complete: Callable[[DirectoryResumeState], None] | None = None,
     ) -> list[SearchResult]:
         from .directories import (
+            DIRECTORY_MIN_RESULTS_PER_SOURCE_PER_LOCATION,
             DirectoryFetchError,
             build_directory_fetch_config,
             cap_directory_source_limit,
@@ -1700,8 +1701,13 @@ class DirectorySearchProvider(SearchProvider):
 
         locations = directory_location_plans(location, countries)
         per_location_limit = max(1, ceil(limit / len(locations)))
+        # Give each source a useful floor per city so a small limit spread over
+        # hundreds of cities does not collapse to one listing per source.
         per_source_limit = cap_directory_source_limit(
-            max(1, ceil(per_location_limit / len(active_scrapers)))
+            max(
+                DIRECTORY_MIN_RESULTS_PER_SOURCE_PER_LOCATION,
+                ceil(per_location_limit / len(active_scrapers)),
+            )
         )
         if resume_state:
             results = list(resume_state.results)
