@@ -94,12 +94,38 @@ class SearchTests(unittest.TestCase):
 
         self.assertEqual(locations, (OsmSearchTarget(label="Deutschland", country_code="DE"),))
 
+    def test_osm_location_plan_mass_mode_sweeps_all_cities(self) -> None:
+        with patch(
+            "lead_research.search.cities_for_mass_web_search",
+            return_value=[("Berlin", "DE"), ("Kleinstadt", "DE")],
+        ) as mass_cities, patch(
+            "lead_research.search.top_cities_for_web_search"
+        ) as top_cities:
+            locations = osm_location_plan("", ("DE",), city_budget=None)
+
+        mass_cities.assert_called_once_with(("DE",))
+        top_cities.assert_not_called()
+        self.assertEqual(
+            locations,
+            (OsmSearchTarget(label="Berlin"), OsmSearchTarget(label="Kleinstadt")),
+        )
+
     def test_osm_cities_budget_scales_with_limit(self) -> None:
         from lead_research.search import osm_cities_budget
 
         self.assertEqual(osm_cities_budget(10), 8)
         self.assertEqual(osm_cities_budget(60), 20)
-        self.assertEqual(osm_cities_budget(100000), 40)
+        # Mass limits sweep every city (None), not a capped top list.
+        self.assertIsNone(osm_cities_budget(500))
+        self.assertIsNone(osm_cities_budget(100000))
+
+    def test_web_search_cities_budget_scales_with_limit(self) -> None:
+        from lead_research.search import web_search_cities_budget
+
+        self.assertEqual(web_search_cities_budget(50), 40)
+        self.assertEqual(web_search_cities_budget(100), 60)
+        self.assertEqual(web_search_cities_budget(1000), 400)
+        self.assertIsNone(web_search_cities_budget(3000))
 
     def test_osm_location_plan_uses_given_location(self) -> None:
         self.assertEqual(osm_location_plan("Bremen"), (OsmSearchTarget(label="Bremen"),))

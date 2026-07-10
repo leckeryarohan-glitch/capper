@@ -22,6 +22,7 @@ from .concurrency import recommended_workers
 from .locations import (
     DEFAULT_COUNTRIES,
     SUPPORTED_COUNTRIES,
+    WEB_SEARCH_CITIES_PER_COUNTRY,
     ZENROWS_LOCALE,
     cities_for_mass_web_search,
     country_label,
@@ -125,6 +126,9 @@ ZENROWS_CITIES_PER_COUNTRY = 12
 OSM_MIN_PER_LOCATION = 100
 OSM_MIN_CITIES_PER_COUNTRY = 8
 OSM_MAX_CITIES_PER_COUNTRY = 40
+# At/above this limit OSM sweeps every cached city (all towns >= 5000 inhabitants)
+# instead of only the biggest ones, so mass runs cover the whole country.
+OSM_MASS_MODE_LIMIT = 500
 
 # Synonyms broaden discovery for categories where one keyword misses many businesses.
 CATEGORY_SEARCH_VARIANTS: dict[str, tuple[str, ...]] = {
@@ -328,7 +332,7 @@ class SerpApiSearchProvider(SearchProvider):
         results: list[SearchResult] = []
         seen: set[str] = set()
 
-        for query in expand_queries(category, location, countries):
+        for query in expand_queries(category, location, countries, limit=limit):
             if len(results) >= limit:
                 break
             start = 0
@@ -1185,8 +1189,13 @@ class OpenStreetMapSearchProvider(SearchProvider):
         return nominatim_items_to_results(data, limit, location)
 
 
-def osm_cities_budget(limit: int) -> int:
-    """How many top cities per country to sweep for a nationwide OSM search."""
+def osm_cities_budget(limit: int) -> int | None:
+    """How many top cities per country to sweep for a nationwide OSM search.
+
+    None means every cached city (all towns >= 5000 inhabitants) for mass runs.
+    """
+    if limit >= OSM_MASS_MODE_LIMIT:
+        return None
     return max(OSM_MIN_CITIES_PER_COUNTRY, min(OSM_MAX_CITIES_PER_COUNTRY, ceil(limit / 3)))
 
 
@@ -1194,19 +1203,21 @@ def osm_location_plan(
     location: str,
     countries: tuple[str, ...] = DEFAULT_COUNTRIES,
     *,
-    city_budget: int = OSM_MAX_CITIES_PER_COUNTRY,
+    city_budget: int | None = OSM_MAX_CITIES_PER_COUNTRY,
 ) -> tuple[OsmSearchTarget, ...]:
     stripped = location.strip()
     if stripped:
         return (OsmSearchTarget(label=stripped),)
 
     # A single country-wide Overpass query for e.g. all hotels in Germany is far
-    # too heavy and times out server-side (returning 0). Sweep the biggest cities
-    # per country instead — small per-city areas answer quickly and reliably.
-    city_targets = tuple(
-        OsmSearchTarget(label=name)
-        for name, _code in top_cities_for_web_search(countries, per_country=city_budget)
-    )
+    # too heavy and times out server-side (returning 0). Sweep cities per country
+    # instead — small per-city areas answer quickly and reliably. In mass mode
+    # (city_budget is None) sweep every city >= 5000 inhabitants.
+    if city_budget is None:
+        cities = cities_for_mass_web_search(countries)
+    else:
+        cities = top_cities_for_web_search(countries, per_country=city_budget)
+    city_targets = tuple(OsmSearchTarget(label=name) for name, _code in cities)
     if city_targets:
         return city_targets
 
@@ -1435,7 +1446,7 @@ class DuckDuckGoSearchProvider(SearchProvider):
         results: list[SearchResult] = []
         seen: set[str] = set()
 
-        for query in expand_queries(category, location, countries):
+        for query in expand_queries(category, location, countries, limit=limit):
             if len(results) >= limit:
                 break
             offset = 0
@@ -1830,10 +1841,25 @@ def build_query(category: str, location: str, *, broad: bool = False) -> str:
     return " ".join(part for part in parts if part).strip()
 
 
+def web_search_cities_budget(limit: int) -> int | None:
+    """Cities per country to sweep for web search. None means every cached city."""
+    if limit >= 3000:
+        return None
+    if limit >= 1000:
+        return 400
+    if limit >= 500:
+        return 150
+    if limit >= 100:
+        return 60
+    return WEB_SEARCH_CITIES_PER_COUNTRY
+
+
 def expand_query_plans(
     category: str,
     location: str,
     countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+    *,
+    limit: int = 50,
 ) -> list[tuple[str, str]]:
     """Build search queries with the country code used for localized web search."""
     if location.strip():
@@ -1842,7 +1868,12 @@ def expand_query_plans(
     plans: list[tuple[str, str]] = []
     for country_code in countries:
         plans.append((build_query(category, country_label(country_code)), country_code))
-    for city_name, country_code in top_cities_for_web_search(countries):
+    budget = web_search_cities_budget(limit)
+    if budget is None:
+        cities = cities_for_mass_web_search(countries)
+    else:
+        cities = top_cities_for_web_search(countries, per_country=budget)
+    for city_name, country_code in cities:
         plans.append((build_query(category, city_name), country_code))
     return plans
 
@@ -1851,11 +1882,13 @@ def expand_queries(
     category: str,
     location: str,
     countries: tuple[str, ...] = DEFAULT_COUNTRIES,
+    *,
+    limit: int = 50,
 ) -> list[str]:
     """Build multiple search queries so engines that cap a single query (e.g.
     ~100 Google results) still yield many websites. Without a location, the query
-    is expanded across major cities."""
-    return [query for query, _ in expand_query_plans(category, location, countries)]
+    is expanded across cities (all cities >= 5000 inhabitants for mass limits)."""
+    return [query for query, _ in expand_query_plans(category, location, countries, limit=limit)]
 
 
 def is_valid_lead_url(url: str) -> bool:
