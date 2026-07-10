@@ -45,6 +45,47 @@ DEFAULT_DIRECTORY_PARALLEL_TEXT = str(DEFAULT_DIRECTORY_PARALLEL_REQUESTS)
 DEFAULT_DIRECTORY_DETAIL_PARALLEL_TEXT = str(DEFAULT_DIRECTORY_DETAIL_PARALLEL)
 DEFAULT_PROVIDER = "all"
 
+# Suggested categories for the dropdown. The field stays editable, so any
+# custom category can still be typed. Each entry maps to broadened synonyms and
+# OSM tags in search.py.
+GUI_CATEGORY_CHOICES = (
+    "hotel",
+    "pension",
+    "restaurant",
+    "cafe",
+    "bar",
+    "imbiss",
+    "bäckerei",
+    "metzgerei",
+    "supermarkt",
+    "friseur",
+    "kosmetikstudio",
+    "fitnessstudio",
+    "arzt",
+    "zahnarzt",
+    "apotheke",
+    "tierarzt",
+    "physiotherapie",
+    "optiker",
+    "rechtsanwalt",
+    "steuerberater",
+    "versicherung",
+    "immobilienmakler",
+    "elektriker",
+    "maler",
+    "tischler",
+    "dachdecker",
+    "sanitär heizung",
+    "kfz werkstatt",
+    "autohaus",
+    "bauunternehmen",
+    "garten landschaftsbau",
+    "logistik spedition",
+    "it dienstleister",
+    "möbelhaus",
+    "florist",
+)
+
 
 class _QueuePutAdapter:
     """Adapt multiprocessing.Queue for run_gui_discovery event callbacks."""
@@ -546,7 +587,13 @@ def run_gui() -> int:
             content.columnconfigure(1, weight=1)
 
             ttk.Label(content, text="Kategorie").grid(row=0, column=0, sticky="w", pady=4)
-            ttk.Entry(content, textvariable=self.category).grid(row=0, column=1, columnspan=2, sticky="ew", pady=4)
+            # Editable combobox: choose a suggested category or type a custom one.
+            self.category_combo = ttk.Combobox(
+                content,
+                textvariable=self.category,
+                values=list(GUI_CATEGORY_CHOICES),
+            )
+            self.category_combo.grid(row=0, column=1, columnspan=2, sticky="ew", pady=4)
 
             ttk.Label(content, text="Ort optional").grid(row=1, column=0, sticky="w", pady=4)
             ttk.Entry(content, textvariable=self.location).grid(row=1, column=1, columnspan=2, sticky="ew", pady=4)

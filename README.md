@@ -40,7 +40,12 @@ easy opt-out.
 - Parallel website crawling (`--workers`) for high daily lead volume.
 - Streaming CSV output and live statistics (websites, pages, domains, duplicates, leads/min).
 - Batch mode for many category/location combinations with checkpoint/resume.
-- Simple desktop GUI: enter a category and start the lead search.
+- Simple desktop GUI: pick a category from the dropdown (or type your own) and
+  start the lead search.
+- Category synonym expansion for many industries (hotel, restaurant, café,
+  bakery, doctor, dentist, lawyer, tax advisor, roofer, florist, car repair,
+  and more), plus matching OpenStreetMap tags, so one keyword reaches related
+  business types.
 - CSV and JSON export with source URLs and discovery timestamps.
 
 ## Quick start
