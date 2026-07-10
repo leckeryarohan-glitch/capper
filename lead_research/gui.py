@@ -174,6 +174,8 @@ def collect_gui_settings(values: Mapping[str, str | bool]) -> dict[str, object]:
         "only_new_leads": bool(values.get("only_new_leads", False)),
         "skip_known_sites": bool(values.get("skip_known_sites", False)),
         "expand_search": bool(values.get("expand_search", False)),
+        "include_personal": bool(values.get("include_personal", False)),
+        "max_pages_per_site": str(values.get("max_pages_per_site", DEFAULT_MAX_PAGES)).strip() or DEFAULT_MAX_PAGES,
         "directory_sources": sorted(selected_directory_source_ids(values)),
     }
 
@@ -276,6 +278,8 @@ def checkpoint_settings_for_gui(path: Path) -> dict[str, object] | None:
         "only_new_leads": bool(metadata.get("only_new_leads", False)),
         "skip_known_sites": bool(metadata.get("skip_known_sites", False)),
         "expand_search": bool(metadata.get("expand_search", False)),
+        "include_personal": bool(metadata.get("include_personal", False)),
+        "max_pages_per_site": str(metadata.get("max_pages_per_site") or DEFAULT_MAX_PAGES),
         "directory_sources": list(metadata.get("directory_sources", [])),
         "progress_summary": str(metadata.get("progress_summary", "")),
     }
@@ -303,6 +307,8 @@ def apply_gui_settings(values: dict[str, object], settings: Mapping[str, object]
     values["only_new_leads"] = bool(settings.get("only_new_leads", False))
     values["skip_known_sites"] = bool(settings.get("skip_known_sites", False))
     values["expand_search"] = bool(settings.get("expand_search", False))
+    values["include_personal"] = bool(settings.get("include_personal", False))
+    values["max_pages_per_site"] = str(settings.get("max_pages_per_site", DEFAULT_MAX_PAGES))
 
     directory_sources = settings.get("directory_sources")
     if isinstance(directory_sources, list):
@@ -338,6 +344,8 @@ def run_gui_discovery(
     only_new_leads = bool(values.get("only_new_leads", False))
     skip_known_sites = bool(values.get("skip_known_sites", False))
     expand_search = bool(values.get("expand_search", False))
+    include_personal = bool(values.get("include_personal", False))
+    max_pages_per_site = parse_positive_int(values.get("max_pages_per_site"), int(DEFAULT_MAX_PAGES))
 
     serpapi_key = str(values.get("serpapi_key", "")).strip() or os.getenv("SERPAPI_API_KEY", "").strip()
     zenrows_key = str(values.get("zenrows_key", "")).strip() or os.getenv("ZENROWS_API_KEY", "").strip()
@@ -394,9 +402,9 @@ def run_gui_discovery(
         location=location,
         countries=selected_countries(values),
         limit=limit,
-        max_pages_per_site=int(DEFAULT_MAX_PAGES),
+        max_pages_per_site=max_pages_per_site,
         delay=float(DEFAULT_DELAY),
-        include_personal=False,
+        include_personal=include_personal,
         respect_robots=True,
         workers=workers,
         max_leads=max_leads,
@@ -476,6 +484,8 @@ def run_gui() -> int:
             self.only_new_leads = tk.BooleanVar(value=False)
             self.skip_known_sites = tk.BooleanVar(value=False)
             self.expand_search = tk.BooleanVar(value=False)
+            self.include_personal = tk.BooleanVar(value=False)
+            self.max_pages_per_site = tk.StringVar(value=DEFAULT_MAX_PAGES)
             self.directory_source_vars: dict[str, tk.BooleanVar] = {}
             for spec in build_directory_source_registry():
                 if spec.implemented:
@@ -555,6 +565,8 @@ def run_gui() -> int:
             ttk.Entry(limits_frame, textvariable=self.limit, width=10).grid(row=0, column=3, padx=(4, 16))
             ttk.Label(limits_frame, text="Threads").grid(row=0, column=4, sticky="w")
             ttk.Entry(limits_frame, textvariable=self.workers, width=6).grid(row=0, column=5, padx=(4, 16))
+            ttk.Label(limits_frame, text="Seiten/Website").grid(row=0, column=6, sticky="w")
+            ttk.Entry(limits_frame, textvariable=self.max_pages_per_site, width=5).grid(row=0, column=7, padx=(4, 16))
             ttk.Label(limits_frame, text="ZenRows parallel").grid(row=1, column=0, sticky="w", pady=(4, 0))
             ttk.Entry(limits_frame, textvariable=self.directory_parallel, width=6).grid(row=1, column=1, padx=(4, 16), pady=(4, 0))
             ttk.Label(limits_frame, text="Detail parallel").grid(row=1, column=2, sticky="w", pady=(4, 0))
@@ -607,15 +619,21 @@ def run_gui() -> int:
                 text="Erweiterte Suche (mehr Staedte, Seiten und Suchbegriffe)",
                 variable=self.expand_search,
             ).grid(row=2, column=0, sticky="w", pady=(4, 0))
+            ttk.Checkbutton(
+                discovery_options,
+                text="Auch persoenliche E-Mails aufnehmen (zur manuellen Pruefung)",
+                variable=self.include_personal,
+            ).grid(row=3, column=0, sticky="w", pady=(4, 0))
             ttk.Label(
                 discovery_options,
                 text=(
                     "Fuer wiederholte Laeufe: 'Nur neue Leads' merkt sich gefundene Leads dauerhaft, "
-                    "'Erweiterte Suche' durchsucht mehr Orte/Seiten, um neue Betriebe zu finden."
+                    "'Erweiterte Suche' durchsucht mehr Orte/Seiten, um neue Betriebe zu finden. "
+                    "'Persoenliche E-Mails' und mehr 'Seiten/Website' erhoehen die Ausbeute je Website."
                 ),
                 foreground="#555",
                 wraplength=560,
-            ).grid(row=3, column=0, sticky="w", pady=(4, 0))
+            ).grid(row=4, column=0, sticky="w", pady=(4, 0))
 
             ttk.Label(content, text="Opt-out Liste").grid(row=6, column=0, sticky="w", pady=4)
             ttk.Entry(content, textvariable=self.suppression_file).grid(row=6, column=1, sticky="ew", pady=4)
@@ -825,6 +843,8 @@ def run_gui() -> int:
                 "only_new_leads": self.only_new_leads.get(),
                 "skip_known_sites": self.skip_known_sites.get(),
                 "expand_search": self.expand_search.get(),
+                "include_personal": self.include_personal.get(),
+                "max_pages_per_site": self.max_pages_per_site.get(),
                 "country_de": self.country_de.get(),
                 "country_at": self.country_at.get(),
             }
@@ -853,6 +873,8 @@ def run_gui() -> int:
             self.only_new_leads.set(bool(values.get("only_new_leads", False)))
             self.skip_known_sites.set(bool(values.get("skip_known_sites", False)))
             self.expand_search.set(bool(values.get("expand_search", False)))
+            self.include_personal.set(bool(values.get("include_personal", False)))
+            self.max_pages_per_site.set(str(values.get("max_pages_per_site", DEFAULT_MAX_PAGES)))
             self.country_de.set(bool(values["country_de"]))
             self.country_at.set(bool(values["country_at"]))
             for source_id, var in self.directory_source_vars.items():
@@ -958,6 +980,8 @@ def run_gui() -> int:
                 "only_new_leads": self.only_new_leads.get(),
                 "skip_known_sites": self.skip_known_sites.get(),
                 "expand_search": self.expand_search.get(),
+                "include_personal": self.include_personal.get(),
+                "max_pages_per_site": self.max_pages_per_site.get(),
                 **{f"dir_source_{source_id}": var.get() for source_id, var in self.directory_source_vars.items()},
                 "country_de": self.country_de.get(),
                 "country_at": self.country_at.get(),

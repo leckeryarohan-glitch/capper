@@ -485,6 +485,8 @@ def load_checkpoint_gui_metadata(path: Path | None) -> dict[str, object] | None:
         "only_new_leads": bool(gui_settings.get("only_new_leads", False)),
         "skip_known_sites": bool(gui_settings.get("skip_known_sites", False)),
         "expand_search": bool(gui_settings.get("expand_search", False)),
+        "include_personal": bool(gui_settings.get("include_personal", False)),
+        "max_pages_per_site": str(gui_settings.get("max_pages_per_site", "")),
         "directory_sources": list(gui_settings.get("directory_sources", [])),
         "progress_summary": progress_summary,
     }
