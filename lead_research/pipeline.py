@@ -56,6 +56,12 @@ from .crawl import (
 )
 from .export import StreamingCsvWriter, write_json
 from .extract import normalized_host
+from .history import (
+    LeadLedger,
+    SiteLedger,
+    lead_history_path_for,
+    site_history_path_for,
+)
 from .live_status import live_status_path_for_checkpoint, write_live_status
 from .models import ConsentStatus, Lead, LeadDeduplicator, SearchResult, search_result_crawl_key, search_result_display_label
 from .locations import DEFAULT_COUNTRIES
@@ -112,6 +118,8 @@ class LeadStats:
     personal_leads: int = 0
     duplicates_skipped: int = 0
     suppressed_skipped: int = 0
+    known_skipped: int = 0
+    sites_skipped_known: int = 0
     unique_domains: int = 0
     started_at: float = field(default_factory=time.monotonic)
     session_started_at: float = field(default_factory=time.monotonic)
@@ -158,6 +166,8 @@ class LeadStats:
             "personal_leads": self.personal_leads,
             "duplicates_skipped": self.duplicates_skipped,
             "suppressed_skipped": self.suppressed_skipped,
+            "known_skipped": self.known_skipped,
+            "sites_skipped_known": self.sites_skipped_known,
             "unique_domains": self.unique_domains,
             "elapsed_seconds": round(self.session_elapsed_seconds, 1),
             "leads_per_minute": self.leads_per_minute,
@@ -178,6 +188,9 @@ class DiscoveryConfig:
     workers: int = DEFAULT_WORKERS
     max_leads: int = 100000
     dedupe_by: str = "email"
+    only_new_leads: bool = False
+    skip_known_sites: bool = False
+    expand_search: bool = False
 
 
 EventCallback = Callable[..., None]
@@ -193,6 +206,8 @@ def run_discovery(
     checkpoint: Path | None = None,
     resume: bool = False,
     gui_settings: dict[str, object] | None = None,
+    lead_history: Path | None = None,
+    site_history: Path | None = None,
 ) -> LeadStats:
     """Run a concurrent discovery: search, crawl websites in parallel, dedupe,
     suppress, and stream results to disk while reporting live statistics."""
@@ -200,6 +215,25 @@ def run_discovery(
     emit = on_event or (lambda *args, **kwargs: None)
     stats = LeadStats()
     live_status_path = live_status_path_for_checkpoint(checkpoint)
+
+    lead_ledger: LeadLedger | None = None
+    if config.only_new_leads:
+        ledger_path = lead_history or lead_history_path_for(output, checkpoint)
+        lead_ledger = LeadLedger(ledger_path)
+        emit(
+            "status",
+            f"Nur neue Leads: {len(lead_ledger)} bereits bekannte Leads werden ausgeschlossen "
+            f"({ledger_path.name}).",
+        )
+    site_ledger: SiteLedger | None = None
+    if config.skip_known_sites:
+        site_path = site_history or site_history_path_for(output, checkpoint)
+        site_ledger = SiteLedger(site_path)
+        emit(
+            "status",
+            f"Bereits gecrawlte Seiten ueberspringen: {len(site_ledger)} bekannte Seiten "
+            f"({site_path.name}).",
+        )
 
     event_lock = threading.Lock()
     event_log: deque[tuple[int, str]] = deque(maxlen=LIVE_EVENT_HISTORY)
@@ -355,23 +389,54 @@ def run_discovery(
     stats.websites_baseline = stats.websites_done
     stats.session_started_at = time.monotonic()
 
-    if checkpoint_state.search_complete:
-        pending_count = max(0, len(checkpoint_state.search_results) - len(crawled_urls))
+    def site_is_known(url: str) -> bool:
+        if site_ledger is None or not url:
+            return False
+        return site_ledger.is_known(normalized_host(url))
 
+    skipped_known_sites = 0
+    if checkpoint_state.search_complete:
         def iter_pending_results():
             for item in checkpoint_state.search_results:
-                if search_result_crawl_key_from_dict(item) not in crawled_urls:
-                    yield search_result_from_dict(item)
+                if search_result_crawl_key_from_dict(item) in crawled_urls:
+                    continue
+                if site_is_known(str(item.get("url", ""))):
+                    continue
+                yield search_result_from_dict(item)
 
+        pending_count = 0
+        for item in checkpoint_state.search_results:
+            if search_result_crawl_key_from_dict(item) in crawled_urls:
+                continue
+            if site_is_known(str(item.get("url", ""))):
+                skipped_known_sites += 1
+                continue
+            pending_count += 1
         pending_iter = iter_pending_results()
     else:
-        pending_count = sum(
-            1 for result in search_results if search_result_crawl_key(result) not in crawled_urls
-        )
-        pending_iter = (
-            result
-            for result in search_results
-            if search_result_crawl_key(result) not in crawled_urls
+        def iter_pending_results():
+            for result in search_results:
+                if search_result_crawl_key(result) in crawled_urls:
+                    continue
+                if site_is_known(result.url):
+                    continue
+                yield result
+
+        pending_count = 0
+        for result in search_results:
+            if search_result_crawl_key(result) in crawled_urls:
+                continue
+            if site_is_known(result.url):
+                skipped_known_sites += 1
+                continue
+            pending_count += 1
+        pending_iter = iter_pending_results()
+    stats.sites_skipped_known = skipped_known_sites
+    if skipped_known_sites:
+        emit(
+            "status",
+            f"{skipped_known_sites} bereits gecrawlte Seiten werden uebersprungen "
+            f"(nur neue Websites).",
         )
     worker_count = recommended_crawl_workers(config.workers, pending_sites=pending_count)
     if worker_count < recommended_workers(config.workers):
@@ -486,6 +551,9 @@ def run_discovery(
         if suppression.is_suppressed(lead):
             stats.suppressed_skipped += 1
             return None
+        if lead_ledger is not None and lead_ledger.is_known(lead):
+            stats.known_skipped += 1
+            return None
         if not dedup.is_new(lead):
             stats.duplicates_skipped += 1
             return None
@@ -499,6 +567,8 @@ def run_discovery(
             domains.add(host)
             stats.unique_domains = len(domains)
         append_lead(checkpoint_state, lead)
+        if lead_ledger is not None:
+            lead_ledger.record(lead)
         return lead
 
     def persist_lead(lead: Lead) -> None:
@@ -577,6 +647,8 @@ def run_discovery(
                     sites_since_checkpoint += 1
                 if crawled_sidecar_writer is not None:
                     crawled_sidecar_writer.append(crawled_key)
+                if site_ledger is not None and result.url.strip():
+                    site_ledger.record(normalized_host(result.url))
                 for lead in accepted_leads:
                     if leads_sidecar_writer is not None:
                         leads_sidecar_writer.append(lead_to_dict(lead))
@@ -749,6 +821,10 @@ def run_discovery(
             crawled_sidecar_writer.flush()
         if leads_sidecar_writer is not None:
             leads_sidecar_writer.flush()
+        if lead_ledger is not None:
+            lead_ledger.flush()
+        if site_ledger is not None:
+            site_ledger.flush()
         checkpoint_writer.close(checkpoint, checkpoint_snapshot, state_lock)
         if writer is not None:
             writer.close()
