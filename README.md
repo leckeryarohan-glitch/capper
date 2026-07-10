@@ -261,6 +261,35 @@ python3 -m lead_research discover \
   --output leads.csv
 ```
 
+## Repeat runs: finding new leads (not the same ones again)
+
+Search is deterministic, so re-running the same category rediscovers the same
+businesses. Three options make repeat runs productive:
+
+- **Only new leads** (`--only-new-leads`): keeps a persistent
+  `capper-known-leads.txt` of every exported lead (email + domain). Later runs
+  skip leads found before, so the output contains only genuinely new contacts.
+- **Skip known sites** (`--skip-known-sites`): keeps `capper-known-sites.txt`
+  of every crawled website host and skips them next time, so the crawl budget
+  goes to unseen sites.
+- **Expanded search** (`--expand-search`): widens the search surface (all
+  cached cities, deeper result pagination, and every category synonym) so new
+  businesses that a shallower run missed can surface.
+
+```bash
+python3 -m lead_research discover \
+  --category hotel \
+  --provider all \
+  --only-new-leads \
+  --skip-known-sites \
+  --expand-search \
+  --output leads.csv
+```
+
+The same three switches are available in the desktop GUI under
+"Wiederholte Laeufe". The history files live next to the checkpoint and can be
+edited or merged by hand (one key per line).
+
 ## Output fields
 
 The CSV export contains:
