@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -9,6 +11,33 @@ from typing import TYPE_CHECKING
 
 LIVE_STATUS_FILENAME = "capper-live-status.json"
 LIVE_STATUS_MIN_INTERVAL_SECONDS = 1.0
+REPLACE_RETRY_ATTEMPTS = 5
+REPLACE_RETRY_BASE_DELAY_SECONDS = 0.05
+
+_write_lock = threading.Lock()
+
+
+def replace_file_with_retry(
+    source: Path,
+    destination: Path,
+    *,
+    attempts: int = REPLACE_RETRY_ATTEMPTS,
+    base_delay_seconds: float = REPLACE_RETRY_BASE_DELAY_SECONDS,
+) -> None:
+    """Atomically replace destination, retrying transient Windows locks.
+
+    On Windows os.replace fails with WinError 5 (access denied) while another
+    process (GUI reader, antivirus, indexer) briefly holds the destination
+    open. Those locks clear within milliseconds, so retry before giving up.
+    """
+    for attempt in range(attempts):
+        try:
+            os.replace(source, destination)
+            return
+        except OSError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(base_delay_seconds * (attempt + 1))
 
 if TYPE_CHECKING:
     from .pipeline import LeadStats
@@ -72,10 +101,23 @@ def write_live_status(
         "recent_events": [[int(seq), str(text)] for seq, text in (recent_events or [])],
         "updated_at": time.time(),
     }
-    path.parent.mkdir(parents=True, exist_ok=True)
+    # Live status is purely informational: a failed write (e.g. the GUI or an
+    # antivirus scanner briefly holding the file on Windows -> WinError 5)
+    # must never abort the discovery run.
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    tmp.replace(path)
+    try:
+        with _write_lock:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp.write_text(
+                json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                encoding="utf-8",
+            )
+            replace_file_with_retry(tmp, path)
+    except OSError:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def read_live_status(path: Path) -> LiveRunStatus | None:

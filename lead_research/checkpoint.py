@@ -13,6 +13,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from .live_status import replace_file_with_retry
 from .models import ConsentStatus, Lead, SearchResult, search_result_crawl_key
 
 
@@ -714,8 +715,10 @@ def checkpoint_to_payload(
 
 _CHECKPOINT_WRITE_SCRIPT = """
 import json
+import os
 import pickle
 import sys
+import time
 from pathlib import Path
 
 pickle_path = Path(sys.argv[1])
@@ -723,7 +726,14 @@ dest = Path(sys.argv[2])
 payload = pickle.loads(pickle_path.read_bytes())
 tmp = dest.with_suffix(dest.suffix + ".tmp")
 tmp.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-tmp.replace(dest)
+for attempt in range(5):
+    try:
+        os.replace(tmp, dest)
+        break
+    except OSError:
+        if attempt == 4:
+            raise
+        time.sleep(0.05 * (attempt + 1))
 try:
     pickle_path.unlink()
 except OSError:
@@ -774,7 +784,7 @@ def write_discovery_checkpoint_payload(
         return
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    tmp.replace(path)
+    replace_file_with_retry(tmp, path)
 
 
 def append_lead(checkpoint: DiscoveryCheckpoint, lead: Lead) -> None:
