@@ -199,8 +199,38 @@ class SearchTests(unittest.TestCase):
         self.assertEqual(duckduckgo_next_offset(html_text, 0, 20), 10)
 
     def test_duckduckgo_pages_per_query_scales_with_limit(self) -> None:
-        self.assertEqual(duckduckgo_pages_per_query(25), 2)
-        self.assertEqual(duckduckgo_pages_per_query(500), 5)
+        self.assertEqual(duckduckgo_pages_per_query(25), 4)
+        self.assertEqual(duckduckgo_pages_per_query(150), 8)
+        self.assertEqual(duckduckgo_pages_per_query(500), 12)
+
+    def test_duckduckgo_next_form_fields_parses_more_results_form(self) -> None:
+        from lead_research.search import duckduckgo_next_form_fields
+
+        html_text = (
+            '<form action="/html/" method="get">'
+            '<input name="q" value="hotel berlin"/></form>'
+            '<div class="nav-link"><form action="/html/" method="post">'
+            '<input type="hidden" name="q" value="hotel berlin"/>'
+            '<input type="hidden" name="s" value="30"/>'
+            '<input type="hidden" name="nextParams" value=""/>'
+            '<input type="hidden" name="v" value="l"/>'
+            '<input type="hidden" name="dc" value="31"/>'
+            '<input type="hidden" name="vqd" value="4-123456789"/>'
+            '<input type="hidden" name="kl" value="de-de"/>'
+            '<input type="submit" value="Next"/></form></div>'
+        )
+        fields = duckduckgo_next_form_fields(html_text)
+        assert fields is not None
+        self.assertEqual(fields["s"], "30")
+        self.assertEqual(fields["vqd"], "4-123456789")
+        self.assertEqual(fields["dc"], "31")
+        self.assertEqual(fields["q"], "hotel berlin")
+
+    def test_duckduckgo_next_form_fields_returns_none_without_next(self) -> None:
+        from lead_research.search import duckduckgo_next_form_fields
+
+        html_text = '<form action="/html/"><input name="q" value="hotel"/></form>'
+        self.assertIsNone(duckduckgo_next_form_fields(html_text))
 
     def test_multi_source_provider_merges_and_dedupes(self) -> None:
         class StaticProvider(SearchProvider):

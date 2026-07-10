@@ -316,6 +316,8 @@ def run_discovery(
         )
     finally:
         search_done.set()
+        # Join so the heartbeat never overlaps the crawl phase or later runs.
+        heartbeat_thread.join(timeout=SEARCH_HEARTBEAT_SECONDS + 1.0)
     stats.websites_total = (
         len(checkpoint_state.search_results)
         if checkpoint_state.search_complete
