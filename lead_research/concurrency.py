@@ -20,9 +20,12 @@ from .checkpoint import (
 
 CHECKPOINT_SAVE_INTERVAL = 10
 MAX_WORKERS = 128
-CRAWL_MAX_WORKERS = 20
-CRAWL_LARGE_RESUME_WORKERS = 4
+# Discovery runs in a separate process (GUI no longer shares the crawl GIL),
+# so we can crawl many websites in parallel without freezing the UI.
+CRAWL_MAX_WORKERS = 32
+CRAWL_LARGE_RESUME_WORKERS = 12
 CRAWL_LARGE_RESUME_PENDING = 500
+CRAWL_LARGE_RESUME_MAX_WORKERS = 32
 CRAWL_EXECUTOR_OVERSUBSCRIBE = 2
 STALL_RECOVERY_SECONDS = 22.0
 HARD_TIMEOUT_GRACE_SECONDS = 3.0
@@ -65,7 +68,15 @@ def recommended_workers(requested: int | None = None) -> int:
 def recommended_crawl_workers(requested: int | None = None, *, pending_sites: int = 0) -> int:
     workers = min(recommended_workers(requested), CRAWL_MAX_WORKERS)
     if pending_sites >= CRAWL_LARGE_RESUME_PENDING:
-        workers = min(workers, CRAWL_LARGE_RESUME_WORKERS)
+        effective = requested
+        if effective is not None and effective > CRAWL_LARGE_RESUME_MAX_WORKERS:
+            effective = None
+        cap = (
+            CRAWL_LARGE_RESUME_WORKERS
+            if effective is None
+            else min(max(effective, 1), CRAWL_LARGE_RESUME_MAX_WORKERS)
+        )
+        workers = min(workers, cap)
     return max(1, workers)
 
 

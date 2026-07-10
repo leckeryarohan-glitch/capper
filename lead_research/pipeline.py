@@ -4,6 +4,7 @@ import os
 import socket
 import threading
 import time
+from collections import deque
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -48,6 +49,7 @@ from .crawl import (
     DEFAULT_REQUEST_TIMEOUT_SECONDS,
     DEFAULT_SITE_TIMEOUT_SECONDS,
     LeadCrawler,
+    RESUME_MAX_PAGES_PER_SITE,
     RESUME_READ_TIMEOUT_SECONDS,
     RESUME_REQUEST_TIMEOUT_SECONDS,
     RESUME_SITE_TIMEOUT_SECONDS,
@@ -65,15 +67,19 @@ from .suppression import SuppressionList
 DEFAULT_WORKERS = recommended_workers()
 _crawl_local = threading.local()
 FUTURE_RESULT_GRACE_SECONDS = 8
-CRAWL_ACTIVE_BATCH_MULTIPLIER = 1
+CRAWL_ACTIVE_BATCH_MULTIPLIER = 2
 CRAWL_WAIT_HEARTBEAT_SECONDS = 15
 PAGE_EVENT_INTERVAL = 25
+LIVE_EVENT_HISTORY = 40
 
 
 def build_crawl_config(*, config: DiscoveryConfig, resume: bool, pending_sites: int) -> CrawlConfig:
     fast_resume = resume and pending_sites >= 100
+    max_pages = config.max_pages_per_site
+    if fast_resume:
+        max_pages = min(max_pages, RESUME_MAX_PAGES_PER_SITE)
     return CrawlConfig(
-        max_pages_per_site=config.max_pages_per_site,
+        max_pages_per_site=max_pages,
         delay_seconds=0.0 if fast_resume else config.delay,
         include_personal=config.include_personal,
         respect_robots=not fast_resume and config.respect_robots,
@@ -194,8 +200,30 @@ def run_discovery(
     stats = LeadStats()
     live_status_path = live_status_path_for_checkpoint(checkpoint)
 
+    event_lock = threading.Lock()
+    event_log: deque[tuple[int, str]] = deque(maxlen=LIVE_EVENT_HISTORY)
+    event_counter = {"seq": 0}
+    active_now = {"count": 0, "current": ""}
+
+    def record_event(text: str) -> None:
+        with event_lock:
+            event_counter["seq"] += 1
+            event_log.append((event_counter["seq"], text))
+
     def publish_live_status(*, phase: str = "crawl", status: str = "") -> None:
-        write_live_status(live_status_path, stats, phase=phase, status=status)
+        with event_lock:
+            recent = list(event_log)
+            active = active_now["count"]
+            current = active_now["current"]
+        write_live_status(
+            live_status_path,
+            stats,
+            phase=phase,
+            status=status,
+            active_sites=active,
+            current_site=current,
+            recent_events=recent,
+        )
 
     expected_config = config_fingerprint(
         category=config.category,
@@ -316,16 +344,11 @@ def run_discovery(
     publish_live_status(phase="crawl", status="Crawling wird vorbereitet ...")
 
     if resume and checkpoint and checkpoint_state is not None:
-        threading.Thread(
-            target=ensure_checkpoint_sidecars,
-            kwargs={
-                "path": checkpoint,
-                "checkpoint": checkpoint_state,
-                "on_status": lambda msg: emit("status", msg),
-            },
-            name="capper-sidecar-migrate",
-            daemon=True,
-        ).start()
+        ensure_checkpoint_sidecars(
+            checkpoint,
+            checkpoint_state,
+            on_status=lambda msg: emit("status", msg),
+        )
 
     is_json = output.suffix.lower() == ".json"
     writer = None if is_json else StreamingCsvWriter(output, append=resume and output.exists())
@@ -473,6 +496,7 @@ def run_discovery(
             def submit_more() -> None:
                 if stop_submitting:
                     return
+                latest_label = ""
                 while len(active_futures) < batch_limit:
                     try:
                         result = next(pending_iter)
@@ -481,6 +505,11 @@ def run_discovery(
                     future = executor.submit(crawl_site, result)
                     active_futures[future] = result
                     active_started[future] = time.monotonic()
+                    latest_label = search_result_display_label(result)
+                with event_lock:
+                    active_now["count"] = len(active_futures)
+                    if latest_label:
+                        active_now["current"] = latest_label
 
             def finish_site(result: SearchResult, site_leads: list[Lead], warning: str | None = None) -> bool:
                 nonlocal sites_since_checkpoint, stop_submitting, skipped_site_warnings
@@ -502,6 +531,18 @@ def run_discovery(
                     if leads_sidecar_writer is not None:
                         leads_sidecar_writer.append(lead_to_dict(lead))
                     persist_lead(lead)
+                site_label = search_result_display_label(result)
+                if warning:
+                    record_event(f"[!] {warning}")
+                elif accepted_leads:
+                    preview = ", ".join(lead.email for lead in accepted_leads[:3])
+                    if len(accepted_leads) > 3:
+                        preview += f" (+{len(accepted_leads) - 3})"
+                    record_event(f"[+] {site_label}: +{len(accepted_leads)} Leads ({preview})")
+                else:
+                    record_event(f"[.] {site_label}: keine neuen Leads")
+                with event_lock:
+                    active_now["count"] = len(active_futures)
                 publish_live_status(
                     phase="crawl",
                     status=(
@@ -510,6 +551,8 @@ def run_discovery(
                     ),
                 )
                 if gui_quiet_mode:
+                    if stats.websites_done % 10 == 0 or stats.websites_done == stats.websites_total:
+                        emit("progress", stats)
                     if skipped_site_warnings and (
                         stats.websites_done % 10 == 0 or stats.websites_done == stats.websites_total
                     ):
@@ -574,10 +617,13 @@ def run_discovery(
 
             submit_more()
             if active_futures:
-                emit(
-                    "status",
-                    f"Crawling aktiv ({len(active_futures)} Websites parallel, erste Ergebnisse in 1-2 Min.) ...",
+                start_msg = (
+                    f"Crawling aktiv ({len(active_futures)} Websites parallel, "
+                    f"erste Ergebnisse in 1-2 Min.) ..."
                 )
+                emit("status", start_msg)
+                record_event(f">> {start_msg}")
+                publish_live_status(phase="crawl", status=start_msg)
             elif pending_count == 0:
                 emit("status", "Alle Websites aus dem Checkpoint sind bereits gecrawlt.")
             last_wait_notice = time.monotonic()
@@ -595,11 +641,12 @@ def run_discovery(
                         last_websites_done = stats.websites_done
                         last_progress_at = now
                     elif now - last_progress_at >= STALL_RECOVERY_SECONDS:
-                        emit(
-                            "warning",
+                        stall_msg = (
                             f"Kein Fortschritt seit {STALL_RECOVERY_SECONDS:.0f}s — "
-                            f"haengende Websites werden uebersprungen ({len(active_futures)} aktiv).",
+                            f"haengende Websites werden uebersprungen ({len(active_futures)} aktiv)."
                         )
+                        emit("warning", stall_msg)
+                        record_event(f"[!] {stall_msg}")
                         evicted = evict_stale_futures(force_all=True)
                         last_progress_at = now
                         if evicted:
@@ -630,13 +677,13 @@ def run_discovery(
                         gui_quiet_mode
                         and now - last_wait_notice >= CRAWL_WAIT_HEARTBEAT_SECONDS
                     ):
-                        publish_live_status(
-                            phase="crawl",
-                            status=(
-                                f"Crawling laeuft: {len(active_futures)} aktiv, "
-                                f"{stats.websites_done}/{stats.websites_total} Websites"
-                            ),
+                        heartbeat = (
+                            f"Crawling laeuft: {len(active_futures)} aktiv, "
+                            f"{stats.websites_done}/{stats.websites_total} Websites, "
+                            f"{stats.leads_found} Leads, {stats.leads_per_minute}/min"
                         )
+                        emit("status", heartbeat)
+                        publish_live_status(phase="crawl", status=heartbeat)
                         last_wait_notice = now
                     continue
                 for future in done:

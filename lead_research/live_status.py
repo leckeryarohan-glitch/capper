@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -28,6 +28,9 @@ class LiveRunStatus:
     status: str
     updated_at: float
     websites_per_minute: float = 0.0
+    active_sites: int = 0
+    current_site: str = ""
+    recent_events: tuple[tuple[int, str], ...] = ()
 
 
 def live_status_path_for_checkpoint(checkpoint: Path | None) -> Path:
@@ -43,6 +46,9 @@ def write_live_status(
     phase: str = "crawl",
     status: str = "",
     min_interval_seconds: float = LIVE_STATUS_MIN_INTERVAL_SECONDS,
+    active_sites: int = 0,
+    current_site: str = "",
+    recent_events: list[tuple[int, str]] | None = None,
 ) -> None:
     now = time.monotonic()
     last_write = getattr(write_live_status, "_last_write_at", 0.0)
@@ -61,6 +67,9 @@ def write_live_status(
         "websites_per_minute": float(getattr(stats, "websites_per_minute", 0.0)),
         "phase": phase,
         "status": status,
+        "active_sites": int(active_sites),
+        "current_site": str(current_site),
+        "recent_events": [[int(seq), str(text)] for seq, text in (recent_events or [])],
         "updated_at": time.time(),
     }
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -78,6 +87,15 @@ def read_live_status(path: Path) -> LiveRunStatus | None:
         return None
     if not isinstance(payload, dict):
         return None
+    raw_events = payload.get("recent_events", [])
+    events: list[tuple[int, str]] = []
+    if isinstance(raw_events, list):
+        for item in raw_events:
+            if isinstance(item, (list, tuple)) and len(item) == 2:
+                try:
+                    events.append((int(item[0]), str(item[1])))
+                except (TypeError, ValueError):
+                    continue
     return LiveRunStatus(
         websites_done=int(payload.get("websites_done", 0)),
         websites_total=int(payload.get("websites_total", 0)),
@@ -91,6 +109,9 @@ def read_live_status(path: Path) -> LiveRunStatus | None:
         status=str(payload.get("status", "")),
         updated_at=float(payload.get("updated_at", 0.0)),
         websites_per_minute=float(payload.get("websites_per_minute", 0.0)),
+        active_sites=int(payload.get("active_sites", 0)),
+        current_site=str(payload.get("current_site", "")),
+        recent_events=tuple(events),
     )
 
 

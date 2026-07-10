@@ -438,6 +438,7 @@ def run_gui() -> int:
             self._pending_messages: deque[tuple] = deque()
             self._progress_total = 0
             self._quiet_ui_tick_scheduled = False
+            self._last_event_seq = 0
 
             self.category = tk.StringVar(value="hotel")
             self.location = tk.StringVar(value="")
@@ -950,6 +951,14 @@ def run_gui() -> int:
             self._apply_stats(stats)
             if status.status:
                 self.status_text.set(status.status)
+            if status.current_site:
+                self.current_page_text.set(
+                    f"Aktiv: {status.active_sites} Websites · zuletzt gestartet: {status.current_site}"
+                )
+            for seq, text in status.recent_events:
+                if seq > self._last_event_seq:
+                    self._last_event_seq = seq
+                    self._append_log(text + "\n")
 
         def _reset_run(self) -> None:
             self.progress.configure(maximum=1)
@@ -968,6 +977,7 @@ def run_gui() -> int:
             self._pending_messages.clear()
             self._progress_total = 0
             self._quiet_ui_tick_scheduled = False
+            self._last_event_seq = 0
             for item in self.lead_table.get_children():
                 self.lead_table.delete(item)
             self.log.configure(state="normal")

@@ -20,9 +20,10 @@ class ConcurrencyTests(unittest.TestCase):
         self.assertEqual(zenrows_parallel_workers(2, True, 200), 2)
 
     def test_recommended_crawl_workers_caps_large_resume(self) -> None:
-        self.assertEqual(recommended_crawl_workers(128, pending_sites=10), 20)
-        self.assertEqual(recommended_crawl_workers(128, pending_sites=1000), 4)
+        self.assertEqual(recommended_crawl_workers(128, pending_sites=10), 32)
+        self.assertEqual(recommended_crawl_workers(128, pending_sites=1000), 12)
         self.assertEqual(recommended_crawl_workers(4, pending_sites=1000), 4)
+        self.assertEqual(recommended_crawl_workers(24, pending_sites=1000), 24)
 
     def test_run_with_hard_timeout_raises_when_work_blocks(self) -> None:
         def slow() -> str:
