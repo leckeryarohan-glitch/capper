@@ -187,6 +187,41 @@ class GuiArgumentTests(unittest.TestCase):
 
         self.assertEqual(captured["directory_parallel_requests"], 50)
 
+    def test_run_gui_discovery_passes_include_personal_and_max_pages(self) -> None:
+        events: "queue.Queue[tuple]" = queue.Queue()
+        captured: dict[str, object] = {}
+
+        def fake_run_discovery(**kwargs):
+            captured.update(kwargs)
+            return LeadStats()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "leads.csv"
+            with patch("lead_research.gui.combined_provider", return_value=FakeProvider()), patch(
+                "lead_research.gui.run_discovery", side_effect=fake_run_discovery
+            ):
+                run_gui_discovery(
+                    {
+                        "category": "hotel",
+                        "output": str(output),
+                        "use_osm": True,
+                        "use_duckduckgo": False,
+                        "use_directories": False,
+                        "use_zenrows_google": False,
+                        "use_google_maps": False,
+                        "use_serpapi": False,
+                        "include_personal": True,
+                        "max_pages_per_site": "9",
+                        "expand_search": True,
+                    },
+                    events,
+                )
+
+        config = captured["config"]
+        self.assertTrue(config.include_personal)
+        self.assertEqual(config.max_pages_per_site, 9)
+        self.assertTrue(config.expand_search)
+
     def test_collect_and_apply_gui_settings_roundtrip(self) -> None:
         original = {
             "category": "logistik",
@@ -205,9 +240,15 @@ class GuiArgumentTests(unittest.TestCase):
             "dir_source_gelbeseiten": True,
             "dir_source_cylex": False,
         }
+        original["include_personal"] = True
+        original["max_pages_per_site"] = "7"
         collected = collect_gui_settings(original)
+        self.assertTrue(collected["include_personal"])
+        self.assertEqual(collected["max_pages_per_site"], "7")
         target: dict[str, object] = {}
         apply_gui_settings(target, collected)
+        self.assertTrue(target["include_personal"])
+        self.assertEqual(target["max_pages_per_site"], "7")
         self.assertEqual(target["category"], "logistik")
         self.assertEqual(target["location"], "Berlin")
         self.assertEqual(target["limit"], "3000")

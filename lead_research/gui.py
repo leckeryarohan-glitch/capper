@@ -45,6 +45,47 @@ DEFAULT_DIRECTORY_PARALLEL_TEXT = str(DEFAULT_DIRECTORY_PARALLEL_REQUESTS)
 DEFAULT_DIRECTORY_DETAIL_PARALLEL_TEXT = str(DEFAULT_DIRECTORY_DETAIL_PARALLEL)
 DEFAULT_PROVIDER = "all"
 
+# Suggested categories for the dropdown. The field stays editable, so any
+# custom category can still be typed. Each entry maps to broadened synonyms and
+# OSM tags in search.py.
+GUI_CATEGORY_CHOICES = (
+    "hotel",
+    "pension",
+    "restaurant",
+    "cafe",
+    "bar",
+    "imbiss",
+    "bäckerei",
+    "metzgerei",
+    "supermarkt",
+    "friseur",
+    "kosmetikstudio",
+    "fitnessstudio",
+    "arzt",
+    "zahnarzt",
+    "apotheke",
+    "tierarzt",
+    "physiotherapie",
+    "optiker",
+    "rechtsanwalt",
+    "steuerberater",
+    "versicherung",
+    "immobilienmakler",
+    "elektriker",
+    "maler",
+    "tischler",
+    "dachdecker",
+    "sanitär heizung",
+    "kfz werkstatt",
+    "autohaus",
+    "bauunternehmen",
+    "garten landschaftsbau",
+    "logistik spedition",
+    "it dienstleister",
+    "möbelhaus",
+    "florist",
+)
+
 
 class _QueuePutAdapter:
     """Adapt multiprocessing.Queue for run_gui_discovery event callbacks."""
@@ -171,6 +212,11 @@ def collect_gui_settings(values: Mapping[str, str | bool]) -> dict[str, object]:
         "use_zenrows_google": bool(values.get("use_zenrows_google", True)),
         "use_google_maps": bool(values.get("use_google_maps", True)),
         "use_serpapi": bool(values.get("use_serpapi", True)),
+        "only_new_leads": bool(values.get("only_new_leads", False)),
+        "skip_known_sites": bool(values.get("skip_known_sites", False)),
+        "expand_search": bool(values.get("expand_search", False)),
+        "include_personal": bool(values.get("include_personal", False)),
+        "max_pages_per_site": str(values.get("max_pages_per_site", DEFAULT_MAX_PAGES)).strip() or DEFAULT_MAX_PAGES,
         "directory_sources": sorted(selected_directory_source_ids(values)),
     }
 
@@ -270,6 +316,11 @@ def checkpoint_settings_for_gui(path: Path) -> dict[str, object] | None:
         "use_zenrows_google": bool(metadata.get("use_zenrows_google", True)),
         "use_google_maps": bool(metadata.get("use_google_maps", True)),
         "use_serpapi": bool(metadata.get("use_serpapi", False)),
+        "only_new_leads": bool(metadata.get("only_new_leads", False)),
+        "skip_known_sites": bool(metadata.get("skip_known_sites", False)),
+        "expand_search": bool(metadata.get("expand_search", False)),
+        "include_personal": bool(metadata.get("include_personal", False)),
+        "max_pages_per_site": str(metadata.get("max_pages_per_site") or DEFAULT_MAX_PAGES),
         "directory_sources": list(metadata.get("directory_sources", [])),
         "progress_summary": str(metadata.get("progress_summary", "")),
     }
@@ -294,6 +345,11 @@ def apply_gui_settings(values: dict[str, object], settings: Mapping[str, object]
     values["use_zenrows_google"] = bool(settings.get("use_zenrows_google", True))
     values["use_google_maps"] = bool(settings.get("use_google_maps", True))
     values["use_serpapi"] = bool(settings.get("use_serpapi", False))
+    values["only_new_leads"] = bool(settings.get("only_new_leads", False))
+    values["skip_known_sites"] = bool(settings.get("skip_known_sites", False))
+    values["expand_search"] = bool(settings.get("expand_search", False))
+    values["include_personal"] = bool(settings.get("include_personal", False))
+    values["max_pages_per_site"] = str(settings.get("max_pages_per_site", DEFAULT_MAX_PAGES))
 
     directory_sources = settings.get("directory_sources")
     if isinstance(directory_sources, list):
@@ -326,6 +382,11 @@ def run_gui_discovery(
     directory_detail_parallel = max(1, min(directory_detail_parallel, DIRECTORY_MAX_DETAIL_PARALLEL))
     checkpoint = Path(str(values.get("checkpoint", DEFAULT_CHECKPOINT)).strip() or DEFAULT_CHECKPOINT)
     resume = bool(values.get("resume", False))
+    only_new_leads = bool(values.get("only_new_leads", False))
+    skip_known_sites = bool(values.get("skip_known_sites", False))
+    expand_search = bool(values.get("expand_search", False))
+    include_personal = bool(values.get("include_personal", False))
+    max_pages_per_site = parse_positive_int(values.get("max_pages_per_site"), int(DEFAULT_MAX_PAGES))
 
     serpapi_key = str(values.get("serpapi_key", "")).strip() or os.getenv("SERPAPI_API_KEY", "").strip()
     zenrows_key = str(values.get("zenrows_key", "")).strip() or os.getenv("ZENROWS_API_KEY", "").strip()
@@ -371,6 +432,7 @@ def run_gui_discovery(
         directory_parallel_requests=directory_parallel if use_directories else None,
         directory_detail_parallel_requests=directory_detail_parallel if use_directories else None,
         directory_mass_mode=limit >= 500 if use_directories else False,
+        expand_search=expand_search,
     )
     if not getattr(provider, "providers", None):
         raise SearchProviderError(
@@ -381,13 +443,16 @@ def run_gui_discovery(
         location=location,
         countries=selected_countries(values),
         limit=limit,
-        max_pages_per_site=int(DEFAULT_MAX_PAGES),
+        max_pages_per_site=max_pages_per_site,
         delay=float(DEFAULT_DELAY),
-        include_personal=False,
+        include_personal=include_personal,
         respect_robots=True,
         workers=workers,
         max_leads=max_leads,
         dedupe_by="email",
+        only_new_leads=only_new_leads,
+        skip_known_sites=skip_known_sites,
+        expand_search=expand_search,
     )
 
     run_discovery(
@@ -457,6 +522,11 @@ def run_gui() -> int:
             self.use_zenrows_google = tk.BooleanVar(value=True)
             self.use_google_maps = tk.BooleanVar(value=True)
             self.use_serpapi = tk.BooleanVar(value=True)
+            self.only_new_leads = tk.BooleanVar(value=False)
+            self.skip_known_sites = tk.BooleanVar(value=False)
+            self.expand_search = tk.BooleanVar(value=False)
+            self.include_personal = tk.BooleanVar(value=False)
+            self.max_pages_per_site = tk.StringVar(value=DEFAULT_MAX_PAGES)
             self.directory_source_vars: dict[str, tk.BooleanVar] = {}
             for spec in build_directory_source_registry():
                 if spec.implemented:
@@ -517,7 +587,13 @@ def run_gui() -> int:
             content.columnconfigure(1, weight=1)
 
             ttk.Label(content, text="Kategorie").grid(row=0, column=0, sticky="w", pady=4)
-            ttk.Entry(content, textvariable=self.category).grid(row=0, column=1, columnspan=2, sticky="ew", pady=4)
+            # Editable combobox: choose a suggested category or type a custom one.
+            self.category_combo = ttk.Combobox(
+                content,
+                textvariable=self.category,
+                values=list(GUI_CATEGORY_CHOICES),
+            )
+            self.category_combo.grid(row=0, column=1, columnspan=2, sticky="ew", pady=4)
 
             ttk.Label(content, text="Ort optional").grid(row=1, column=0, sticky="w", pady=4)
             ttk.Entry(content, textvariable=self.location).grid(row=1, column=1, columnspan=2, sticky="ew", pady=4)
@@ -536,6 +612,8 @@ def run_gui() -> int:
             ttk.Entry(limits_frame, textvariable=self.limit, width=10).grid(row=0, column=3, padx=(4, 16))
             ttk.Label(limits_frame, text="Threads").grid(row=0, column=4, sticky="w")
             ttk.Entry(limits_frame, textvariable=self.workers, width=6).grid(row=0, column=5, padx=(4, 16))
+            ttk.Label(limits_frame, text="Seiten/Website").grid(row=0, column=6, sticky="w")
+            ttk.Entry(limits_frame, textvariable=self.max_pages_per_site, width=5).grid(row=0, column=7, padx=(4, 16))
             ttk.Label(limits_frame, text="ZenRows parallel").grid(row=1, column=0, sticky="w", pady=(4, 0))
             ttk.Entry(limits_frame, textvariable=self.directory_parallel, width=6).grid(row=1, column=1, padx=(4, 16), pady=(4, 0))
             ttk.Label(limits_frame, text="Detail parallel").grid(row=1, column=2, sticky="w", pady=(4, 0))
@@ -570,6 +648,39 @@ def run_gui() -> int:
             ).grid(row=0, column=2, padx=(12, 0))
 
             self.checkpoint.trace_add("write", self._on_checkpoint_path_changed)
+
+            discovery_options = ttk.LabelFrame(content, text="Wiederholte Laeufe", padding=8)
+            discovery_options.grid(row=13, column=0, columnspan=3, sticky="ew", pady=(8, 4))
+            ttk.Checkbutton(
+                discovery_options,
+                text="Nur neue Leads (bereits gefundene ausschliessen)",
+                variable=self.only_new_leads,
+            ).grid(row=0, column=0, sticky="w")
+            ttk.Checkbutton(
+                discovery_options,
+                text="Bereits gecrawlte Seiten ueberspringen",
+                variable=self.skip_known_sites,
+            ).grid(row=1, column=0, sticky="w", pady=(4, 0))
+            ttk.Checkbutton(
+                discovery_options,
+                text="Erweiterte Suche (mehr Staedte, Seiten und Suchbegriffe)",
+                variable=self.expand_search,
+            ).grid(row=2, column=0, sticky="w", pady=(4, 0))
+            ttk.Checkbutton(
+                discovery_options,
+                text="Auch persoenliche E-Mails aufnehmen (zur manuellen Pruefung)",
+                variable=self.include_personal,
+            ).grid(row=3, column=0, sticky="w", pady=(4, 0))
+            ttk.Label(
+                discovery_options,
+                text=(
+                    "Fuer wiederholte Laeufe: 'Nur neue Leads' merkt sich gefundene Leads dauerhaft, "
+                    "'Erweiterte Suche' durchsucht mehr Orte/Seiten, um neue Betriebe zu finden. "
+                    "'Persoenliche E-Mails' und mehr 'Seiten/Website' erhoehen die Ausbeute je Website."
+                ),
+                foreground="#555",
+                wraplength=560,
+            ).grid(row=4, column=0, sticky="w", pady=(4, 0))
 
             ttk.Label(content, text="Opt-out Liste").grid(row=6, column=0, sticky="w", pady=4)
             ttk.Entry(content, textvariable=self.suppression_file).grid(row=6, column=1, sticky="ew", pady=4)
@@ -776,6 +887,11 @@ def run_gui() -> int:
                 "use_zenrows_google": self.use_zenrows_google.get(),
                 "use_google_maps": self.use_google_maps.get(),
                 "use_serpapi": self.use_serpapi.get(),
+                "only_new_leads": self.only_new_leads.get(),
+                "skip_known_sites": self.skip_known_sites.get(),
+                "expand_search": self.expand_search.get(),
+                "include_personal": self.include_personal.get(),
+                "max_pages_per_site": self.max_pages_per_site.get(),
                 "country_de": self.country_de.get(),
                 "country_at": self.country_at.get(),
             }
@@ -801,6 +917,11 @@ def run_gui() -> int:
             self.use_zenrows_google.set(bool(values["use_zenrows_google"]))
             self.use_google_maps.set(bool(values.get("use_google_maps", True)))
             self.use_serpapi.set(bool(values["use_serpapi"]))
+            self.only_new_leads.set(bool(values.get("only_new_leads", False)))
+            self.skip_known_sites.set(bool(values.get("skip_known_sites", False)))
+            self.expand_search.set(bool(values.get("expand_search", False)))
+            self.include_personal.set(bool(values.get("include_personal", False)))
+            self.max_pages_per_site.set(str(values.get("max_pages_per_site", DEFAULT_MAX_PAGES)))
             self.country_de.set(bool(values["country_de"]))
             self.country_at.set(bool(values["country_at"]))
             for source_id, var in self.directory_source_vars.items():
@@ -903,6 +1024,11 @@ def run_gui() -> int:
                 "use_zenrows_google": self.use_zenrows_google.get(),
                 "use_google_maps": self.use_google_maps.get(),
                 "use_serpapi": self.use_serpapi.get(),
+                "only_new_leads": self.only_new_leads.get(),
+                "skip_known_sites": self.skip_known_sites.get(),
+                "expand_search": self.expand_search.get(),
+                "include_personal": self.include_personal.get(),
+                "max_pages_per_site": self.max_pages_per_site.get(),
                 **{f"dir_source_{source_id}": var.get() for source_id, var in self.directory_source_vars.items()},
                 "country_de": self.country_de.get(),
                 "country_at": self.country_at.get(),
@@ -1071,12 +1197,18 @@ def run_gui() -> int:
 
         def _update_stats(self, stats: LeadStats) -> None:
             self.lead_count_text.set(f"Gefundene Leads: {stats.leads_found}")
+            known_part = (
+                f"Bekannte Leads uebersprungen {stats.known_skipped} · "
+                if getattr(stats, "known_skipped", 0)
+                else ""
+            )
             self.stats_text.set(
                 f"Websites {stats.websites_done}/{stats.websites_total} · "
                 f"Seiten {stats.pages_fetched} · "
                 f"Firmen-Domains {stats.unique_domains} · "
                 f"Duplikate uebersprungen {stats.duplicates_skipped} · "
                 f"Gesperrt {stats.suppressed_skipped} · "
+                f"{known_part}"
                 f"{stats.leads_per_minute}/min"
             )
 

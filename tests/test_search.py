@@ -127,6 +127,36 @@ class SearchTests(unittest.TestCase):
         self.assertEqual(web_search_cities_budget(1000), 400)
         self.assertIsNone(web_search_cities_budget(3000))
 
+    def test_expand_forces_full_city_sweep_and_deep_pagination(self) -> None:
+        from lead_research.search import (
+            osm_cities_budget,
+            web_search_cities_budget,
+            zenrows_cities_budget,
+            zenrows_max_pagination_start,
+            ZENROWS_DEEP_PAGINATION_START,
+        )
+
+        # A small limit normally caps the surface; expand=True removes the cap.
+        self.assertIsNotNone(web_search_cities_budget(50))
+        self.assertIsNone(web_search_cities_budget(50, expand=True))
+        self.assertIsNotNone(osm_cities_budget(10))
+        self.assertIsNone(osm_cities_budget(10, expand=True))
+        self.assertIsNotNone(zenrows_cities_budget(50))
+        self.assertIsNone(zenrows_cities_budget(50, expand=True))
+        # A mass run with many plans normally uses shallow pagination.
+        self.assertLess(zenrows_max_pagination_start(500, True), ZENROWS_DEEP_PAGINATION_START)
+        self.assertEqual(
+            zenrows_max_pagination_start(500, True, expand=True),
+            ZENROWS_DEEP_PAGINATION_START,
+        )
+
+    def test_expand_query_plans_adds_more_plans(self) -> None:
+        from lead_research.search import expand_query_plans
+
+        normal = expand_query_plans("hotel", "", ("DE",), limit=50)
+        expanded = expand_query_plans("hotel", "", ("DE",), limit=50, expand=True)
+        self.assertGreater(len(expanded), len(normal))
+
     def test_osm_location_plan_uses_given_location(self) -> None:
         self.assertEqual(osm_location_plan("Bremen"), (OsmSearchTarget(label="Bremen"),))
 
@@ -497,6 +527,37 @@ class SearchTests(unittest.TestCase):
         self.assertIn("logistik", variants)
         self.assertIn("spedition", variants)
         self.assertGreater(len(variants), 3)
+
+    def test_category_search_variants_cover_many_categories(self) -> None:
+        # Tier 3 now broadens the other categories too, not just hotel.
+        for category, expected in (
+            ("restaurant", "gaststätte"),
+            ("zahnarzt", "zahnarztpraxis"),
+            ("rechtsanwalt", "kanzlei"),
+            ("dachdecker", "dachdeckerei"),
+            ("florist", "blumen"),
+        ):
+            variants = category_search_variants(category)
+            self.assertGreater(len(variants), 1, category)
+            self.assertIn(expected, variants, category)
+
+    def test_short_keyword_matches_whole_word_only(self) -> None:
+        # "it" must not fire inside "fitness".
+        self.assertEqual(
+            category_search_variants("fitnessstudio"),
+            category_search_variants("fitness"),
+        )
+        self.assertIn("fitness", category_search_variants("fitnessstudio"))
+        self.assertNotIn('["office"="it"]', osm_selectors_for_category("fitnessstudio"))
+        # But an explicit "it" category still resolves to IT.
+        self.assertIn("software", category_search_variants("it"))
+
+    def test_longest_keyword_wins(self) -> None:
+        # "kfz werkstatt" should prefer the more specific "werkstatt" mapping.
+        self.assertEqual(category_search_variants("kfz werkstatt")[0], "werkstatt")
+
+    def test_custom_category_falls_back_to_itself(self) -> None:
+        self.assertEqual(category_search_variants("wasserski verleih"), ("wasserski verleih",))
 
     def test_zenrows_cities_budget_scales_with_limit(self) -> None:
         self.assertEqual(zenrows_cities_budget(50), 12)

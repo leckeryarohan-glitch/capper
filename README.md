@@ -29,7 +29,9 @@ easy opt-out.
 - Website crawling with `robots.txt` checks enabled by default.
 - Contact and imprint page discovery, including automatically trying common
   `Impressum`/`Kontakt` paths (German sites must publish contact details there).
-- Public email extraction from websites and directory listings.
+- Public email extraction from websites and directory listings, including
+  Cloudflare-obfuscated (`data-cfemail`) addresses and addresses split by inline
+  HTML tags/comments (e.g. `info<span>@</span>hotel.de`).
 - Role-address preference (`info@`, `kontakt@`, `sales@`, etc.).
 - Personal-looking emails are excluded by default and can only be exported with
   an explicit review flag.
@@ -38,7 +40,12 @@ easy opt-out.
 - Parallel website crawling (`--workers`) for high daily lead volume.
 - Streaming CSV output and live statistics (websites, pages, domains, duplicates, leads/min).
 - Batch mode for many category/location combinations with checkpoint/resume.
-- Simple desktop GUI: enter a category and start the lead search.
+- Simple desktop GUI: pick a category from the dropdown (or type your own) and
+  start the lead search.
+- Category synonym expansion for many industries (hotel, restaurant, café,
+  bakery, doctor, dentist, lawyer, tax advisor, roofer, florist, car repair,
+  and more), plus matching OpenStreetMap tags, so one keyword reaches related
+  business types.
 - CSV and JSON export with source URLs and discovery timestamps.
 
 ## Quick start
@@ -260,6 +267,49 @@ python3 -m lead_research discover \
   --suppression-file examples/suppression.txt \
   --output leads.csv
 ```
+
+## Repeat runs: finding new leads (not the same ones again)
+
+Search is deterministic, so re-running the same category rediscovers the same
+businesses. Three options make repeat runs productive:
+
+- **Only new leads** (`--only-new-leads`): keeps a persistent
+  `capper-known-leads.txt` of every exported lead (email + domain). Later runs
+  skip leads found before, so the output contains only genuinely new contacts.
+- **Skip known sites** (`--skip-known-sites`): keeps `capper-known-sites.txt`
+  of every crawled website host and skips them next time, so the crawl budget
+  goes to unseen sites.
+- **Expanded search** (`--expand-search`): widens the search surface (all
+  cached cities, deeper result pagination, and every category synonym) so new
+  businesses that a shallower run missed can surface.
+
+```bash
+python3 -m lead_research discover \
+  --category hotel \
+  --provider all \
+  --only-new-leads \
+  --skip-known-sites \
+  --expand-search \
+  --output leads.csv
+```
+
+The same three switches are available in the desktop GUI under
+"Wiederholte Laeufe". The history files live next to the checkpoint and can be
+edited or merged by hand (one key per line).
+
+### Getting more leads per website
+
+Beyond finding more sites, you can raise how many leads each crawled site
+yields:
+
+- **Include personal emails** (GUI: "Auch persoenliche E-Mails aufnehmen";
+  CLI: `--include-personal-review`): many small businesses only publish an
+  owner-name address (`s.mueller@…`). These are exported as
+  `personal_review_required` for manual review instead of being dropped.
+- **Pages per website** (GUI: "Seiten/Website"; CLI: `--max-pages-per-site`):
+  more pages reach imprint/contact pages on deeper sites.
+- Cloudflare-obfuscated and tag-split addresses are now decoded automatically,
+  so sites that previously yielded no email can still produce a lead.
 
 ## Output fields
 

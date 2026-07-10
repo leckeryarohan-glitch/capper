@@ -8,7 +8,7 @@ from .batch import read_terms, run_batch_discovery
 from .crawl import CrawlConfig
 from .mass import run_mass_discovery
 from .pipeline import DEFAULT_WORKERS, DiscoveryConfig, run_discovery
-from .search import SearchProviderError, provider_from_name
+from .search import SearchProviderError, combined_provider, provider_from_name
 from .locations import parse_countries
 from .suppression import SuppressionList
 
@@ -110,6 +110,31 @@ def build_parser() -> argparse.ArgumentParser:
         "--resume",
         action="store_true",
         help="Resume from --checkpoint instead of starting over.",
+    )
+    discover.add_argument(
+        "--only-new-leads",
+        action="store_true",
+        help="Exclude leads already found in previous runs (persistent lead history).",
+    )
+    discover.add_argument(
+        "--lead-history",
+        type=Path,
+        help="Path to the persistent known-leads file (default: capper-known-leads.txt).",
+    )
+    discover.add_argument(
+        "--skip-known-sites",
+        action="store_true",
+        help="Skip websites crawled in previous runs (persistent site history).",
+    )
+    discover.add_argument(
+        "--site-history",
+        type=Path,
+        help="Path to the persistent crawled-sites file (default: capper-known-sites.txt).",
+    )
+    discover.add_argument(
+        "--expand-search",
+        action="store_true",
+        help="Widen the search surface (all cities, deeper pagination, more synonyms) to find new businesses.",
     )
 
     batch = subparsers.add_parser(
@@ -330,7 +355,10 @@ def run_discover(args: argparse.Namespace) -> int:
     if args.workers < 1:
         raise ValueError("--workers must be at least 1")
 
-    provider = provider_from_name(args.provider, args.seed_file, args.source_profile)
+    if args.provider == "all":
+        provider = combined_provider(expand_search=args.expand_search)
+    else:
+        provider = provider_from_name(args.provider, args.seed_file, args.source_profile)
     config = DiscoveryConfig(
         category=args.category,
         location=args.location,
@@ -343,6 +371,9 @@ def run_discover(args: argparse.Namespace) -> int:
         workers=args.workers,
         max_leads=args.max_leads,
         dedupe_by=args.dedupe,
+        only_new_leads=args.only_new_leads,
+        skip_known_sites=args.skip_known_sites,
+        expand_search=args.expand_search,
     )
 
     def report(kind: str, *payload: object) -> None:
@@ -373,6 +404,8 @@ def run_discover(args: argparse.Namespace) -> int:
         on_event=report,
         checkpoint=args.checkpoint,
         resume=args.resume,
+        lead_history=args.lead_history,
+        site_history=args.site_history,
     )
 
     print(f"Discovered {stats.leads_found} reviewable lead(s). Wrote {args.output}.")
@@ -382,6 +415,8 @@ def run_discover(args: argparse.Namespace) -> int:
         f"{stats.pages_fetched} pages, {stats.unique_domains} domains, "
         f"{stats.duplicates_skipped} duplicates skipped, "
         f"{stats.suppressed_skipped} suppressed, "
+        f"{stats.known_skipped} already-known skipped, "
+        f"{stats.sites_skipped_known} known sites skipped, "
         f"{stats.leads_per_minute} leads/min."
     )
     if not args.include_personal_review:

@@ -7,11 +7,32 @@ from urllib.parse import urljoin, urlparse
 
 
 EMAIL_RE = re.compile(
-    r"\b[A-Z0-9._%+-]+(?:\s*(?:@|\[at\]|\(at\)| at )\s*)[A-Z0-9.-]+"
+    r"\b[A-Z0-9._%+-]+(?:\s*(?:@|\[at\]|\(at\)| at |&#64;|&commat;)\s*)[A-Z0-9.-]+"
     r"(?:\s*(?:\.|\[dot\]|\(dot\)| dot )\s*)[A-Z]{2,}\b",
     re.IGNORECASE,
 )
 PHONE_RE = re.compile(r"(?:\+|00)[0-9][0-9\s()./-]{6,}[0-9]")
+
+# Cloudflare replaces exposed addresses with <a class="__cf_email__"
+# data-cfemail="HEX">[email protected]</a>; the first byte is the XOR key.
+CF_EMAIL_RE = re.compile(r'data-cfemail="([0-9a-fA-F]+)"')
+# Tags placed inside an address to fool scrapers (e.g. info<span>@</span>x.de).
+_TAG_RE = re.compile(r"<[^>]+>")
+# HTML comments inserted between address characters.
+_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+
+# Stripping inline tags can merge adjacent table cells into a bogus address
+# (info@a.de</td><td>x -> info@a.dex). Only trust tag-stripped matches whose
+# TLD is a real one, which keeps genuine in-address obfuscation while dropping
+# accidental merges.
+COMMON_EMAIL_TLDS = frozenset(
+    {
+        "de", "at", "ch", "com", "net", "org", "eu", "info", "biz", "io",
+        "co", "gmbh", "berlin", "hotel", "reisen", "shop", "online", "email",
+        "li", "lu", "fr", "it", "es", "nl", "be", "dk", "pl", "cz", "se",
+        "no", "fi", "uk", "us", "ca",
+    }
+)
 
 CONTACT_HINTS = (
     "contact",
@@ -68,14 +89,51 @@ class PageParser(HTMLParser):
             self._title_chunks.append(data)
 
 
+def decode_cfemail(encoded: str) -> str:
+    """Decode a Cloudflare data-cfemail hex string into a plain address."""
+    try:
+        data = bytes.fromhex(encoded)
+    except ValueError:
+        return ""
+    if len(data) < 2:
+        return ""
+    key = data[0]
+    decoded = "".join(chr(byte ^ key) for byte in data[1:])
+    return decoded if "@" in decoded else ""
+
+
 def extract_emails(text: str) -> list[str]:
     found: set[str] = set()
+
+    def collect(source: str) -> None:
+        for match in EMAIL_RE.findall(source):
+            email = normalize_email(match)
+            if not email or email.lower().endswith(BLOCKED_EMAIL_SUFFIXES):
+                continue
+            found.add(email.lower())
+
     normalized_text = html.unescape(text)
-    for match in EMAIL_RE.findall(normalized_text):
-        email = normalize_email(match)
-        if not email or email.lower().endswith(BLOCKED_EMAIL_SUFFIXES):
-            continue
-        found.add(email.lower())
+    collect(normalized_text)
+
+    # Some sites split an address with inline tags/comments to fool scrapers
+    # (info<span>@</span>hotel.de). Extract again from a tag-stripped version,
+    # but only trust addresses with a real TLD to avoid merged-cell artifacts.
+    stripped = _TAG_RE.sub("", _COMMENT_RE.sub("", text))
+    if stripped != text:
+        for match in EMAIL_RE.findall(html.unescape(stripped)):
+            email = normalize_email(match).lower()
+            if not email or email.endswith(BLOCKED_EMAIL_SUFFIXES):
+                continue
+            tld = email.rsplit(".", 1)[-1]
+            if tld in COMMON_EMAIL_TLDS:
+                found.add(email)
+
+    # Cloudflare-obfuscated addresses are only recoverable from data-cfemail.
+    for encoded in CF_EMAIL_RE.findall(text):
+        email = normalize_email(decode_cfemail(encoded))
+        if email and not email.lower().endswith(BLOCKED_EMAIL_SUFFIXES):
+            found.add(email.lower())
+
     return sorted(found)
 
 
