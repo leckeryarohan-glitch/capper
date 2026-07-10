@@ -242,10 +242,20 @@ def run_discovery(
         if loaded is not None:
             validate_checkpoint_config(loaded, expected_config)
             checkpoint_state = loaded
+            loaded_websites = len(loaded.search_results)
+            if not loaded.search_complete:
+                # Mid-search checkpoints keep found websites in
+                # directory_partial_results until the search finishes.
+                loaded_websites += len(loaded.directory_partial_results)
             emit(
                 "status",
-                f"Checkpoint geladen: {len(loaded.search_results)} Websites, "
+                f"Checkpoint geladen: {loaded_websites} Websites, "
                 f"{len(loaded.crawled_urls)} gecrawlt, {len(loaded.leads)} Leads."
+                + (
+                    " Suche noch nicht abgeschlossen — wird fortgesetzt."
+                    if not loaded.search_complete
+                    else ""
+                )
                 + (
                     f" Branchenverzeichnisse: {len(loaded.directory_completed_locations)} Orte fertig."
                     if loaded.directory_completed_locations and not loaded.search_complete

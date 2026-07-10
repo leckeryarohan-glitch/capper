@@ -11,4 +11,10 @@ build/
 leads.csv
 leads.json
 capper-checkpoint.json
+capper-checkpoint.json.bak
+capper-checkpoint.json.tmp
+capper-checkpoint-search.json
+capper-checkpoint-crawled.jsonl
+capper-checkpoint-leads.jsonl
+capper-live-status.json
 tmp_probe/

@@ -4,8 +4,13 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from lead_research.live_status import read_live_status, write_live_status
+from lead_research.live_status import (
+    read_live_status,
+    replace_file_with_retry,
+    write_live_status,
+)
 from lead_research.pipeline import LeadStats
 
 
@@ -46,6 +51,49 @@ class LiveStatusTests(unittest.TestCase):
             loaded.recent_events,
             ((1, "[+] example.com: +1 Leads"), (2, "[.] test.de: keine")),
         )
+
+    def test_write_live_status_survives_locked_destination(self) -> None:
+        """A locked live-status file (Windows WinError 5) must never crash the run."""
+        stats = LeadStats(websites_total=100, websites_done=12, leads_found=3)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "capper-live-status.json"
+            with patch(
+                "lead_research.live_status.os.replace",
+                side_effect=PermissionError(5, "Access is denied"),
+            ), patch("lead_research.live_status.time.sleep"):
+                write_live_status(path, stats, min_interval_seconds=0.0)
+            self.assertFalse(path.exists())
+            self.assertFalse(path.with_suffix(path.suffix + ".tmp").exists())
+
+            write_live_status(path, stats, min_interval_seconds=0.0)
+            loaded = read_live_status(path)
+
+        assert loaded is not None
+        self.assertEqual(loaded.websites_done, 12)
+
+    def test_replace_file_with_retry_recovers_from_transient_lock(self) -> None:
+        import os
+
+        real_replace = os.replace
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "status.tmp"
+            destination = Path(tmp) / "status.json"
+            source.write_text("{}", encoding="utf-8")
+            calls = {"count": 0}
+
+            def flaky_replace(src: object, dst: object) -> None:
+                calls["count"] += 1
+                if calls["count"] < 3:
+                    raise PermissionError(5, "Access is denied")
+                real_replace(src, dst)
+
+            with patch("lead_research.live_status.os.replace", side_effect=flaky_replace), patch(
+                "lead_research.live_status.time.sleep"
+            ):
+                replace_file_with_retry(source, destination)
+
+            self.assertTrue(destination.exists())
+            self.assertEqual(calls["count"], 3)
 
     def test_live_status_to_lead_stats_uses_rates_from_file(self) -> None:
         from lead_research.live_status import LiveRunStatus, live_status_to_lead_stats
