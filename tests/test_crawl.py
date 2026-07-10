@@ -44,6 +44,27 @@ class CrawlTests(unittest.TestCase):
         self.assertIn("https://example.test/impressum", urls)
         self.assertIn("https://example.test/kontakt", urls)
 
+    def test_guessed_contact_urls_adds_language_prefixed_paths(self) -> None:
+        urls = guessed_contact_urls(
+            "https://www.adinahotels.com/en/apartments/berlin-checkpoint-charlie/"
+        )
+
+        self.assertIn("https://www.adinahotels.com/en/imprint", urls)
+        self.assertIn("https://www.adinahotels.com/en/kontakt", urls)
+        # Root-level guesses are still tried as a fallback.
+        self.assertIn("https://www.adinahotels.com/impressum", urls)
+        # The site's own language prefix is tried before the bare root paths.
+        self.assertLess(
+            urls.index("https://www.adinahotels.com/en/imprint"),
+            urls.index("https://www.adinahotels.com/imprint"),
+        )
+
+    def test_guessed_contact_urls_ignores_non_language_first_segment(self) -> None:
+        urls = guessed_contact_urls("https://example.test/apartments/berlin/")
+
+        self.assertNotIn("https://example.test/apartments/imprint", urls)
+        self.assertIn("https://example.test/imprint", urls)
+
     def test_guessed_contact_urls_handles_invalid_input(self) -> None:
         self.assertEqual(guessed_contact_urls("not-a-url"), [])
 

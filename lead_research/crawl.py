@@ -35,8 +35,12 @@ CONTACT_PATH_GUESSES = (
     "/contact",
     "/contact/",
     "/imprint",
+    "/imprint/",
     "/legal-notice",
 )
+
+# Language segments many sites prefix their pages with, e.g. /en/imprint.
+CONTACT_LANGUAGE_PREFIXES = ("en", "de", "fr", "it", "es", "nl", "pl", "cs")
 
 
 def guessed_contact_urls(
@@ -47,13 +51,23 @@ def guessed_contact_urls(
     if not parsed.scheme or not parsed.netloc:
         return []
     base = f"{parsed.scheme}://{parsed.netloc}"
+
+    # If the start URL uses a language prefix (e.g. /en/apartments/...), the
+    # imprint/contact pages usually live under the same prefix (/en/imprint).
+    # Try that prefix first, then the site root.
+    prefixes: list[str] = [""]
+    first_segment = parsed.path.strip("/").split("/", 1)[0].lower()
+    if first_segment in CONTACT_LANGUAGE_PREFIXES:
+        prefixes.insert(0, first_segment)
+
     urls: list[str] = []
     seen: set[str] = set()
-    for path in paths:
-        url = base + path
-        if url not in seen:
-            seen.add(url)
-            urls.append(url)
+    for prefix in prefixes:
+        for path in paths:
+            url = f"{base}/{prefix}{path}" if prefix else f"{base}{path}"
+            if url not in seen:
+                seen.add(url)
+                urls.append(url)
     return urls
 
 
@@ -94,7 +108,8 @@ class LeadCrawler:
 
         deadline = time.monotonic() + max(self.config.site_timeout_seconds, 1.0)
         queue = [start_url]
-        for guessed in guessed_contact_urls(start_url):
+        guesses = guessed_contact_urls(start_url)
+        for guessed in guesses:
             if guessed not in queue:
                 queue.append(guessed)
         visited: set[str] = set()
@@ -103,7 +118,9 @@ class LeadCrawler:
         page_title = result.title
         fetched = 0
         attempts = 0
-        max_attempts = self.config.max_pages_per_site + len(CONTACT_PATH_GUESSES) + 2
+        # Failed fetches (404s on guessed paths) do not consume the page budget,
+        # so allow enough attempts to actually reach every guessed contact URL.
+        max_attempts = self.config.max_pages_per_site + len(guesses) + 2
 
         while queue and fetched < self.config.max_pages_per_site and attempts < max_attempts:
             if time.monotonic() >= deadline:
