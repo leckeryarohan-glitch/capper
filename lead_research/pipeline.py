@@ -71,6 +71,7 @@ CRAWL_ACTIVE_BATCH_MULTIPLIER = 2
 CRAWL_WAIT_HEARTBEAT_SECONDS = 15
 PAGE_EVENT_INTERVAL = 25
 LIVE_EVENT_HISTORY = 40
+SEARCH_HEARTBEAT_SECONDS = 3.0
 
 
 def build_crawl_config(*, config: DiscoveryConfig, resume: bool, pending_sites: int) -> CrawlConfig:
@@ -266,18 +267,55 @@ def run_discovery(
         checkpoint_state.config["gui_settings"] = gui_settings
 
     emit("status", "Bereite Suche vor ...")
+    publish_live_status(phase="search", status="Bereite Suche vor ...")
+
+    last_search_event = {"at": 0.0}
+
+    def search_status(message: str) -> None:
+        emit("status", message)
+        now = time.monotonic()
+        with event_lock:
+            active_now["last_search_status"] = message
+        if now - last_search_event["at"] >= 1.0:
+            last_search_event["at"] = now
+            record_event(message)
+        publish_live_status(phase="search", status=message)
+
     try:
-        provider.on_status = lambda message: emit("status", message)
+        provider.on_status = search_status
     except Exception:  # noqa: BLE001 - status hook is optional
         pass
 
-    search_results = _discover_websites(
-        provider=provider,
-        config=config,
-        checkpoint_state=checkpoint_state,
-        checkpoint_path=checkpoint,
-        emit=emit,
+    search_started_at = time.monotonic()
+    search_done = threading.Event()
+
+    def search_heartbeat() -> None:
+        while not search_done.wait(SEARCH_HEARTBEAT_SECONDS):
+            elapsed = int(time.monotonic() - search_started_at)
+            with event_lock:
+                last_status = active_now.get("last_search_status", "")
+            publish_live_status(
+                phase="search",
+                status=(
+                    f"Suche laeuft seit {elapsed}s ... "
+                    f"{last_status}".strip()
+                ),
+            )
+
+    heartbeat_thread = threading.Thread(
+        target=search_heartbeat, name="capper-search-heartbeat", daemon=True
     )
+    heartbeat_thread.start()
+    try:
+        search_results = _discover_websites(
+            provider=provider,
+            config=config,
+            checkpoint_state=checkpoint_state,
+            checkpoint_path=checkpoint,
+            emit=emit,
+        )
+    finally:
+        search_done.set()
     stats.websites_total = (
         len(checkpoint_state.search_results)
         if checkpoint_state.search_complete
