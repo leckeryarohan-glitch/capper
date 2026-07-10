@@ -52,8 +52,15 @@ COMMON_SOURCE_DOMAINS = (
 )
 
 OSM_CATEGORY_TAGS = {
-    "hotel": (("tourism", "hotel"), ("tourism", "guest_house"), ("tourism", "hostel"), ("tourism", "motel")),
-    "pension": (("tourism", "guest_house"), ("tourism", "hotel")),
+    "hotel": (
+        ("tourism", "hotel"),
+        ("tourism", "guest_house"),
+        ("tourism", "hostel"),
+        ("tourism", "motel"),
+        ("tourism", "apartment"),
+        ("tourism", "chalet"),
+    ),
+    "pension": (("tourism", "guest_house"), ("tourism", "hotel"), ("tourism", "apartment")),
     "restaurant": (("amenity", "restaurant"),),
     "cafe": (("amenity", "cafe"),),
     "kaffee": (("amenity", "cafe"),),
@@ -136,7 +143,18 @@ CATEGORY_SEARCH_VARIANTS: dict[str, tuple[str, ...]] = {
     "spedition": ("spedition", "logistik", "transport", "fracht"),
     "transport": ("transport", "spedition", "logistik", "fracht"),
     "lager": ("lager", "logistik", "spedition", "warehouse"),
-    "hotel": ("hotel", "gasthof", "pension"),
+    "hotel": (
+        "hotel",
+        "gasthof",
+        "pension",
+        "gästehaus",
+        "hostel",
+        "motel",
+        "aparthotel",
+        "landhotel",
+        "hotel garni",
+        "boardinghouse",
+    ),
     "restaurant": ("restaurant", "gaststätte", "gasthaus"),
     "handwerk": ("handwerk", "handwerker", "meisterbetrieb"),
     "it": ("it", "software", "edv"),
