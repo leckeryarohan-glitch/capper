@@ -127,6 +127,36 @@ class SearchTests(unittest.TestCase):
         self.assertEqual(web_search_cities_budget(1000), 400)
         self.assertIsNone(web_search_cities_budget(3000))
 
+    def test_expand_forces_full_city_sweep_and_deep_pagination(self) -> None:
+        from lead_research.search import (
+            osm_cities_budget,
+            web_search_cities_budget,
+            zenrows_cities_budget,
+            zenrows_max_pagination_start,
+            ZENROWS_DEEP_PAGINATION_START,
+        )
+
+        # A small limit normally caps the surface; expand=True removes the cap.
+        self.assertIsNotNone(web_search_cities_budget(50))
+        self.assertIsNone(web_search_cities_budget(50, expand=True))
+        self.assertIsNotNone(osm_cities_budget(10))
+        self.assertIsNone(osm_cities_budget(10, expand=True))
+        self.assertIsNotNone(zenrows_cities_budget(50))
+        self.assertIsNone(zenrows_cities_budget(50, expand=True))
+        # A mass run with many plans normally uses shallow pagination.
+        self.assertLess(zenrows_max_pagination_start(500, True), ZENROWS_DEEP_PAGINATION_START)
+        self.assertEqual(
+            zenrows_max_pagination_start(500, True, expand=True),
+            ZENROWS_DEEP_PAGINATION_START,
+        )
+
+    def test_expand_query_plans_adds_more_plans(self) -> None:
+        from lead_research.search import expand_query_plans
+
+        normal = expand_query_plans("hotel", "", ("DE",), limit=50)
+        expanded = expand_query_plans("hotel", "", ("DE",), limit=50, expand=True)
+        self.assertGreater(len(expanded), len(normal))
+
     def test_osm_location_plan_uses_given_location(self) -> None:
         self.assertEqual(osm_location_plan("Bremen"), (OsmSearchTarget(label="Bremen"),))
 
