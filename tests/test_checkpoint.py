@@ -196,6 +196,62 @@ class CheckpointTests(unittest.TestCase):
         self.assertIn("15 Leads", str(metadata["progress_summary"]))
         self.assertEqual(len(loaded.search_results), 250)
 
+    def test_gui_metadata_counts_mid_search_directory_partial_results(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "checkpoint.json"
+            checkpoint = new_discovery_checkpoint(
+                category="hotel",
+                location="",
+                countries=("DE",),
+                limit=500000,
+                max_leads=200000,
+                dedupe_by="email",
+            )
+            checkpoint.search_complete = False
+            checkpoint.directory_completed_locations = [f"Stadt {idx}" for idx in range(30)]
+            checkpoint.directory_partial_results = [
+                {"title": f"Hotel {idx}", "url": f"https://hotel{idx}.example/", "snippet": ""}
+                for idx in range(4200)
+            ]
+            checkpoint.directory_seen_keys = [f"url:https://hotel{idx}.example" for idx in range(4200)]
+            save_discovery_checkpoint(path, checkpoint)
+            metadata = load_checkpoint_gui_metadata(path)
+
+        assert metadata is not None
+        summary = str(metadata["progress_summary"])
+        self.assertIn("4200 Websites", summary)
+        self.assertIn("30 Branchenorte", summary)
+        self.assertIn("Suche laeuft noch", summary)
+
+    def test_gui_metadata_counts_partial_results_without_stats_entry(self) -> None:
+        """Checkpoints written before the partial-results stat still show real counts."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "checkpoint.json"
+            checkpoint = new_discovery_checkpoint(
+                category="hotel",
+                location="",
+                countries=("DE",),
+                limit=500000,
+                max_leads=200000,
+                dedupe_by="email",
+            )
+            checkpoint.directory_completed_locations = ["Berlin"]
+            checkpoint.directory_partial_results = [
+                {"title": f"Hotel {idx}", "url": f"https://hotel{idx}.example/", "snippet": ""}
+                for idx in range(120)
+            ]
+            payload = checkpoint_to_payload(checkpoint, path)
+            stats = payload["stats"]
+            assert isinstance(stats, dict)
+            stats.pop("directory_partial_results", None)
+            write_discovery_checkpoint_payload(path, payload, create_backup=False)
+            metadata = load_checkpoint_gui_metadata(path)
+
+        assert metadata is not None
+        summary = str(metadata["progress_summary"])
+        self.assertIn("120 Websites", summary)
+        self.assertIn("Suche laeuft noch", summary)
+
     def test_large_checkpoint_uses_search_sidecar(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "checkpoint.json"
@@ -394,6 +450,58 @@ class ResumableDiscoveryTests(unittest.TestCase):
         self.assertEqual(FakeCrawler_calls, ["https://b.example/"])
         self.assertEqual(stats.leads_found, 2)
         self.assertEqual(stats.websites_done, 2)
+
+    def test_run_discovery_reports_mid_search_websites_on_resume(self) -> None:
+        class FakeProvider:
+            def search(self, category, location, limit, countries=()):
+                return []
+
+        statuses: list[str] = []
+
+        def on_event(kind: str, *payload: object) -> None:
+            if kind == "status":
+                statuses.append(str(payload[0]))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "leads.csv"
+            checkpoint = Path(tmp) / "checkpoint.json"
+            checkpoint_data = new_discovery_checkpoint(
+                category="logistik",
+                location="",
+                countries=("DE",),
+                limit=10,
+                max_leads=10,
+                dedupe_by="email",
+            )
+            checkpoint_data.search_complete = False
+            checkpoint_data.directory_completed_locations = ["Berlin"]
+            checkpoint_data.directory_partial_results = [
+                {"title": "A", "url": "https://a.example/", "snippet": ""},
+                {"title": "B", "url": "https://b.example/", "snippet": ""},
+                {"title": "C", "url": "https://c.example/", "snippet": ""},
+            ]
+            save_discovery_checkpoint(checkpoint, checkpoint_data)
+
+            run_discovery(
+                provider=FakeProvider(),
+                config=DiscoveryConfig(
+                    category="logistik",
+                    limit=10,
+                    max_leads=10,
+                    workers=1,
+                    delay=0.0,
+                ),
+                suppression=SuppressionList(None),
+                output=output,
+                on_event=on_event,
+                checkpoint=checkpoint,
+                resume=True,
+            )
+
+        loaded_messages = [text for text in statuses if text.startswith("Checkpoint geladen:")]
+        self.assertTrue(loaded_messages, f"missing 'Checkpoint geladen' status in {statuses}")
+        self.assertIn("3 Websites", loaded_messages[0])
+        self.assertIn("Suche noch nicht abgeschlossen", loaded_messages[0])
 
     def test_zenrows_search_resume_skips_completed_plans(self) -> None:
         captured: list[str] = []

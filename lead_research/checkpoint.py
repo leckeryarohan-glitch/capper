@@ -136,25 +136,34 @@ def checkpoint_progress_summary(
     crawled_urls: int | None = None,
     leads: int | None = None,
     directory_locations: int | None = None,
+    directory_partial_results: int | None = None,
 ) -> str:
+    websites = search_results if search_results is not None else len(checkpoint.search_results)
+    partial = (
+        directory_partial_results
+        if directory_partial_results is not None
+        else len(checkpoint.directory_partial_results)
+    )
+    # Mid-search checkpoints keep found websites in directory_partial_results
+    # until the search finishes; count them so the summary never shows 0.
+    if not checkpoint.search_complete:
+        websites += partial
     parts = [
-        f"{search_results if search_results is not None else len(checkpoint.search_results)} Websites",
+        f"{websites} Websites",
         f"{crawled_urls if crawled_urls is not None else len(checkpoint.crawled_urls)} gecrawlt",
         f"{leads if leads is not None else len(checkpoint.leads)} Leads",
     ]
+    completed = checkpoint.directory_completed_locations
     completed_count = (
-        directory_locations
-        if directory_locations is not None
-        else len(checkpoint.directory_completed_locations)
+        directory_locations if directory_locations is not None else len(completed)
     )
     if completed_count and not checkpoint.search_complete:
-        completed = checkpoint.directory_completed_locations
-        if directory_locations is not None and not completed:
-            parts.append(f"{completed_count} Branchenorte")
-        elif len(completed) <= 3:
-            parts.append(f"{len(completed)} Branchenorte ({', '.join(completed)})")
+        if completed and completed_count <= 3:
+            parts.append(f"{completed_count} Branchenorte ({', '.join(completed[:3])})")
         else:
-            parts.append(f"{len(completed)} Branchenorte")
+            parts.append(f"{completed_count} Branchenorte")
+    if not checkpoint.search_complete:
+        parts.append("Suche laeuft noch")
     return ", ".join(parts)
 
 
@@ -417,24 +426,27 @@ def load_checkpoint_gui_metadata(path: Path | None) -> dict[str, object] | None:
         return None
     config = dict(config_value)
 
+    stats_value: object = None
     stats_pos = _find_json_value_start(text, "stats")
     if stats_pos >= 0:
         stats_value, _ = _parse_json_value_at(text, stats_pos)
-        if isinstance(stats_value, dict):
-            search_count = int(stats_value.get("search_results", 0))
-            crawled_count = int(stats_value.get("crawled_urls", 0))
-            leads_count = int(stats_value.get("leads", 0))
-            directory_count = int(stats_value.get("directory_completed_locations", 0))
-        else:
-            search_count = _count_json_array_elements(text, "search_results")
-            crawled_count = _count_json_array_elements(text, "crawled_urls")
-            leads_count = _count_json_array_elements(text, "leads")
-            directory_count = _count_json_array_elements(text, "directory_completed_locations")
+    if isinstance(stats_value, dict):
+        search_count = int(stats_value.get("search_results", 0))
+        crawled_count = int(stats_value.get("crawled_urls", 0))
+        leads_count = int(stats_value.get("leads", 0))
+        directory_count = int(stats_value.get("directory_completed_locations", 0))
+        partial_count = int(
+            stats_value.get(
+                "directory_partial_results",
+                _count_json_array_elements(text, "directory_partial_results"),
+            )
+        )
     else:
         search_count = _count_json_array_elements(text, "search_results")
         crawled_count = _count_json_array_elements(text, "crawled_urls")
         leads_count = _count_json_array_elements(text, "leads")
         directory_count = _count_json_array_elements(text, "directory_completed_locations")
+        partial_count = _count_json_array_elements(text, "directory_partial_results")
 
     search_complete = bool(re.search(r'"search_complete"\s*:\s*true', text))
     directory_locations = _parse_json_string_array(text, "directory_completed_locations")
@@ -448,7 +460,8 @@ def load_checkpoint_gui_metadata(path: Path | None) -> dict[str, object] | None:
         search_results=search_count,
         crawled_urls=crawled_count,
         leads=leads_count,
-        directory_locations=directory_count if not directory_locations else None,
+        directory_locations=directory_count,
+        directory_partial_results=partial_count,
     )
 
     gui_settings = dict(config.get("gui_settings", {}))
@@ -669,6 +682,7 @@ def checkpoint_to_payload(
             "crawled_urls": len(checkpoint.crawled_urls),
             "leads": len(checkpoint.leads),
             "directory_completed_locations": len(checkpoint.directory_completed_locations),
+            "directory_partial_results": len(checkpoint.directory_partial_results),
         },
         "zenrows_completed_plans": checkpoint.zenrows_completed_plans,
         "directory_completed_locations": checkpoint.directory_completed_locations,
