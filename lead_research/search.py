@@ -1345,16 +1345,16 @@ def escape_overpass_regex(value: str) -> str:
     return escaped
 
 
-DDG_MAX_OFFSET = 200
-DDG_MAX_PAGES_PER_QUERY_DEFAULT = 2
-DDG_MAX_PAGES_PER_QUERY_MASS = 5
+DDG_MAX_OFFSET = 500
+DDG_MAX_PAGES_PER_QUERY_DEFAULT = 4
+DDG_MAX_PAGES_PER_QUERY_MASS = 12
 
 
 def duckduckgo_pages_per_query(limit: int) -> int:
     if limit >= 500:
         return DDG_MAX_PAGES_PER_QUERY_MASS
     if limit >= 100:
-        return 3
+        return 8
     return DDG_MAX_PAGES_PER_QUERY_DEFAULT
 
 
@@ -1363,6 +1363,36 @@ def duckduckgo_next_offset(html_text: str, offset: int, link_count: int) -> int:
     if match:
         return int(match.group(1))
     return offset + max(10, link_count // 2)
+
+
+def _duckduckgo_input_fields(form_html: str) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    for tag in re.findall(r"<input\b[^>]*>", form_html, re.IGNORECASE):
+        name_match = re.search(r'\bname="([^"]*)"', tag, re.IGNORECASE)
+        if not name_match:
+            continue
+        value_match = re.search(r'\bvalue="([^"]*)"', tag, re.IGNORECASE)
+        name = html.unescape(name_match.group(1))
+        value = html.unescape(value_match.group(1)) if value_match else ""
+        fields[name] = value
+    return fields
+
+
+def duckduckgo_next_form_fields(html_text: str) -> dict[str, str] | None:
+    """Return the hidden fields of DuckDuckGo's "more results" form.
+
+    Clicking "more results" on the HTML endpoint resubmits a POST form that
+    carries pagination tokens (``s``, ``dc``, ``vqd``, ``nextParams`` ...).
+    Sending only ``q`` and ``s`` back often makes DuckDuckGo return the first
+    page again, so we replay the whole form like a browser would.
+    """
+    for form_html in re.findall(
+        r"<form\b[^>]*>(.*?)</form>", html_text, re.IGNORECASE | re.DOTALL
+    ):
+        fields = _duckduckgo_input_fields(form_html)
+        if "q" in fields and "s" in fields:
+            return fields
+    return None
 
 
 class DuckDuckGoSearchProvider(SearchProvider):
@@ -1389,10 +1419,16 @@ class DuckDuckGoSearchProvider(SearchProvider):
             page_num = 0
             max_pages = duckduckgo_pages_per_query(limit)
             stale_pages = 0
-            while len(results) < limit and offset <= DDG_MAX_OFFSET and page_num < max_pages:
+            next_fields: dict[str, str] | None = {"q": query, "s": "0", "kl": "de-de"}
+            while (
+                next_fields is not None
+                and len(results) < limit
+                and offset <= DDG_MAX_OFFSET
+                and page_num < max_pages
+            ):
                 page_num += 1
                 self._report(f"DuckDuckGo: '{query}' Seite {page_num} ...")
-                data = urllib.parse.urlencode({"q": query, "s": offset, "kl": "de-de"}).encode("utf-8")
+                data = urllib.parse.urlencode(next_fields).encode("utf-8")
                 request = urllib.request.Request(
                     self.endpoint,
                     data=data,
@@ -1431,8 +1467,15 @@ class DuckDuckGoSearchProvider(SearchProvider):
                         break
                 else:
                     stale_pages = 0
-                offset = duckduckgo_next_offset(html_text, offset, len(links))
-                time.sleep(0.4)
+                # Replay DuckDuckGo's "more results" form for the next page so
+                # pagination tokens (vqd, dc, nextParams ...) stay valid.
+                next_fields = duckduckgo_next_form_fields(html_text)
+                if next_fields is not None:
+                    try:
+                        offset = int(next_fields.get("s", offset))
+                    except (TypeError, ValueError):
+                        offset = duckduckgo_next_offset(html_text, offset, len(links))
+                time.sleep(0.8)
 
         self._report(f"DuckDuckGo: {len(results)} Websites gefunden")
         return results
