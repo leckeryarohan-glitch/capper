@@ -108,6 +108,14 @@ OSM_CATEGORY_TAGS = {
     "blumen": (("shop", "florist"),),
     "florist": (("shop", "florist"),),
     "optiker": (("shop", "optician"),),
+    "garten": (("shop", "garden_centre"), ("craft", "gardener")),
+    "gärtner": (("craft", "gardener"), ("shop", "garden_centre")),
+    "gaertner": (("craft", "gardener"), ("shop", "garden_centre")),
+    "landschaftsbau": (("craft", "gardener"),),
+    "anwalt": (("office", "lawyer"),),
+    "dachdecker": (("craft", "roofer"),),
+    "getraenke": (("shop", "beverages"),),
+    "getränke": (("shop", "beverages"),),
     "buero": (("office", "company"),),
     "büro": (("office", "company"),),
     "firma": (("office", "company"),),
@@ -139,10 +147,12 @@ OSM_MASS_MODE_LIMIT = 500
 
 # Synonyms broaden discovery for categories where one keyword misses many businesses.
 CATEGORY_SEARCH_VARIANTS: dict[str, tuple[str, ...]] = {
+    # Transport & logistics
     "logistik": ("logistik", "spedition", "transport", "lager", "fracht", "kurier"),
     "spedition": ("spedition", "logistik", "transport", "fracht"),
     "transport": ("transport", "spedition", "logistik", "fracht"),
     "lager": ("lager", "logistik", "spedition", "warehouse"),
+    # Hospitality
     "hotel": (
         "hotel",
         "gasthof",
@@ -155,19 +165,59 @@ CATEGORY_SEARCH_VARIANTS: dict[str, tuple[str, ...]] = {
         "hotel garni",
         "boardinghouse",
     ),
-    "restaurant": ("restaurant", "gaststätte", "gasthaus"),
+    "pension": ("pension", "gästehaus", "gasthof", "hotel garni", "hotel"),
+    "restaurant": ("restaurant", "gaststätte", "gasthaus", "gastronomie", "ristorante", "trattoria"),
+    "cafe": ("café", "cafe", "kaffeehaus", "bistro", "kaffeerösterei"),
+    "bar": ("bar", "kneipe", "pub", "cocktailbar", "weinbar"),
+    "imbiss": ("imbiss", "schnellrestaurant", "döner", "fast food", "currywurst"),
+    "baeckerei": ("bäckerei", "backstube", "konditorei", "backwaren"),
+    "bäckerei": ("bäckerei", "backstube", "konditorei", "backwaren"),
+    "metzger": ("metzgerei", "metzger", "fleischerei", "schlachterei"),
+    "supermarkt": ("supermarkt", "lebensmittel", "markt", "lebensmittelgeschäft"),
+    # Beauty & health
+    "friseur": ("friseur", "friseursalon", "haarsalon", "coiffeur"),
+    "kosmetik": ("kosmetik", "kosmetikstudio", "beauty", "nagelstudio", "wellness"),
+    "fitness": ("fitness", "fitnessstudio", "fitnesscenter", "sportstudio", "gym"),
+    "arzt": ("arztpraxis", "arzt", "hausarzt", "facharzt", "praxis"),
+    "zahnarzt": ("zahnarzt", "zahnarztpraxis", "zahnmedizin", "kieferorthopäde"),
+    "apotheke": ("apotheke", "pharmazie"),
+    "tierarzt": ("tierarzt", "tierarztpraxis", "tierklinik", "veterinär"),
+    "physio": ("physiotherapie", "physiotherapeut", "krankengymnastik", "physiopraxis"),
+    "optiker": ("optiker", "augenoptik", "augenoptiker", "brillen"),
+    # Trades / Handwerk
     "handwerk": ("handwerk", "handwerker", "meisterbetrieb"),
-    "it": ("it", "software", "edv"),
-    "software": ("software", "it", "edv"),
-    "elektriker": ("elektriker", "elektro", "elektroinstallation"),
-    "immobilien": ("immobilien", "immobilienmakler", "makler"),
-    "makler": ("makler", "immobilienmakler", "immobilien"),
-    "bau": ("bau", "bauunternehmen", "baufirma"),
-    "kfz": ("kfz", "autowerkstatt", "werkstatt"),
-    "werkstatt": ("werkstatt", "kfz", "autowerkstatt"),
-    "friseur": ("friseur", "friseursalon", "haarsalon"),
-    "fitness": ("fitness", "fitnessstudio", "fitnesscenter"),
-    "supermarkt": ("supermarkt", "lebensmittel", "markt"),
+    "elektriker": ("elektriker", "elektro", "elektroinstallation", "elektrotechnik", "elektrobetrieb"),
+    "maler": ("maler", "malerbetrieb", "malermeister", "lackierer", "maler und lackierer"),
+    "tischler": ("tischler", "tischlerei", "schreiner", "schreinerei"),
+    "schreiner": ("schreiner", "schreinerei", "tischler", "tischlerei"),
+    "dachdecker": ("dachdecker", "dachdeckerei", "bedachungen", "dachbau"),
+    "sanitaer": ("sanitär", "heizung", "shk", "installateur", "klempner", "sanitärbetrieb"),
+    "sanitär": ("sanitär", "heizung", "shk", "installateur", "klempner", "sanitärbetrieb"),
+    "klempner": ("klempner", "installateur", "sanitär", "heizung", "shk"),
+    "garten": ("gartenbau", "gärtner", "gärtnerei", "landschaftsbau", "galabau"),
+    "gärtner": ("gärtner", "gärtnerei", "gartenbau", "landschaftsbau", "galabau"),
+    # Construction & real estate
+    "bau": ("bau", "bauunternehmen", "baufirma", "hochbau", "tiefbau", "bauträger"),
+    "immobilien": ("immobilien", "immobilienmakler", "makler", "immobilienbüro"),
+    "makler": ("makler", "immobilienmakler", "immobilien", "immobilienbüro"),
+    # Automotive
+    "auto": ("autohaus", "autohändler", "kfz", "autowerkstatt", "fahrzeughandel"),
+    "kfz": ("kfz", "autowerkstatt", "werkstatt", "kfz-werkstatt", "autohaus"),
+    "werkstatt": ("werkstatt", "kfz", "autowerkstatt", "kfz-werkstatt"),
+    # IT & office
+    "it": ("it", "software", "edv", "it-dienstleister", "systemhaus"),
+    "software": ("software", "it", "edv", "softwareentwicklung", "systemhaus"),
+    # Professional services
+    "anwalt": ("rechtsanwalt", "anwalt", "kanzlei", "anwaltskanzlei"),
+    "rechtsanwalt": ("rechtsanwalt", "anwalt", "kanzlei", "anwaltskanzlei"),
+    "steuerberater": ("steuerberater", "steuerkanzlei", "steuerbüro", "steuerberatung"),
+    "versicherung": ("versicherung", "versicherungsmakler", "versicherungsbüro", "versicherungsagentur"),
+    # Retail
+    "moebel": ("möbel", "möbelhaus", "einrichtung", "möbelgeschäft"),
+    "möbel": ("möbel", "möbelhaus", "einrichtung", "möbelgeschäft"),
+    "blumen": ("florist", "blumen", "blumenladen", "blumengeschäft", "floristik"),
+    "florist": ("florist", "blumen", "blumenladen", "blumengeschäft", "floristik"),
+    "elektronik": ("elektronik", "elektronikmarkt", "elektrofachmarkt", "elektrogeschäft"),
 }
 
 ZENROWS_MASS_MODE_LIMIT = 500
@@ -900,11 +950,39 @@ def build_zenrows_api_request_url(
     return f"{ZenRowsSearchProvider.universal_endpoint}?{params}&url={encoded_target}"
 
 
+_CATEGORY_WORD_RE_CACHE: dict[str, "re.Pattern[str]"] = {}
+
+
+def category_keyword_matches(keyword: str, normalized: str) -> bool:
+    """Whether a category keyword applies to the (casefolded) input.
+
+    German compounds (immobilienmakler contains immobilien) rely on substring
+    matching, but very short keys like "it" must match as a whole word so they
+    do not fire inside unrelated words (e.g. "fitness").
+    """
+    if not keyword:
+        return False
+    if len(keyword) <= 2:
+        pattern = _CATEGORY_WORD_RE_CACHE.get(keyword)
+        if pattern is None:
+            pattern = re.compile(rf"(?<![a-z0-9äöüß]){re.escape(keyword)}(?![a-z0-9äöüß])")
+            _CATEGORY_WORD_RE_CACHE[keyword] = pattern
+        return pattern.search(normalized) is not None
+    return keyword in normalized
+
+
 def category_search_variants(category: str) -> tuple[str, ...]:
     normalized = category.strip().casefold()
+    best_keyword = ""
+    best_variants: tuple[str, ...] = ()
+    # Prefer the longest matching keyword so specific terms win over short ones
+    # (e.g. "werkstatt" over "kfz", "software" over "it").
     for keyword, variants in CATEGORY_SEARCH_VARIANTS.items():
-        if keyword in normalized:
-            return variants
+        if category_keyword_matches(keyword, normalized) and len(keyword) > len(best_keyword):
+            best_keyword = keyword
+            best_variants = variants
+    if best_variants:
+        return best_variants
     return (category.strip(),) if category.strip() else ()
 
 
@@ -1295,10 +1373,10 @@ def build_overpass_query(
 
 
 def osm_selectors_for_category(category: str) -> list[str]:
-    normalized = category.lower()
+    normalized = category.casefold()
     selectors: list[str] = []
     for keyword, tag_pairs in OSM_CATEGORY_TAGS.items():
-        if keyword in normalized:
+        if category_keyword_matches(keyword, normalized):
             for key, value in tag_pairs:
                 selector = f'["{key}"]' if not value else f'["{key}"="{value}"]'
                 if selector not in selectors:

@@ -528,6 +528,37 @@ class SearchTests(unittest.TestCase):
         self.assertIn("spedition", variants)
         self.assertGreater(len(variants), 3)
 
+    def test_category_search_variants_cover_many_categories(self) -> None:
+        # Tier 3 now broadens the other categories too, not just hotel.
+        for category, expected in (
+            ("restaurant", "gaststätte"),
+            ("zahnarzt", "zahnarztpraxis"),
+            ("rechtsanwalt", "kanzlei"),
+            ("dachdecker", "dachdeckerei"),
+            ("florist", "blumen"),
+        ):
+            variants = category_search_variants(category)
+            self.assertGreater(len(variants), 1, category)
+            self.assertIn(expected, variants, category)
+
+    def test_short_keyword_matches_whole_word_only(self) -> None:
+        # "it" must not fire inside "fitness".
+        self.assertEqual(
+            category_search_variants("fitnessstudio"),
+            category_search_variants("fitness"),
+        )
+        self.assertIn("fitness", category_search_variants("fitnessstudio"))
+        self.assertNotIn('["office"="it"]', osm_selectors_for_category("fitnessstudio"))
+        # But an explicit "it" category still resolves to IT.
+        self.assertIn("software", category_search_variants("it"))
+
+    def test_longest_keyword_wins(self) -> None:
+        # "kfz werkstatt" should prefer the more specific "werkstatt" mapping.
+        self.assertEqual(category_search_variants("kfz werkstatt")[0], "werkstatt")
+
+    def test_custom_category_falls_back_to_itself(self) -> None:
+        self.assertEqual(category_search_variants("wasserski verleih"), ("wasserski verleih",))
+
     def test_zenrows_cities_budget_scales_with_limit(self) -> None:
         self.assertEqual(zenrows_cities_budget(50), 12)
         self.assertEqual(zenrows_cities_budget(500), 200)
