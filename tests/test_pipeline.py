@@ -71,7 +71,9 @@ class PipelineTests(unittest.TestCase):
         FakeCrawler.leads_by_url = {
             "https://a.test": [make_lead("info@a.test", "https://a.test")],
             "https://b.test": [
-                make_lead("info@a.test", "https://b.test"),  # duplicate email
+                # Duplicate email; keep the same website so unique_domains stays
+                # deterministic regardless of which site finishes first (workers=2).
+                make_lead("info@a.test", "https://a.test"),
                 make_lead("kontakt@b.test", "https://b.test"),
             ],
         }
