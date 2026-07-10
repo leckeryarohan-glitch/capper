@@ -315,8 +315,9 @@ class BingSearchProvider(SearchProvider):
 class SerpApiSearchProvider(SearchProvider):
     endpoint = "https://serpapi.com/search.json"
 
-    def __init__(self, api_key: str | None = None):
+    def __init__(self, api_key: str | None = None, *, expand_search: bool = False):
         self.api_key = api_key or os.getenv("SERPAPI_API_KEY")
+        self.expand_search = expand_search
         if not self.api_key:
             raise SearchProviderError("SERPAPI_API_KEY is required for SerpAPI search.")
 
@@ -332,7 +333,9 @@ class SerpApiSearchProvider(SearchProvider):
         results: list[SearchResult] = []
         seen: set[str] = set()
 
-        for query in expand_queries(category, location, countries, limit=limit):
+        for query in expand_queries(
+            category, location, countries, limit=limit, expand=self.expand_search
+        ):
             if len(results) >= limit:
                 break
             start = 0
@@ -414,8 +417,9 @@ class ZenRowsSearchProvider(SearchProvider):
     request_delay_seconds = 0.4
     page_delay_seconds = 1.5
 
-    def __init__(self, api_key: str | None = None):
+    def __init__(self, api_key: str | None = None, *, expand_search: bool = False):
         self.api_key = api_key or os.getenv("ZENROWS_API_KEY")
+        self.expand_search = expand_search
         if not self.api_key:
             raise SearchProviderError("ZENROWS_API_KEY is required for ZenRows search.")
 
@@ -436,8 +440,8 @@ class ZenRowsSearchProvider(SearchProvider):
         seen: set[str] = set(resume_state.seen_urls) if resume_state else set()
         completed_plans: set[str] = set(resume_state.completed_plans) if resume_state else set()
         mass_mode = limit >= ZENROWS_MASS_MODE_LIMIT
-        plans = zenrows_query_plans(category, location, countries, limit)
-        max_start = zenrows_max_pagination_start(len(plans), mass_mode)
+        plans = zenrows_query_plans(category, location, countries, limit, expand=self.expand_search)
+        max_start = zenrows_max_pagination_start(len(plans), mass_mode, expand=self.expand_search)
         page_delay = self.page_delay_seconds if limit > 10 else self.request_delay_seconds
         workers = zenrows_parallel_workers(parallel_workers, mass_mode, len(plans))
         remaining_plans = sum(
@@ -886,8 +890,10 @@ def category_search_variants(category: str) -> tuple[str, ...]:
     return (category.strip(),) if category.strip() else ()
 
 
-def zenrows_cities_budget(limit: int) -> int | None:
+def zenrows_cities_budget(limit: int, *, expand: bool = False) -> int | None:
     """How many cities per country to query. None means all cached cities (1600+ for DE)."""
+    if expand:
+        return None
     if limit >= 3000:
         return None
     if limit >= 1000:
@@ -899,9 +905,9 @@ def zenrows_cities_budget(limit: int) -> int | None:
     return ZENROWS_CITIES_PER_COUNTRY
 
 
-def zenrows_max_pagination_start(num_plans: int, mass_mode: bool) -> int:
+def zenrows_max_pagination_start(num_plans: int, mass_mode: bool, *, expand: bool = False) -> int:
     """Balance depth per query vs. number of locations in the run."""
-    if not mass_mode:
+    if expand or not mass_mode:
         return ZENROWS_DEEP_PAGINATION_START
     if num_plans <= 30:
         return ZENROWS_DEEP_PAGINATION_START
@@ -939,8 +945,9 @@ def zenrows_city_plans(
     *,
     limit: int = 50,
     broad: bool = False,
+    expand: bool = False,
 ) -> list[tuple[str, str]]:
-    city_budget = zenrows_cities_budget(limit)
+    city_budget = zenrows_cities_budget(limit, expand=expand)
     if city_budget is None:
         cities = cities_for_mass_web_search(countries)
     else:
@@ -948,7 +955,8 @@ def zenrows_city_plans(
 
     variants = category_search_variants(category)
     # With hundreds of cities, use the primary term first to limit API volume.
-    city_variants = variants if len(cities) <= 60 else (variants[0],)
+    # Expanded runs keep all synonym variants so more businesses surface.
+    city_variants = variants if (expand or len(cities) <= 60) else (variants[0],)
     plans: list[tuple[str, str]] = []
     for city_name, country_code in cities:
         for variant in city_variants:
@@ -962,13 +970,14 @@ def zenrows_synonym_city_plans(
     *,
     limit: int,
     broad: bool = False,
+    expand: bool = False,
 ) -> list[tuple[str, str]]:
     """Extra city queries with synonym terms when the primary sweep is not enough."""
     variants = category_search_variants(category)
     if len(variants) <= 1:
         return []
 
-    city_budget = zenrows_cities_budget(limit)
+    city_budget = zenrows_cities_budget(limit, expand=expand)
     if city_budget is None:
         cities = cities_for_mass_web_search(countries)[:120]
     else:
@@ -986,16 +995,20 @@ def zenrows_query_plans(
     location: str,
     countries: tuple[str, ...] = DEFAULT_COUNTRIES,
     limit: int = 50,
+    *,
+    expand: bool = False,
 ) -> list[tuple[str, str]]:
     """Country plans first, then city sweep; synonym pass for large limits without location."""
-    broad = limit >= ZENROWS_MASS_MODE_LIMIT
+    broad = expand or limit >= ZENROWS_MASS_MODE_LIMIT
     if location.strip():
         return zenrows_country_plans(category, location, countries, broad=broad)
 
     plans = zenrows_country_plans(category, location, countries, broad=broad)
-    plans += zenrows_city_plans(category, countries, limit=limit, broad=broad)
-    if limit >= 1000:
-        plans += zenrows_synonym_city_plans(category, countries, limit=limit, broad=broad)
+    plans += zenrows_city_plans(category, countries, limit=limit, broad=broad, expand=expand)
+    if expand or limit >= 1000:
+        plans += zenrows_synonym_city_plans(
+            category, countries, limit=limit, broad=broad, expand=expand
+        )
     return plans
 
 
@@ -1072,8 +1085,9 @@ def google_items_to_results(data: dict) -> list[SearchResult]:
 
 
 class OpenStreetMapSearchProvider(SearchProvider):
-    def __init__(self, endpoints: tuple[str, ...] = OVERPASS_ENDPOINTS):
+    def __init__(self, endpoints: tuple[str, ...] = OVERPASS_ENDPOINTS, *, expand_search: bool = False):
         self.endpoints = endpoints
+        self.expand_search = expand_search
 
     def search(
         self,
@@ -1088,7 +1102,7 @@ class OpenStreetMapSearchProvider(SearchProvider):
         results: list[SearchResult] = []
         seen_urls: set[str] = set()
         targets = osm_location_plan(
-            location, countries, city_budget=osm_cities_budget(limit)
+            location, countries, city_budget=osm_cities_budget(limit, expand=self.expand_search)
         )
         per_location_limit = (
             limit
@@ -1189,12 +1203,12 @@ class OpenStreetMapSearchProvider(SearchProvider):
         return nominatim_items_to_results(data, limit, location)
 
 
-def osm_cities_budget(limit: int) -> int | None:
+def osm_cities_budget(limit: int, *, expand: bool = False) -> int | None:
     """How many top cities per country to sweep for a nationwide OSM search.
 
     None means every cached city (all towns >= 5000 inhabitants) for mass runs.
     """
-    if limit >= OSM_MASS_MODE_LIMIT:
+    if expand or limit >= OSM_MASS_MODE_LIMIT:
         return None
     return max(OSM_MIN_CITIES_PER_COUNTRY, min(OSM_MAX_CITIES_PER_COUNTRY, ceil(limit / 3)))
 
@@ -1434,6 +1448,9 @@ class DuckDuckGoSearchProvider(SearchProvider):
 
     endpoint = "https://html.duckduckgo.com/html/"
 
+    def __init__(self, *, expand_search: bool = False):
+        self.expand_search = expand_search
+
     def search(
         self,
         category: str,
@@ -1446,7 +1463,9 @@ class DuckDuckGoSearchProvider(SearchProvider):
         results: list[SearchResult] = []
         seen: set[str] = set()
 
-        for query in expand_queries(category, location, countries, limit=limit):
+        for query in expand_queries(
+            category, location, countries, limit=limit, expand=self.expand_search
+        ):
             if len(results) >= limit:
                 break
             offset = 0
@@ -1841,8 +1860,10 @@ def build_query(category: str, location: str, *, broad: bool = False) -> str:
     return " ".join(part for part in parts if part).strip()
 
 
-def web_search_cities_budget(limit: int) -> int | None:
+def web_search_cities_budget(limit: int, *, expand: bool = False) -> int | None:
     """Cities per country to sweep for web search. None means every cached city."""
+    if expand:
+        return None
     if limit >= 3000:
         return None
     if limit >= 1000:
@@ -1860,15 +1881,26 @@ def expand_query_plans(
     countries: tuple[str, ...] = DEFAULT_COUNTRIES,
     *,
     limit: int = 50,
+    expand: bool = False,
 ) -> list[tuple[str, str]]:
-    """Build search queries with the country code used for localized web search."""
+    """Build search queries with the country code used for localized web search.
+
+    With expand=True the surface is widened (every cached city plus broad query
+    variants) so repeat runs of the same category reach businesses a shallower
+    first run missed.
+    """
     if location.strip():
         country_code = countries[0] if countries else "DE"
-        return [(build_query(category, location), country_code)]
+        plans = [(build_query(category, location), country_code)]
+        if expand:
+            plans.append((build_query(category, location, broad=True), country_code))
+        return plans
     plans: list[tuple[str, str]] = []
     for country_code in countries:
         plans.append((build_query(category, country_label(country_code)), country_code))
-    budget = web_search_cities_budget(limit)
+        if expand:
+            plans.append((build_query(category, country_label(country_code), broad=True), country_code))
+    budget = web_search_cities_budget(limit, expand=expand)
     if budget is None:
         cities = cities_for_mass_web_search(countries)
     else:
@@ -1884,11 +1916,17 @@ def expand_queries(
     countries: tuple[str, ...] = DEFAULT_COUNTRIES,
     *,
     limit: int = 50,
+    expand: bool = False,
 ) -> list[str]:
     """Build multiple search queries so engines that cap a single query (e.g.
     ~100 Google results) still yield many websites. Without a location, the query
     is expanded across cities (all cities >= 5000 inhabitants for mass limits)."""
-    return [query for query, _ in expand_query_plans(category, location, countries, limit=limit)]
+    return [
+        query
+        for query, _ in expand_query_plans(
+            category, location, countries, limit=limit, expand=expand
+        )
+    ]
 
 
 def is_valid_lead_url(url: str) -> bool:
@@ -1947,13 +1985,14 @@ def combined_provider(
     directory_detail_parallel_requests: int | None = None,
     directory_mass_mode: bool = False,
     use_google_maps: bool = False,
+    expand_search: bool = False,
 ) -> SearchProvider:
     """Combine the selected no-key and key-based sources for maximum coverage."""
     providers: list[SearchProvider] = []
     if use_osm:
-        providers.append(OpenStreetMapSearchProvider())
+        providers.append(OpenStreetMapSearchProvider(expand_search=expand_search))
     if use_duckduckgo:
-        providers.append(DuckDuckGoSearchProvider())
+        providers.append(DuckDuckGoSearchProvider(expand_search=expand_search))
     if use_directories:
         resolved_zenrows_for_directories = _resolve_api_key(zenrows_key, "ZENROWS_API_KEY")
         if resolved_zenrows_for_directories or os.getenv("DIRECTORY_ALLOW_DIRECT_FETCH") == "1":
@@ -1964,7 +2003,7 @@ def combined_provider(
                     enabled_directory_sources=enabled_directory_sources,
                     parallel_requests=directory_parallel_requests,
                     detail_parallel_requests=directory_detail_parallel_requests,
-                    mass_mode=directory_mass_mode,
+                    mass_mode=directory_mass_mode or expand_search,
                 )
             )
     if os.getenv("GOOGLE_SEARCH_API_KEY") and os.getenv("GOOGLE_SEARCH_ENGINE_ID"):
@@ -1976,13 +2015,13 @@ def combined_provider(
 
     resolved_serpapi = _resolve_api_key(serpapi_key, "SERPAPI_API_KEY")
     if use_serpapi and resolved_serpapi:
-        providers.append(SerpApiSearchProvider(api_key=resolved_serpapi))
+        providers.append(SerpApiSearchProvider(api_key=resolved_serpapi, expand_search=expand_search))
 
     resolved_zenrows = _resolve_api_key(zenrows_key, "ZENROWS_API_KEY")
     if use_google_maps and resolved_zenrows:
         providers.append(GoogleMapsSearchProvider(zenrows_api_key=resolved_zenrows))
     if use_zenrows_google and resolved_zenrows:
-        providers.append(ZenRowsSearchProvider(api_key=resolved_zenrows))
+        providers.append(ZenRowsSearchProvider(api_key=resolved_zenrows, expand_search=expand_search))
 
     return MultiSourceProvider(providers)
 
